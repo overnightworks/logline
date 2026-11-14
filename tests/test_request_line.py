@@ -17,18 +17,13 @@ from tests.support.apps import (
     GATED_PATH,
     GROUP_MEMBER_MESSAGES,
     HOST_CLIENT_IP,
-    HOSTED_MOUNT,
-    NESTED_PARAMETERISED_MOUNT,
     PARAMETERISED_MOUNT,
-    PARAMETERISED_ROUTE,
-    PARAMETERISED_STATIC_MOUNT,
-    PLAIN_SUB_APP_MOUNT,
-    PLAIN_SUB_APP_PARAMETERISED_STATIC_MOUNT,
-    PLAIN_SUB_APP_STATIC_MOUNT,
+    PLAIN_ASGI_MOUNT,
+    ROUTER_MOUNT,
+    ROUTER_ROUTE,
     STATIC_FILE_NAME,
     STATIC_MOUNT,
     SUB,
-    SUB_APP_MOUNT,
     build_app,
     build_mounted_app,
 )
@@ -109,49 +104,20 @@ def test_a_request_that_matched_no_route_logs_null_and_404_and_never_its_path(
         pytest.param(f"{STATIC_MOUNT}/{STATIC_FILE_NAME}", STATIC_MOUNT, 200, id="static-file"),
         pytest.param(f"{STATIC_MOUNT}/{_UNGUESSABLE_ID}.txt", STATIC_MOUNT, 404, id="static-miss"),
         pytest.param(
-            f"{SUB_APP_MOUNT}/{_UNGUESSABLE_ID}", f"{SUB_APP_MOUNT}/{{x}}", 200, id="sub-app"
+            f"{PLAIN_ASGI_MOUNT}/{_UNGUESSABLE_ID}", PLAIN_ASGI_MOUNT, 200, id="plain-asgi-app"
         ),
         pytest.param(
-            f"/users/{_UNGUESSABLE_ID}/items/{_UNGUESSABLE_ID}",
-            f"{PARAMETERISED_MOUNT}{PARAMETERISED_ROUTE}",
+            f"/users/{_UNGUESSABLE_ID}/{_UNGUESSABLE_ID}",
+            PARAMETERISED_MOUNT,
             200,
             id="mount-with-a-parameter",
         ),
-        pytest.param(
-            f"/users/{_UNGUESSABLE_ID}/teams/{_UNGUESSABLE_ID}/items/{_UNGUESSABLE_ID}",
-            f"{PARAMETERISED_MOUNT}{NESTED_PARAMETERISED_MOUNT}{PARAMETERISED_ROUTE}",
-            200,
-            id="nested-mounts-with-parameters",
-        ),
-        pytest.param(
-            f"/files/{_UNGUESSABLE_ID}/{STATIC_FILE_NAME}",
-            PARAMETERISED_STATIC_MOUNT,
-            200,
-            id="static-files-under-a-parameter",
-        ),
-        pytest.param(
-            f"{PLAIN_SUB_APP_MOUNT}{PLAIN_SUB_APP_STATIC_MOUNT}/{STATIC_FILE_NAME}",
-            f"{PLAIN_SUB_APP_MOUNT}{PLAIN_SUB_APP_STATIC_MOUNT}",
-            200,
-            id="static-files-in-a-plain-starlette-app",
-        ),
-        pytest.param(
-            f"{PLAIN_SUB_APP_MOUNT}/members/{_UNGUESSABLE_ID}/{_UNGUESSABLE_ID}.txt",
-            f"{PLAIN_SUB_APP_MOUNT}{PLAIN_SUB_APP_PARAMETERISED_STATIC_MOUNT}",
-            404,
-            id="static-miss-under-a-parameter-in-a-plain-starlette-app",
-        ),
-        pytest.param(
-            f"{HOSTED_MOUNT}/{_UNGUESSABLE_ID}",
-            f"{HOSTED_MOUNT}/{{x}}",
-            200,
-            id="mount-beneath-a-host",
-        ),
+        pytest.param(f"{ROUTER_MOUNT}/{_UNGUESSABLE_ID}", ROUTER_ROUTE, 200, id="mounted-router"),
         pytest.param(GATED_PATH, None, 401, id="gate-in-front-of-the-router"),
         pytest.param(f"/{_UNGUESSABLE_ID}", None, 404, id="no-route"),
     ],
 )
-def test_a_mounted_request_logs_the_joined_template_and_never_its_path(
+def test_a_mounted_request_logs_the_template_the_framework_matched_and_never_its_path(
     capsys: pytest.CaptureFixture[str], tmp_path: Path, path: str, route: str | None, status: int
 ) -> None:
     (tmp_path / STATIC_FILE_NAME).write_text("static content")
@@ -324,32 +290,6 @@ def test_a_server_without_state_or_client_still_gets_a_line_with_a_null_ip(
 
     (line,) = request_lines(json_lines(capsys.readouterr().out))
     assert (line["sub"], line["ip"], line["status"], line["route"]) == (SUB, None, 204, None)
-
-
-def test_a_mount_the_router_cannot_name_adds_nothing_to_the_line_and_never_its_path(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    configure("request-service")
-
-    async def app(scope: Any, receive: Any, send: Any) -> None:
-        await send({"type": "http.response.start", "status": 204, "headers": []})
-        await send({"type": "http.response.body", "body": b""})
-
-    _run_http_scope(
-        app,
-        {
-            "type": "http",
-            "method": "GET",
-            "headers": [],
-            "app_root_path": "",
-            "root_path": f"/users/{_UNGUESSABLE_ID}",
-        },
-    )
-
-    output = capsys.readouterr().out
-    (line,) = request_lines(json_lines(output))
-    assert line["route"] is None
-    assert _UNGUESSABLE_ID not in output
 
 
 def test_an_app_that_sent_no_response_logs_500(capsys: pytest.CaptureFixture[str]) -> None:

@@ -5,9 +5,10 @@ from pathlib import Path
 import structlog
 from fastapi import BackgroundTasks, FastAPI, Request, WebSocket
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response, StreamingResponse
-from starlette.routing import Host, Mount
+from starlette.routing import Mount
 from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -135,17 +136,10 @@ def _add_websocket_route(app: FastAPI) -> None:
 
 
 STATIC_MOUNT = "/static"
-SUB_APP_MOUNT = "/mcp"
-SUB_APP_ROUTE = "/{x}"
+PLAIN_ASGI_MOUNT = "/plain"
 PARAMETERISED_MOUNT = "/users/{user_id}"
-PARAMETERISED_STATIC_MOUNT = "/files/{name}"
-NESTED_PARAMETERISED_MOUNT = "/teams/{team_id}"
-PARAMETERISED_ROUTE = "/items/{item_id}"
-PLAIN_SUB_APP_MOUNT = "/plain"
-PLAIN_SUB_APP_STATIC_MOUNT = "/assets"
-PLAIN_SUB_APP_PARAMETERISED_STATIC_MOUNT = "/members/{member_id}"
-HOSTED_MOUNT = "/hosted"
-OTHER_HOST = "other.example"
+ROUTER_MOUNT = "/mcp"
+ROUTER_ROUTE = "/{x}"
 GATED_PATH = "/gated"
 STATIC_FILE_NAME = "readme-of-the-static-files.txt"
 
@@ -163,50 +157,27 @@ class _DenyingGate:
         await self._app(scope, receive, send)
 
 
-def build_mounted_app(static_directory: Path) -> FastAPI:
-    """A FastAPI app: mounts with and without path parameters and a gate before the router."""
-    app = FastAPI()
-    sub_app = FastAPI()
-    user_app = FastAPI()
-    team_app = FastAPI()
+async def _plain_asgi_app(scope: Scope, receive: Receive, send: Send) -> None:
+    await Response("plain")(scope, receive, send)
 
-    @sub_app.get(SUB_APP_ROUTE)
-    async def sub_route(x: str) -> dict[str, str]:
+
+def build_mounted_app(static_directory: Path) -> Starlette:
+    """A Starlette app: static files, plain ASGI apps and a router mounted, a gate before them.
+
+    Starlette, not FastAPI: FastAPI's router leaves `scope["route"]` unset where a mount answers.
+    """
+    router_app = FastAPI()
+
+    @router_app.get(ROUTER_ROUTE)
+    async def router_route(x: str) -> dict[str, str]:
         return {"x": x}
 
-    @user_app.get(PARAMETERISED_ROUTE)
-    async def item_route(item_id: str) -> dict[str, str]:
-        return {"item_id": item_id}
-
-    @team_app.get(PARAMETERISED_ROUTE)
-    async def team_item_route(item_id: str) -> dict[str, str]:
-        return {"item_id": item_id}
-
-    plain_sub_app = Starlette(
+    return Starlette(
         routes=[
-            Mount(PLAIN_SUB_APP_STATIC_MOUNT, StaticFiles(directory=static_directory)),
-            Mount(
-                PLAIN_SUB_APP_PARAMETERISED_STATIC_MOUNT, StaticFiles(directory=static_directory)
-            ),
-        ]
+            Mount(STATIC_MOUNT, StaticFiles(directory=static_directory)),
+            Mount(PLAIN_ASGI_MOUNT, _plain_asgi_app),
+            Mount(PARAMETERISED_MOUNT, _plain_asgi_app),
+            Mount(ROUTER_MOUNT, router_app),
+        ],
+        middleware=[Middleware(RequestLineMiddleware), Middleware(_DenyingGate)],
     )
-    hosted_app = FastAPI()
-    other_hosted_app = FastAPI()
-
-    @hosted_app.get(SUB_APP_ROUTE)
-    async def hosted_route(x: str) -> dict[str, str]:
-        return {"x": x}
-
-    user_app.mount(NESTED_PARAMETERISED_MOUNT, team_app)
-    app.mount(STATIC_MOUNT, StaticFiles(directory=static_directory))
-    app.mount(PARAMETERISED_STATIC_MOUNT, StaticFiles(directory=static_directory))
-    app.mount(SUB_APP_MOUNT, sub_app)
-    app.mount(PARAMETERISED_MOUNT, user_app)
-    app.mount(PLAIN_SUB_APP_MOUNT, plain_sub_app)
-    app.router.routes.append(
-        Host(OTHER_HOST, Starlette(routes=[Mount("/{tenant}", other_hosted_app)]))
-    )
-    app.router.routes.append(Host("{host}", Starlette(routes=[Mount(HOSTED_MOUNT, hosted_app)])))
-    app.add_middleware(_DenyingGate)
-    app.add_middleware(RequestLineMiddleware)
-    return app

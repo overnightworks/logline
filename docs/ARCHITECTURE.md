@@ -106,9 +106,9 @@ tests. The lowest direct dependency floors run the same tests.
 
 ## 8. Risks and Technical Debt
 
-- Starlette leaves what a mount matched, the request's own path segments, in the scope's `root_path`, not
-  the mount's template; the request line finds the templates by matching `root_path` against the mounts of
-  the scope's outermost `router`, so a host whose router lacks that attribute logs only the inner route.
+- `route` is what the framework left in `scope["route"]`; logline never re-matches routes, hosts or paths. Inside
+  a mounted router it is the router's own template, relative to the mount, and nested mounts are not joined. A
+  framework that leaves no route for a mount (FastAPI's router) logs `null` there.
 - `duration_ms` runs until the last body chunk, so a long streamed response logs when it ends and
   background work after the response is not counted; a client disconnect logs the status already sent, or 500 if none.
 - A public client can choose its `trace_id`; stripping `traceparent` at the edge is the platform's.
