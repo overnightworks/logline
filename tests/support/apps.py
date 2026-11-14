@@ -135,6 +135,10 @@ def _add_websocket_route(app: FastAPI) -> None:
 STATIC_MOUNT = "/static"
 SUB_APP_MOUNT = "/mcp"
 SUB_APP_ROUTE = "/{x}"
+PARAMETERISED_MOUNT = "/users/{user_id}"
+PARAMETERISED_STATIC_MOUNT = "/files/{name}"
+NESTED_PARAMETERISED_MOUNT = "/teams/{team_id}"
+PARAMETERISED_ROUTE = "/items/{item_id}"
 GATED_PATH = "/gated"
 STATIC_FILE_NAME = "readme-of-the-static-files.txt"
 
@@ -153,16 +157,29 @@ class _DenyingGate:
 
 
 def build_mounted_app(static_directory: Path) -> FastAPI:
-    """A FastAPI app: a static-files mount, a mounted sub-app and a gate before the router."""
+    """A FastAPI app: mounts with and without path parameters and a gate before the router."""
     app = FastAPI()
     sub_app = FastAPI()
+    user_app = FastAPI()
+    team_app = FastAPI()
 
     @sub_app.get(SUB_APP_ROUTE)
     async def sub_route(x: str) -> dict[str, str]:
         return {"x": x}
 
+    @user_app.get(PARAMETERISED_ROUTE)
+    async def item_route(item_id: str) -> dict[str, str]:
+        return {"item_id": item_id}
+
+    @team_app.get(PARAMETERISED_ROUTE)
+    async def team_item_route(item_id: str) -> dict[str, str]:
+        return {"item_id": item_id}
+
+    user_app.mount(NESTED_PARAMETERISED_MOUNT, team_app)
     app.mount(STATIC_MOUNT, StaticFiles(directory=static_directory))
+    app.mount(PARAMETERISED_STATIC_MOUNT, StaticFiles(directory=static_directory))
     app.mount(SUB_APP_MOUNT, sub_app)
+    app.mount(PARAMETERISED_MOUNT, user_app)
     app.add_middleware(_DenyingGate)
     app.add_middleware(RequestLineMiddleware)
     return app

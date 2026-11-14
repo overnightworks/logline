@@ -17,6 +17,10 @@ from tests.support.apps import (
     GATED_PATH,
     GROUP_MEMBER_MESSAGES,
     HOST_CLIENT_IP,
+    NESTED_PARAMETERISED_MOUNT,
+    PARAMETERISED_MOUNT,
+    PARAMETERISED_ROUTE,
+    PARAMETERISED_STATIC_MOUNT,
     STATIC_FILE_NAME,
     STATIC_MOUNT,
     SUB,
@@ -102,6 +106,24 @@ def test_a_request_that_matched_no_route_logs_null_and_404_and_never_its_path(
         pytest.param(f"{STATIC_MOUNT}/{_UNGUESSABLE_ID}.txt", STATIC_MOUNT, 404, id="static-miss"),
         pytest.param(
             f"{SUB_APP_MOUNT}/{_UNGUESSABLE_ID}", f"{SUB_APP_MOUNT}/{{x}}", 200, id="sub-app"
+        ),
+        pytest.param(
+            f"/users/{_UNGUESSABLE_ID}/items/{_UNGUESSABLE_ID}",
+            f"{PARAMETERISED_MOUNT}{PARAMETERISED_ROUTE}",
+            200,
+            id="mount-with-a-parameter",
+        ),
+        pytest.param(
+            f"/users/{_UNGUESSABLE_ID}/teams/{_UNGUESSABLE_ID}/items/{_UNGUESSABLE_ID}",
+            f"{PARAMETERISED_MOUNT}{NESTED_PARAMETERISED_MOUNT}{PARAMETERISED_ROUTE}",
+            200,
+            id="nested-mounts-with-parameters",
+        ),
+        pytest.param(
+            f"/files/{_UNGUESSABLE_ID}/{STATIC_FILE_NAME}",
+            PARAMETERISED_STATIC_MOUNT,
+            200,
+            id="static-files-under-a-parameter",
         ),
         pytest.param(GATED_PATH, None, 401, id="gate-in-front-of-the-router"),
         pytest.param(f"/{_UNGUESSABLE_ID}", None, 404, id="no-route"),
@@ -280,6 +302,32 @@ def test_a_server_without_state_or_client_still_gets_a_line_with_a_null_ip(
 
     (line,) = request_lines(json_lines(capsys.readouterr().out))
     assert (line["sub"], line["ip"], line["status"], line["route"]) == (SUB, None, 204, None)
+
+
+def test_a_mount_the_router_cannot_name_adds_nothing_to_the_line_and_never_its_path(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure("request-service")
+
+    async def app(scope: Any, receive: Any, send: Any) -> None:
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    _run_http_scope(
+        app,
+        {
+            "type": "http",
+            "method": "GET",
+            "headers": [],
+            "app_root_path": "",
+            "root_path": f"/users/{_UNGUESSABLE_ID}",
+        },
+    )
+
+    output = capsys.readouterr().out
+    (line,) = request_lines(json_lines(output))
+    assert line["route"] is None
+    assert _UNGUESSABLE_ID not in output
 
 
 def test_an_app_that_sent_no_response_logs_500(capsys: pytest.CaptureFixture[str]) -> None:
