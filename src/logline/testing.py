@@ -20,7 +20,7 @@ __all__ = ["configured"]
 
 
 @dataclass(frozen=True, slots=True)
-class _LoggerState:
+class LoggerState:
     logger: logging.Logger
     handlers: list[logging.Handler]
     filters: list[_FilterType]
@@ -28,7 +28,7 @@ class _LoggerState:
     propagate: bool
 
     @classmethod
-    def of(cls, logger: logging.Logger) -> _LoggerState:
+    def of(cls, logger: logging.Logger) -> LoggerState:
         return cls(logger, logger.handlers[:], logger.filters[:], logger.level, logger.propagate)
 
     def restore(self) -> None:
@@ -46,7 +46,7 @@ def configured(service: str) -> Iterator[None]:
     HTTP clients' and the request logger, structlog's configuration and the stdlib logger class
     structlog's factory installs, as they were on entry.
     """
-    logger_states = [_LoggerState.of(logging.getLogger(name)) for name in TOUCHED_LOGGER_NAMES]
+    logger_states = [LoggerState.of(logging.getLogger(name)) for name in TOUCHED_LOGGER_NAMES]
     logger_class = logging.getLoggerClass()
     structlog_was_configured = structlog.is_configured()
     structlog_configuration = structlog.get_config()
