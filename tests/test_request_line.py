@@ -301,4 +301,3 @@ def test_an_app_that_sent_no_response_logs_500(capsys: pytest.CaptureFixture[str
 
     (line,) = request_lines(json_lines(capsys.readouterr().out))
     assert (line["status"], line["ip"]) == (500, HOST_CLIENT_IP)
-
