@@ -32,17 +32,19 @@ class _DropAll(logging.Filter):
         return False
 
 
-class _DropUvicornWebSocketLines(logging.Filter):
-    """uvicorn's WebSocket lines carry the raw path with its query."""
+class _DropUvicornContentRecords(logging.Filter):
+    """uvicorn's WebSocket lines carry the raw path with its query; websockets, which gets this
+    logger as its protocol logger, writes the request path, every header and every frame at DEBUG.
+    """
 
     def filter(self, record: logging.LogRecord) -> bool:
-        return _UVICORN_WEBSOCKET_LINE not in str(record.msg)
+        return record.levelno >= logging.INFO and _UVICORN_WEBSOCKET_LINE not in str(record.msg)
 
 
 # One instance each: Logger.addFilter ignores an instance it already holds, so a second
 # `configure` adds nothing.
 _DROP_ALL = _DropAll()
-_DROP_UVICORN_WEBSOCKET_LINES = _DropUvicornWebSocketLines()
+_DROP_UVICORN_CONTENT_RECORDS = _DropUvicornContentRecords()
 
 
 def _root_level() -> int:
@@ -72,7 +74,7 @@ def _route_uvicorn_through_root() -> None:
         uvicorn_logger.setLevel(logging.NOTSET)
         uvicorn_logger.propagate = True
     logging.getLogger("uvicorn.access").addFilter(_DROP_ALL)
-    logging.getLogger("uvicorn.error").addFilter(_DROP_UVICORN_WEBSOCKET_LINES)
+    logging.getLogger("uvicorn.error").addFilter(_DROP_UVICORN_CONTENT_RECORDS)
 
 
 def configure(service: str) -> None:

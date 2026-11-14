@@ -71,7 +71,7 @@ writes what it is told.
 **Never logged.** Credentials, tokens, cookies, header values, contents, raw paths and query strings stay out
 of every line logline writes or routes. The mechanisms are the route template instead of the path, text
 tracebacks instead of dict tracebacks with locals, the HTTP client loggers at WARNING and the filter on
-uvicorn's WebSocket lines.
+uvicorn's WebSocket lines and on its DEBUG records, which carry websockets' request headers and frames.
 
 **Proof strategy.** The tests drive a real FastAPI app through the middleware under a real `uvicorn.Server`
 and read stdout; only the clock and randomness may be faked. Branch coverage is 100 %, measured over all

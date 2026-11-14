@@ -9,6 +9,7 @@ from logline import RequestLineMiddleware, outgoing_headers, set_client_ip, set_
 
 SUB = "sub-of-the-person"
 HOST_CLIENT_IP = "198.51.100.7"
+WEBSOCKET_GREETING = "greeting-frame-content"
 
 
 async def _pass_through(request: Request, call_next: RequestResponseEndpoint) -> Response:
@@ -81,5 +82,5 @@ def _add_websocket_route(app: FastAPI) -> None:
         set_sub(websocket.scope, SUB)
         set_client_ip(websocket.scope, HOST_CLIENT_IP)
         await websocket.accept()
-        await websocket.send_text("hello")
+        await websocket.send_text(WEBSOCKET_GREETING)
         await websocket.close()

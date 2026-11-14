@@ -1,3 +1,4 @@
+import json
 import logging
 from collections.abc import Callable
 
@@ -7,11 +8,12 @@ import uvicorn
 from websockets.asyncio.client import connect
 
 from logline import configure
-from tests.support.apps import build_app
+from tests.support.apps import WEBSOCKET_GREETING, build_app
 from tests.support.lines import BASE_KEYS, Line, json_lines, lines_of
 from tests.support.serving import serve
 
 _WEBSOCKET_QUERY_SECRET = "websocket-query-secret"
+_WEBSOCKET_COOKIE_SECRET = "websocket-cookie-secret"
 
 
 async def _get_items(base_url: str) -> None:
@@ -89,22 +91,41 @@ def test_log_level_silences_uvicorn_lines_after_its_default_config(
     assert lines_of(lines, "uvicorn.error") == []
 
 
-def test_uvicorns_websocket_line_never_appears(capsys: pytest.CaptureFixture[str]) -> None:
+@pytest.mark.parametrize("websocket_implementation", ["websockets", "websockets-sansio"])
+@pytest.mark.parametrize("level", [None, "debug"])
+def test_no_websocket_path_query_header_or_frame_reaches_any_line(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    websocket_implementation: str,
+    level: str | None,
+) -> None:
+    if level is not None:
+        monkeypatch.setenv("LOG_LEVEL", level)
     configure("uvicorn-service")
 
     async def exercise(base_url: str) -> None:
         url = base_url.replace("http", "ws") + f"/ws?token={_WEBSOCKET_QUERY_SECRET}"
-        async with connect(url) as websocket:
-            assert await websocket.recv() == "hello"
+        headers = {"Cookie": f"session={_WEBSOCKET_COOKIE_SECRET}"}
+        async with connect(url, additional_headers=headers) as websocket:
+            assert await websocket.recv() == WEBSOCKET_GREETING
 
-    serve(uvicorn.Config(build_app(), log_config=None, ws="websockets-sansio"), exercise)
+    config = uvicorn.Config(build_app(), log_config=None, ws=websocket_implementation)
+    serve(config, exercise)
 
-    output = capsys.readouterr().out
-    lines: list[Line] = json_lines(output)
+    lines: list[Line] = json_lines(capsys.readouterr().out)
     assert lines_of(lines, "uvicorn.error")
-    assert "WebSocket" not in output
-    assert _WEBSOCKET_QUERY_SECRET not in output
-    assert "/ws" not in output
+    # The test's client logs under its own name; the server's are the subject.
+    output = "\n".join(
+        json.dumps(line) for line in lines if not str(line["logger"]).startswith("websockets")
+    )
+    for forbidden in (
+        "WebSocket",
+        "/ws",
+        _WEBSOCKET_QUERY_SECRET,
+        _WEBSOCKET_COOKIE_SECRET,
+        WEBSOCKET_GREETING,
+    ):
+        assert forbidden not in output
 
 
 def test_a_websocket_connection_gets_no_request_line(capsys: pytest.CaptureFixture[str]) -> None:
@@ -112,7 +133,7 @@ def test_a_websocket_connection_gets_no_request_line(capsys: pytest.CaptureFixtu
 
     async def exercise(base_url: str) -> None:
         async with connect(base_url.replace("http", "ws") + "/ws") as websocket:
-            assert await websocket.recv() == "hello"
+            assert await websocket.recv() == WEBSOCKET_GREETING
 
     serve(uvicorn.Config(build_app(), log_config=None, ws="websockets-sansio"), exercise)
 
