@@ -13,7 +13,6 @@ from logline import (
     RequestLineMiddleware,
     configure,
     set_client_ip,
-    set_route,
     set_sub,
 )
 from logline.request import REQUEST_LOGGER_NAME
@@ -79,6 +78,7 @@ def _serve_requests(
     [
         pytest.param(f"/items/{_UNGUESSABLE_ID}", "/items/{item_id}", 200, id="api-route"),
         pytest.param("/async-route", HOST_ROUTE, 200, id="api-route-replaced-by-set-route"),
+        pytest.param("/reset-route", HOST_ROUTE, 200, id="last-set-route-wins"),
         pytest.param(MCP_ROUTE, MCP_ROUTE, 200, id="plain-route-naming-itself"),
         pytest.param(PLAIN_ROUTE, None, 200, id="plain-route"),
         pytest.param(f"{MOUNTED_APP}/{_UNGUESSABLE_ID}", "/{name}", 200, id="mounted-app-route"),
@@ -300,19 +300,3 @@ def test_an_app_that_sent_no_response_logs_500(capsys: pytest.CaptureFixture[str
     (line,) = request_lines(json_lines(capsys.readouterr().out))
     assert (line["status"], line["ip"]) == (500, HOST_CLIENT_IP)
 
-
-def test_the_last_route_the_host_set_is_the_one_the_line_logs(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    configure("request-service")
-
-    async def app(scope: Any, receive: Any, send: Any) -> None:
-        set_route(scope, "/first")
-        set_route(scope, HOST_ROUTE)
-        await send({"type": "http.response.start", "status": 204, "headers": []})
-        await send({"type": "http.response.body", "body": b""})
-
-    _run_http_scope(app, {"type": "http", "method": "GET", "headers": []})
-
-    (line,) = request_lines(json_lines(capsys.readouterr().out))
-    assert line["route"] == HOST_ROUTE

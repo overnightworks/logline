@@ -21,6 +21,7 @@ from logline import (
 SUB = "sub-of-the-person"
 HOST_CLIENT_IP = "198.51.100.7"
 HOST_ROUTE = "/host-template"
+SUPERSEDED_ROUTE = "/superseded-template"
 GATED_PATH = "/gated"
 MOUNTED_APP = "/mounted"
 STATIC_MOUNT = "/static"
@@ -117,6 +118,12 @@ def _add_request_routes(app: FastAPI) -> None:
 
     @app.get("/async-route")
     async def async_route(request: Request) -> dict[str, bool]:
+        set_route(request.scope, HOST_ROUTE)
+        return {"ok": True}
+
+    @app.get("/reset-route")
+    async def reset_route(request: Request) -> dict[str, bool]:
+        set_route(request.scope, SUPERSEDED_ROUTE)
         set_route(request.scope, HOST_ROUTE)
         return {"ok": True}
 
