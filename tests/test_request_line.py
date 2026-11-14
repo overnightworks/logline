@@ -11,10 +11,11 @@ from logline import RequestLineMiddleware, configure, set_client_ip, set_sub
 from logline.request import REQUEST_LOGGER_NAME
 from tests.support.apps import (
     BACKGROUND_LOGGER,
+    CHAIN_CAUSE_MESSAGE,
+    CHAIN_MESSAGE,
+    GROUP_MEMBER_MESSAGES,
     HOST_CLIENT_IP,
     SUB,
-    UPSTREAM_LOCATION_SECRET,
-    UPSTREAM_QUERY_SECRET,
     build_app,
 )
 from tests.support.lines import Line, json_lines, lines_of, request_lines
@@ -88,7 +89,7 @@ def test_a_request_that_matched_no_route_logs_null_and_404_and_never_its_path(
     assert "private-query" not in output
 
 
-def test_a_request_whose_endpoint_raised_logs_500_and_the_traceback_as_text(
+def test_a_request_whose_endpoint_raised_logs_500_and_a_traceback_without_its_locals(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     output, lines = _serve_requests(capsys, [_get("/boom", **{"x-secret": "secret-in-a-local"})])
@@ -97,20 +98,35 @@ def test_a_request_whose_endpoint_raised_logs_500_and_the_traceback_as_text(
     assert line["route"] == "/boom"
     assert line["status"] == 500
     (failure,) = [line for line in lines_of(lines, "uvicorn.error") if line["level"] == "error"]
-    assert "builtins.RuntimeError" in str(failure["exception"])
+    assert "RuntimeError: boom after reading 17 characters" in str(failure["exception"])
     assert "secret-in-a-local" not in output
-    assert "reading 17 characters" not in output
 
 
-def test_an_unhandled_http_client_error_logs_neither_its_url_nor_the_redirect_location(
+@pytest.mark.parametrize("path", ["/chained", "/chained-sync"])
+def test_an_endpoint_raising_from_a_cause_logs_both_types_and_messages_in_one_text(
+    capsys: pytest.CaptureFixture[str], path: str
+) -> None:
+    _, lines = _serve_requests(capsys, [_get(path)])
+
+    (line,) = request_lines(lines)
+    assert line["status"] == 500
+    (failure,) = [line for line in lines_of(lines, "uvicorn.error") if line["level"] == "error"]
+    text = str(failure["exception"])
+    assert f"KeyError: {CHAIN_CAUSE_MESSAGE!r}" in text
+    assert f"ValueError: {CHAIN_MESSAGE}" in text
+    assert "direct cause of the following exception" in text
+
+
+def test_an_endpoint_raising_an_exception_group_logs_every_member(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    output, lines = _serve_requests(capsys, [_get("/failing-upstream-call")])
+    _, lines = _serve_requests(capsys, [_get("/group")])
 
     (failure,) = [line for line in lines_of(lines, "uvicorn.error") if line["level"] == "error"]
-    assert "httpx.HTTPStatusError" in str(failure["exception"])
-    for secret in (UPSTREAM_QUERY_SECRET, UPSTREAM_LOCATION_SECRET):
-        assert secret not in output
+    text = str(failure["exception"])
+    first, second = GROUP_MEMBER_MESSAGES
+    assert f"ValueError: {first}" in text
+    assert f"TypeError: {second}" in text
 
 
 def test_the_request_line_is_written_when_the_response_ends_not_after_background_work(

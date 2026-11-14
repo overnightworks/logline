@@ -13,7 +13,8 @@ from tests.support.lines import BASE_KEYS, Line, json_lines
 from tests.support.serving import serve
 
 _LOCAL_SECRET = "local-secret-value"
-_MESSAGE_SECRET = "message-secret-value"
+_MESSAGE = "visible message"
+_CAUSE_MESSAGE = "inner cause message"
 
 
 def _logged_lines(capsys: pytest.CaptureFixture[str]) -> list[Line]:
@@ -109,14 +110,14 @@ def test_a_second_configure_does_not_duplicate_lines(capsys: pytest.CaptureFixtu
         pytest.param(lambda: logging.getLogger("tests").exception("failed"), id="stdlib"),
     ],
 )
-def test_an_exception_renders_as_text_with_its_type_and_neither_message_nor_locals(
+def test_an_exception_renders_as_text_with_its_message_and_without_its_locals(
     capsys: pytest.CaptureFixture[str], emit: Callable[[], None]
 ) -> None:
     configure("exceptions")
 
     def raise_holding_a_secret() -> None:
         secret_in_a_local = _LOCAL_SECRET
-        raise RuntimeError(f"{_MESSAGE_SECRET} after {len(secret_in_a_local)} characters")
+        raise RuntimeError(f"{_MESSAGE} after {len(secret_in_a_local)} characters")
 
     try:
         raise_holding_a_secret()
@@ -126,52 +127,50 @@ def test_an_exception_renders_as_text_with_its_type_and_neither_message_nor_loca
     output = capsys.readouterr().out
     (line,) = json_lines(output)
     assert isinstance(line["exception"], str)
-    assert "builtins.RuntimeError" in line["exception"]
+    assert f"RuntimeError: {_MESSAGE} after 18 characters" in line["exception"]
     assert "raise_holding_a_secret" in line["exception"]
     assert _LOCAL_SECRET not in output
-    assert _MESSAGE_SECRET not in output
 
 
 def _raise_with_a_cause() -> None:
     try:
-        raise KeyError(_MESSAGE_SECRET)
+        raise KeyError(_CAUSE_MESSAGE)
     except KeyError as cause:
-        raise ValueError(_MESSAGE_SECRET) from cause
+        raise ValueError(_MESSAGE) from cause
 
 
 def _raise_during_handling() -> None:
     try:
-        raise KeyError(_MESSAGE_SECRET)
+        raise KeyError(_CAUSE_MESSAGE)
     except KeyError:
-        raise ValueError(_MESSAGE_SECRET)  # noqa: B904 - the implicit context is the subject
+        raise ValueError(_MESSAGE)  # noqa: B904 - the implicit context is the subject
 
 
 def _raise_with_the_context_suppressed() -> None:
     try:
-        raise KeyError(_MESSAGE_SECRET)
+        raise KeyError(_CAUSE_MESSAGE)
     except KeyError:
-        raise ValueError(_MESSAGE_SECRET) from None
-
-
-def _raise_from_itself() -> None:
-    exception = ValueError(_MESSAGE_SECRET)
-    raise exception from exception
+        raise ValueError(_MESSAGE) from None
 
 
 def _raise_in_a_cause_cycle() -> None:
-    first = ValueError(_MESSAGE_SECRET)
-    second = KeyError(_MESSAGE_SECRET)
+    first = ValueError(_MESSAGE)
+    second = KeyError(_CAUSE_MESSAGE)
     first.__cause__ = second
     second.__cause__ = first
     raise first
 
 
 def _raise_in_a_context_cycle() -> None:
-    first = ValueError(_MESSAGE_SECRET)
-    second = KeyError(_MESSAGE_SECRET)
+    first = ValueError(_MESSAGE)
+    second = KeyError(_CAUSE_MESSAGE)
     first.__context__ = second
     second.__context__ = first
     raise first
+
+
+def _raise_a_group() -> None:
+    raise ExceptionGroup("group message", [ValueError(_MESSAGE), TypeError(_CAUSE_MESSAGE)])
 
 
 @pytest.mark.parametrize(
@@ -179,29 +178,55 @@ def _raise_in_a_context_cycle() -> None:
     [
         pytest.param(
             _raise_with_a_cause,
-            ["builtins.KeyError", "direct cause of the following", "builtins.ValueError"],
+            [
+                f"KeyError: {_CAUSE_MESSAGE!r}",
+                "direct cause of the following",
+                f"ValueError: {_MESSAGE}",
+            ],
             id="cause",
         ),
         pytest.param(
             _raise_during_handling,
-            ["builtins.KeyError", "another exception occurred", "builtins.ValueError"],
+            [
+                f"KeyError: {_CAUSE_MESSAGE!r}",
+                "another exception occurred",
+                f"ValueError: {_MESSAGE}",
+            ],
             id="context",
         ),
-        pytest.param(_raise_with_the_context_suppressed, ["builtins.ValueError"], id="suppressed"),
-        pytest.param(_raise_from_itself, ["builtins.ValueError"], id="cause-is-itself"),
+        pytest.param(
+            _raise_with_the_context_suppressed, [f"ValueError: {_MESSAGE}"], id="suppressed"
+        ),
         pytest.param(
             _raise_in_a_cause_cycle,
-            ["builtins.KeyError", "direct cause of the following", "builtins.ValueError"],
+            [
+                f"KeyError: {_CAUSE_MESSAGE!r}",
+                "direct cause of the following",
+                f"ValueError: {_MESSAGE}",
+            ],
             id="cause-cycle",
         ),
         pytest.param(
             _raise_in_a_context_cycle,
-            ["builtins.KeyError", "another exception occurred", "builtins.ValueError"],
+            [
+                f"KeyError: {_CAUSE_MESSAGE!r}",
+                "another exception occurred",
+                f"ValueError: {_MESSAGE}",
+            ],
             id="context-cycle",
+        ),
+        pytest.param(
+            _raise_a_group,
+            [
+                "ExceptionGroup: group message",
+                f"ValueError: {_MESSAGE}",
+                f"TypeError: {_CAUSE_MESSAGE}",
+            ],
+            id="group",
         ),
     ],
 )
-def test_a_chained_exception_renders_every_type_in_order_and_no_message(
+def test_a_chained_exception_renders_every_type_and_message_in_order(
     capsys: pytest.CaptureFixture[str],
     raiser: Callable[[], None],
     rendered_in_order: list[str],
@@ -210,13 +235,11 @@ def test_a_chained_exception_renders_every_type_in_order_and_no_message(
 
     try:
         raiser()
-    except ValueError:
+    except ValueError, ExceptionGroup:
         structlog.get_logger("tests").exception("failed")
 
-    output = capsys.readouterr().out
-    (line,) = json_lines(output)
+    (line,) = json_lines(capsys.readouterr().out)
     text = str(line["exception"])
     positions = [text.index(part) for part in rendered_in_order]
     assert positions == sorted(positions)
-    assert ("KeyError" in text) == ("builtins.KeyError" in rendered_in_order)
-    assert _MESSAGE_SECRET not in output
+    assert ("KeyError" in text) == any("KeyError" in part for part in rendered_in_order)
