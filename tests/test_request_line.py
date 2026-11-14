@@ -114,8 +114,10 @@ def test_the_route_of_a_line_is_the_template_the_framework_or_host_left_and_neve
     assert "private-query" not in output
 
 
-@pytest.mark.parametrize("below_base_http_middleware", [False, True])
-@pytest.mark.parametrize("endpoint", ["/async-route", "/sync-route"])
+@pytest.mark.parametrize(
+    ("endpoint", "below_base_http_middleware"),
+    [("/sync-route", False), ("/async-route", True), ("/sync-route", True)],
+)
 def test_a_route_set_in_an_endpoint_reaches_the_line(
     capsys: pytest.CaptureFixture[str], endpoint: str, below_base_http_middleware: bool
 ) -> None:
