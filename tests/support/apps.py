@@ -21,7 +21,13 @@ def build_app(*, below_base_http_middleware: bool = False) -> FastAPI:
     if below_base_http_middleware:
         app.add_middleware(BaseHTTPMiddleware, dispatch=_pass_through)
     app.add_middleware(RequestLineMiddleware)
+    _add_request_routes(app)
+    _add_logging_routes(app)
+    _add_websocket_route(app)
+    return app
 
+
+def _add_request_routes(app: FastAPI) -> None:
     @app.get("/items/{item_id}")
     async def item(item_id: int) -> dict[str, int]:
         return {"item_id": item_id}
@@ -50,6 +56,8 @@ def build_app(*, below_base_http_middleware: bool = False) -> FastAPI:
         secret_in_a_local = request.headers["x-secret"]
         raise RuntimeError(f"boom after reading {len(secret_in_a_local)} characters")
 
+
+def _add_logging_routes(app: FastAPI) -> None:
     @app.get("/library-line")
     async def library_line() -> dict[str, bool]:
         logging.getLogger("some_library").warning("library says %s", "hello")
@@ -66,6 +74,8 @@ def build_app(*, below_base_http_middleware: bool = False) -> FastAPI:
         logging.getLogger("some_library").warning("library line on a worker thread")
         return {"headers": outgoing_headers()}
 
+
+def _add_websocket_route(app: FastAPI) -> None:
     @app.websocket("/ws")
     async def socket(websocket: WebSocket) -> None:
         set_sub(websocket.scope, SUB)
@@ -73,5 +83,3 @@ def build_app(*, below_base_http_middleware: bool = False) -> FastAPI:
         await websocket.accept()
         await websocket.send_text("hello")
         await websocket.close()
-
-    return app

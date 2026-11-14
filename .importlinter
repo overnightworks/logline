@@ -1,0 +1,18 @@
+# logline speaks ASGI and nothing else: it imports no web framework, server or HTTP client, so
+# every host can take it. quality's CI gate checks the contract over the real import graph.
+[importlinter]
+include_external_packages = True
+root_packages =
+    logline
+
+[importlinter:contract:logline-imports-no-web-framework]
+name = logline imports no web framework, server or HTTP client
+type = forbidden
+source_modules =
+    logline
+forbidden_modules =
+    fastapi
+    starlette
+    uvicorn
+    httpx
+    websockets
