@@ -7,17 +7,29 @@ from typing import Any
 import httpx
 import pytest
 import uvicorn
-from fastapi import FastAPI
-from starlette.staticfiles import StaticFiles
 
-from logline import REQUEST_EVENT, RequestLineMiddleware, configure, set_client_ip, set_sub
+from logline import (
+    REQUEST_EVENT,
+    RequestLineMiddleware,
+    configure,
+    set_client_ip,
+    set_route,
+    set_sub,
+)
 from logline.request import REQUEST_LOGGER_NAME
 from tests.support.apps import (
     BACKGROUND_LOGGER,
     CHAIN_CAUSE_MESSAGE,
     CHAIN_MESSAGE,
+    GATED_PATH,
     GROUP_MEMBER_MESSAGES,
     HOST_CLIENT_IP,
+    HOST_ROUTE,
+    MCP_ROUTE,
+    MOUNTED_APP,
+    NAMED_STATIC_MOUNT,
+    PLAIN_ROUTE,
+    STATIC_MOUNT,
     SUB,
     build_app,
 )
@@ -62,70 +74,59 @@ def _serve_requests(
     return output, json_lines(output)
 
 
-def test_a_request_with_a_route_logs_one_line_with_its_template_and_never_its_path(
-    capsys: pytest.CaptureFixture[str],
+@pytest.mark.parametrize(
+    ("path", "route", "status"),
+    [
+        pytest.param(f"/items/{_UNGUESSABLE_ID}", "/items/{item_id}", 200, id="api-route"),
+        pytest.param("/async-route", HOST_ROUTE, 200, id="api-route-replaced-by-set-route"),
+        pytest.param(MCP_ROUTE, MCP_ROUTE, 200, id="plain-route-naming-itself"),
+        pytest.param(PLAIN_ROUTE, None, 200, id="plain-route"),
+        pytest.param(f"{MOUNTED_APP}/{_UNGUESSABLE_ID}", "/{name}", 200, id="mounted-app-route"),
+        pytest.param(f"{STATIC_MOUNT}/{_UNGUESSABLE_ID}.txt", None, 200, id="static-mount"),
+        pytest.param(
+            f"{NAMED_STATIC_MOUNT}/{_UNGUESSABLE_ID}.txt",
+            NAMED_STATIC_MOUNT,
+            200,
+            id="static-mount-naming-itself",
+        ),
+        pytest.param(f"/{_UNGUESSABLE_ID}", None, 404, id="no-route"),
+        pytest.param(GATED_PATH, None, 401, id="gate-answering-401"),
+    ],
+)
+def test_the_route_of_a_line_is_the_template_the_framework_or_host_left_and_never_the_path(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path, path: str, route: str | None, status: int
 ) -> None:
+    (tmp_path / f"{_UNGUESSABLE_ID}.txt").write_text("static content")
+
     output, lines = _serve_requests(
-        capsys, [_get(f"/items/{_UNGUESSABLE_ID}?search=private-query")]
+        capsys,
+        [_get(f"{path}?search=private-query")],
+        config=uvicorn.Config(build_app(static_directory=tmp_path), log_config=None),
     )
 
     (line,) = request_lines(lines)
     assert line["event"] == REQUEST_EVENT
     assert line["method"] == "GET"
-    assert line["route"] == "/items/{item_id}"
-    assert line["status"] == 200
+    assert (line["route"], line["status"]) == (route, status)
     assert isinstance(line["duration_ms"], float)
     assert line["duration_ms"] >= 0
     assert _UNGUESSABLE_ID not in output
     assert "private-query" not in output
 
 
-def test_a_request_that_matched_no_route_logs_null_and_404_and_never_its_path(
-    capsys: pytest.CaptureFixture[str],
+@pytest.mark.parametrize("below_base_http_middleware", [False, True])
+@pytest.mark.parametrize("endpoint", ["/async-route", "/sync-route"])
+def test_a_route_set_in_an_endpoint_reaches_the_line(
+    capsys: pytest.CaptureFixture[str], endpoint: str, below_base_http_middleware: bool
 ) -> None:
-    output, lines = _serve_requests(capsys, [_get("/no/such/place?search=private-query")])
+    app = build_app(below_base_http_middleware=below_base_http_middleware)
 
-    (line,) = request_lines(lines)
-    assert line["route"] is None
-    assert line["status"] == 404
-    assert "no/such/place" not in output
-    assert "private-query" not in output
-
-
-def _app_with_mounts(static_directory: Path) -> FastAPI:
-    mounted_app = FastAPI()
-
-    @mounted_app.get("/{name}")
-    async def inner_route(name: str) -> dict[str, str]:
-        return {"name": name}
-
-    app = build_app()
-    app.mount("/mounted", mounted_app)
-    app.mount("/static", StaticFiles(directory=static_directory))
-    return app
-
-
-@pytest.mark.parametrize(
-    ("path", "route", "status"),
-    [
-        pytest.param(f"/items/{_UNGUESSABLE_ID}", "/items/{item_id}", 200, id="api-route"),
-        pytest.param(f"/mounted/{_UNGUESSABLE_ID}", "/{name}", 200, id="mounted-app-inner-route"),
-        pytest.param(f"/static/{_UNGUESSABLE_ID}.txt", None, 200, id="static-files-mount"),
-        pytest.param(f"/{_UNGUESSABLE_ID}", None, 404, id="no-route"),
-    ],
-)
-def test_the_route_of_a_line_is_the_template_the_framework_left_and_never_the_path(
-    capsys: pytest.CaptureFixture[str], tmp_path: Path, path: str, route: str | None, status: int
-) -> None:
-    (tmp_path / f"{_UNGUESSABLE_ID}.txt").write_text("static content")
-
-    output, lines = _serve_requests(
-        capsys, [_get(path)], config=uvicorn.Config(_app_with_mounts(tmp_path), log_config=None)
+    _, lines = _serve_requests(
+        capsys, [_get(endpoint)], config=uvicorn.Config(app, log_config=None)
     )
 
     (line,) = request_lines(lines)
-    assert (line["route"], line["status"]) == (route, status)
-    assert _UNGUESSABLE_ID not in output
+    assert line["route"] == HOST_ROUTE
 
 
 def test_a_request_whose_endpoint_raised_logs_500_and_a_traceback_without_its_locals(
@@ -298,3 +299,20 @@ def test_an_app_that_sent_no_response_logs_500(capsys: pytest.CaptureFixture[str
 
     (line,) = request_lines(json_lines(capsys.readouterr().out))
     assert (line["status"], line["ip"]) == (500, HOST_CLIENT_IP)
+
+
+def test_the_last_route_the_host_set_is_the_one_the_line_logs(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure("request-service")
+
+    async def app(scope: Any, receive: Any, send: Any) -> None:
+        set_route(scope, "/first")
+        set_route(scope, HOST_ROUTE)
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    _run_http_scope(app, {"type": "http", "method": "GET", "headers": []})
+
+    (line,) = request_lines(json_lines(capsys.readouterr().out))
+    assert line["route"] == HOST_ROUTE

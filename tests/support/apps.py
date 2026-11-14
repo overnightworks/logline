@@ -1,15 +1,32 @@
 import logging
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 import structlog
 from fastapi import BackgroundTasks, FastAPI, Request, WebSocket
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.responses import Response, StreamingResponse
+from starlette.responses import JSONResponse, Response, StreamingResponse
+from starlette.routing import Route
+from starlette.staticfiles import StaticFiles
+from starlette.types import ASGIApp, Receive, Scope, Send
 
-from logline import RequestLineMiddleware, outgoing_headers, set_client_ip, set_sub
+from logline import (
+    RequestLineMiddleware,
+    outgoing_headers,
+    set_client_ip,
+    set_route,
+    set_sub,
+)
 
 SUB = "sub-of-the-person"
 HOST_CLIENT_IP = "198.51.100.7"
+HOST_ROUTE = "/host-template"
+GATED_PATH = "/gated"
+MOUNTED_APP = "/mounted"
+STATIC_MOUNT = "/static"
+NAMED_STATIC_MOUNT = "/named-static"
+MCP_ROUTE = "/mcp"
+PLAIN_ROUTE = "/plain"
 WEBSOCKET_GREETING = "greeting-frame-content"
 BACKGROUND_LOGGER = "tests.background"
 BACKGROUND_EVENT = "background work after the response"
@@ -22,16 +39,65 @@ async def _pass_through(request: Request, call_next: RequestResponseEndpoint) ->
     return await call_next(request)
 
 
-def build_app(*, below_base_http_middleware: bool = False) -> FastAPI:
-    """A FastAPI app behind logline's middleware, one route for each behaviour a test drives."""
+class _AnswersUnauthorizedAtGatedPath:
+    """A pure-ASGI gate in front of the router, as a host's sign-in gate sits."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self._app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope["path"] == GATED_PATH:
+            await Response(status_code=401)(scope, receive, send)
+            return
+        await self._app(scope, receive, send)
+
+
+class _NamedRoute:
+    """An ASGI app below a `Mount` that names its route for the request line."""
+
+    def __init__(self, template: str, app: ASGIApp) -> None:
+        self._template = template
+        self._app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        set_route(scope, self._template)
+        await self._app(scope, receive, send)
+
+
+def build_app(
+    *, below_base_http_middleware: bool = False, static_directory: Path | None = None
+) -> FastAPI:
+    """A FastAPI app behind logline's middleware, one route for each behaviour a test drives.
+
+    With a `static_directory` it also mounts a FastAPI app and that directory twice, once of them
+    naming its route.
+    """
     app = FastAPI()
     if below_base_http_middleware:
         app.add_middleware(BaseHTTPMiddleware, dispatch=_pass_through)
+    app.add_middleware(_AnswersUnauthorizedAtGatedPath)
     app.add_middleware(RequestLineMiddleware)
+    if static_directory is not None:
+        _add_mounts(app, static_directory)
     _add_request_routes(app)
     _add_logging_routes(app)
     _add_websocket_route(app)
     return app
+
+
+def _add_mounts(app: FastAPI, static_directory: Path) -> None:
+    mounted_app = FastAPI()
+
+    @mounted_app.get("/{name}")
+    async def inner_route(name: str) -> dict[str, str]:
+        return {"name": name}
+
+    app.mount(MOUNTED_APP, mounted_app)
+    app.mount(STATIC_MOUNT, StaticFiles(directory=static_directory))
+    app.mount(
+        NAMED_STATIC_MOUNT,
+        _NamedRoute(NAMED_STATIC_MOUNT, StaticFiles(directory=static_directory)),
+    )
 
 
 def _add_request_routes(app: FastAPI) -> None:
@@ -48,6 +114,26 @@ def _add_request_routes(app: FastAPI) -> None:
     def sync_sub(request: Request) -> dict[str, bool]:
         set_sub(request.scope, SUB)
         return {"ok": True}
+
+    @app.get("/async-route")
+    async def async_route(request: Request) -> dict[str, bool]:
+        set_route(request.scope, HOST_ROUTE)
+        return {"ok": True}
+
+    @app.get("/sync-route")
+    def sync_route(request: Request) -> dict[str, bool]:
+        set_route(request.scope, HOST_ROUTE)
+        return {"ok": True}
+
+    async def mcp_front(request: Request) -> JSONResponse:
+        set_route(request.scope, MCP_ROUTE)
+        return JSONResponse({"ok": True})
+
+    async def plain_front(request: Request) -> JSONResponse:
+        return JSONResponse({"ok": True})
+
+    app.router.routes.append(Route(MCP_ROUTE, mcp_front))
+    app.router.routes.append(Route(PLAIN_ROUTE, plain_front))
 
     @app.get("/host-client-ip")
     async def host_client_ip(request: Request) -> dict[str, bool]:
@@ -124,6 +210,7 @@ def _add_websocket_route(app: FastAPI) -> None:
     async def socket(websocket: WebSocket) -> None:
         set_sub(websocket.scope, SUB)
         set_client_ip(websocket.scope, HOST_CLIENT_IP)
+        set_route(websocket.scope, HOST_ROUTE)
         await websocket.accept()
         await websocket.send_text(WEBSOCKET_GREETING)
         await websocket.close()
