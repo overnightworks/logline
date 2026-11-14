@@ -1,0 +1,105 @@
+"""One request line per HTTP request, and how a host reports the person and address.
+
+This module imports no web framework: it speaks ASGI.
+"""
+
+import time
+from collections.abc import Awaitable, Callable, MutableMapping
+from dataclasses import dataclass
+from typing import Any
+
+import structlog
+
+from logline.trace import request_trace
+
+__all__ = ["REQUEST_LOGGER_NAME", "RequestLineMiddleware", "set_client_ip", "set_sub"]
+
+type Scope = MutableMapping[str, Any]
+type Message = MutableMapping[str, Any]
+type Receive = Callable[[], Awaitable[Message]]
+type Send = Callable[[Message], Awaitable[None]]
+type ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
+
+REQUEST_LOGGER_NAME = "logline.request"
+_STATE_KEY = "logline.request"
+_TRACE_HEADER_NAMES = frozenset({b"traceparent", b"tracestate"})
+_STATUS_WHEN_NONE_SENT = 500
+
+_request_logger = structlog.get_logger(REQUEST_LOGGER_NAME)
+
+
+@dataclass(slots=True)
+class _RequestRecord:
+    sub: str | None
+    ip: str | None
+
+
+def _record_of(scope: Scope) -> _RequestRecord | None:
+    return scope.get("state", {}).get(_STATE_KEY)
+
+
+def set_sub(scope: Scope, sub: str | None) -> None:
+    """Report the person's `sub` for this request's line; no effect outside an HTTP request."""
+    record = _record_of(scope)
+    if record is not None:
+        record.sub = sub
+
+
+def set_client_ip(scope: Scope, ip: str | None) -> None:
+    """Report the client address for this request's line; no effect outside an HTTP request."""
+    record = _record_of(scope)
+    if record is not None:
+        record.ip = ip
+
+
+def _client_host(scope: Scope) -> str | None:
+    client = scope.get("client")
+    return client[0] if client else None
+
+
+def _route_template(scope: Scope) -> str | None:
+    return getattr(scope.get("route"), "path", None)
+
+
+def _incoming_trace_headers(scope: Scope) -> dict[str, str]:
+    return {
+        name.decode("latin-1"): value.decode("latin-1")
+        for name, value in scope["headers"]
+        if name in _TRACE_HEADER_NAMES
+    }
+
+
+class RequestLineMiddleware:
+    """ASGI middleware: writes one `logline.request` line per `http` scope and joins its trace."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self._app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+        record = _RequestRecord(sub=None, ip=_client_host(scope))
+        scope.setdefault("state", {})[_STATE_KEY] = record
+        sent_status: int | None = None
+
+        async def send_noting_status(message: Message) -> None:
+            nonlocal sent_status
+            if message["type"] == "http.response.start":
+                sent_status = message["status"]
+            await send(message)
+
+        started = time.perf_counter()
+        with request_trace(_incoming_trace_headers(scope)):
+            try:
+                await self._app(scope, receive, send_noting_status)
+            finally:
+                _request_logger.info(
+                    "request",
+                    method=scope["method"],
+                    route=_route_template(scope),
+                    status=sent_status or _STATUS_WHEN_NONE_SENT,
+                    duration_ms=round((time.perf_counter() - started) * 1000, 3),
+                    sub=record.sub,
+                    ip=record.ip,
+                )

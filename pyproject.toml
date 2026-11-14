@@ -1,0 +1,78 @@
+[project]
+name = "overnightworks-logline"
+dynamic = ["version"]
+description = "The fleet's shared Python logger: one JSON record shape on stdout, a request line and W3C trace context"
+authors = [{ name = "Flex0r (Felix Hummert)", email = "felix.hummert@gmail.com" }]
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.14"
+keywords = ["logging", "structlog", "json", "asgi", "opentelemetry", "traceparent"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Typing :: Typed",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.14",
+]
+
+dependencies = [
+    "structlog>=25.1,<26",
+    "opentelemetry-api>=1.30,<2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3,<10",
+    "pytest-cov>=7,<8",
+    "pytest-xdist>=3.7,<4",
+    "fastapi>=0.123.7,<1",
+    "uvicorn>=0.41,<1",
+    "websockets>=15,<17",
+    "httpx>=0.27,<1",
+    "ruff>=0.4,<1",
+    "pyright>=1.1.414,<2",
+    "deptry==0.25.1",
+]
+
+[project.urls]
+Repository = "https://github.com/overnightworks/logline"
+Issues = "https://github.com/overnightworks/logline/issues"
+Releases = "https://github.com/overnightworks/logline/releases"
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+version = {attr = "logline.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["logline*"]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib"
+pythonpath = ["."]
+
+[tool.coverage.run]
+branch = true
+
+[tool.coverage.report]
+fail_under = 100
+
+[tool.pyright]
+include = [
+    "src/logline",
+    "tests",
+]
+pythonVersion = "3.14"
+
+[tool.uv]
+cache-keys = [{ file = "pyproject.toml" }, { file = "src/logline/__init__.py" }]
