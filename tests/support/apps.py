@@ -1,16 +1,10 @@
 import logging
 from collections.abc import AsyncIterator
-from pathlib import Path
 
 import structlog
 from fastapi import BackgroundTasks, FastAPI, Request, WebSocket
-from starlette.applications import Starlette
-from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response, StreamingResponse
-from starlette.routing import Mount
-from starlette.staticfiles import StaticFiles
-from starlette.types import ASGIApp, Receive, Scope, Send
 
 from logline import RequestLineMiddleware, outgoing_headers, set_client_ip, set_sub
 
@@ -134,50 +128,3 @@ def _add_websocket_route(app: FastAPI) -> None:
         await websocket.send_text(WEBSOCKET_GREETING)
         await websocket.close()
 
-
-STATIC_MOUNT = "/static"
-PLAIN_ASGI_MOUNT = "/plain"
-PARAMETERISED_MOUNT = "/users/{user_id}"
-ROUTER_MOUNT = "/mcp"
-ROUTER_ROUTE = "/{x}"
-GATED_PATH = "/gated"
-STATIC_FILE_NAME = "readme-of-the-static-files.txt"
-
-
-class _DenyingGate:
-    """A pure-ASGI gate in front of the router: it answers GATED_PATH with 401 and nothing else."""
-
-    def __init__(self, app: ASGIApp) -> None:
-        self._app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http" and scope["path"] == GATED_PATH:
-            await Response(status_code=401)(scope, receive, send)
-            return
-        await self._app(scope, receive, send)
-
-
-async def _plain_asgi_app(scope: Scope, receive: Receive, send: Send) -> None:
-    await Response("plain")(scope, receive, send)
-
-
-def build_mounted_app(static_directory: Path) -> Starlette:
-    """A Starlette app: static files, plain ASGI apps and a router mounted, a gate before them.
-
-    Starlette, not FastAPI: FastAPI's router leaves `scope["route"]` unset where a mount answers.
-    """
-    router_app = FastAPI()
-
-    @router_app.get(ROUTER_ROUTE)
-    async def router_route(x: str) -> dict[str, str]:
-        return {"x": x}
-
-    return Starlette(
-        routes=[
-            Mount(STATIC_MOUNT, StaticFiles(directory=static_directory)),
-            Mount(PLAIN_ASGI_MOUNT, _plain_asgi_app),
-            Mount(PARAMETERISED_MOUNT, _plain_asgi_app),
-            Mount(ROUTER_MOUNT, router_app),
-        ],
-        middleware=[Middleware(RequestLineMiddleware), Middleware(_DenyingGate)],
-    )

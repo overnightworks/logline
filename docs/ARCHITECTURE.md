@@ -107,8 +107,9 @@ tests. The lowest direct dependency floors run the same tests.
 ## 8. Risks and Technical Debt
 
 - `route` is what the framework left in `scope["route"]`; logline never re-matches routes, hosts or paths. Inside
-  a mounted router it is the router's own template, relative to the mount, and nested mounts are not joined. A
-  framework that leaves no route for a mount (FastAPI's router) logs `null` there.
+  a mounted FastAPI app it is that app's own template, relative to the mount. FastAPI's router leaves it only for
+  an `APIRoute`, so a `Mount` or a plain Starlette `Route` answering under FastAPI logs `null`, as do an unmatched
+  path and a gate that answered before the router.
 - `duration_ms` runs until the last body chunk, so a long streamed response logs when it ends and
   background work after the response is not counted; a client disconnect logs the status already sent, or 500 if none.
 - A public client can choose its `trace_id`; stripping `traceparent` at the edge is the platform's.

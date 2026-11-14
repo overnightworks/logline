@@ -77,15 +77,12 @@ An image build bakes `SERVICE_VERSION` from the release it builds.
 The middleware writes one line per HTTP request on the logger `logline.request`, with `event`
 `logline.REQUEST_EVENT` (`request`) and `method`, `route`, `status`, `duration_ms`, `sub` and `ip`:
 
-- `route` is the route template (`/notes/{note_id}`), never the path: the template of the route the framework
-  matched last, as it left it in `scope["route"]`. Where a Starlette `Mount` answered itself (static files, a
-  mounted plain ASGI app), it is the mount's own template (`/static`, `/mcp`, `/users/{user_id}`). Inside a
-  mounted Starlette or FastAPI app it is that app's own template, relative to the mount (`/{x}` for an app
-  mounted at `/mcp`); nested mounts are not joined. logline reads only what the framework left in the scope,
-  so a framework that leaves no route there (FastAPI's router does not for a mount) logs `null`.
-  `route: null` means that no route matched before the answer was sent, and the status says why: 404, or a
-  401 from a gate in front of the router. An exception that reaches the middleware logs 500, or the status
-  already sent.
+- `route` is the route template (`/notes/{note_id}`), never the path: what the framework left in
+  `scope["route"]`, which inside a mounted FastAPI app is that app's own template, relative to the mount.
+  `null` means no template in the scope: no route matched (404), a gate answered before the router (401), or
+  a `Mount` (static files, a mounted ASGI app) or a plain Starlette `Route` answered under FastAPI, which
+  leaves the template only for an `APIRoute`. An exception that reaches the middleware logs 500, or the
+  status already sent.
 - `sub` is `null` until the host calls `set_sub`.
 - `ip` is the ASGI client address until the host calls `set_client_ip`.
 - `duration_ms` runs until the last body chunk is sent, and the line is written then; background work after

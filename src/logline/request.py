@@ -64,11 +64,6 @@ def _client_host(scope: Scope) -> str | None:
 
 
 def _route_template(scope: Scope) -> str | None:
-    """The path template of the route the framework matched last, as it left it in the scope.
-
-    That is the route's own template, relative inside a mounted router, and the mount's template
-    where a mount answered itself (static files, a mounted plain ASGI app); `None` if none matched.
-    """
     return getattr(scope.get("route"), "path", None)
 
 

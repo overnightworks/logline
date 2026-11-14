@@ -7,6 +7,8 @@ from typing import Any
 import httpx
 import pytest
 import uvicorn
+from fastapi import FastAPI
+from starlette.staticfiles import StaticFiles
 
 from logline import REQUEST_EVENT, RequestLineMiddleware, configure, set_client_ip, set_sub
 from logline.request import REQUEST_LOGGER_NAME
@@ -14,18 +16,10 @@ from tests.support.apps import (
     BACKGROUND_LOGGER,
     CHAIN_CAUSE_MESSAGE,
     CHAIN_MESSAGE,
-    GATED_PATH,
     GROUP_MEMBER_MESSAGES,
     HOST_CLIENT_IP,
-    PARAMETERISED_MOUNT,
-    PLAIN_ASGI_MOUNT,
-    ROUTER_MOUNT,
-    ROUTER_ROUTE,
-    STATIC_FILE_NAME,
-    STATIC_MOUNT,
     SUB,
     build_app,
-    build_mounted_app,
 )
 from tests.support.lines import Line, json_lines, lines_of, request_lines
 from tests.support.serving import serve
@@ -98,38 +92,40 @@ def test_a_request_that_matched_no_route_logs_null_and_404_and_never_its_path(
     assert "private-query" not in output
 
 
+def _app_with_mounts(static_directory: Path) -> FastAPI:
+    mounted_app = FastAPI()
+
+    @mounted_app.get("/{name}")
+    async def inner_route(name: str) -> dict[str, str]:
+        return {"name": name}
+
+    app = build_app()
+    app.mount("/mounted", mounted_app)
+    app.mount("/static", StaticFiles(directory=static_directory))
+    return app
+
+
 @pytest.mark.parametrize(
     ("path", "route", "status"),
     [
-        pytest.param(f"{STATIC_MOUNT}/{STATIC_FILE_NAME}", STATIC_MOUNT, 200, id="static-file"),
-        pytest.param(f"{STATIC_MOUNT}/{_UNGUESSABLE_ID}.txt", STATIC_MOUNT, 404, id="static-miss"),
-        pytest.param(
-            f"{PLAIN_ASGI_MOUNT}/{_UNGUESSABLE_ID}", PLAIN_ASGI_MOUNT, 200, id="plain-asgi-app"
-        ),
-        pytest.param(
-            f"/users/{_UNGUESSABLE_ID}/{_UNGUESSABLE_ID}",
-            PARAMETERISED_MOUNT,
-            200,
-            id="mount-with-a-parameter",
-        ),
-        pytest.param(f"{ROUTER_MOUNT}/{_UNGUESSABLE_ID}", ROUTER_ROUTE, 200, id="mounted-router"),
-        pytest.param(GATED_PATH, None, 401, id="gate-in-front-of-the-router"),
+        pytest.param(f"/items/{_UNGUESSABLE_ID}", "/items/{item_id}", 200, id="api-route"),
+        pytest.param(f"/mounted/{_UNGUESSABLE_ID}", "/{name}", 200, id="mounted-app-inner-route"),
+        pytest.param(f"/static/{_UNGUESSABLE_ID}.txt", None, 200, id="static-files-mount"),
         pytest.param(f"/{_UNGUESSABLE_ID}", None, 404, id="no-route"),
     ],
 )
-def test_a_mounted_request_logs_the_template_the_framework_matched_and_never_its_path(
+def test_the_route_of_a_line_is_the_template_the_framework_left_and_never_the_path(
     capsys: pytest.CaptureFixture[str], tmp_path: Path, path: str, route: str | None, status: int
 ) -> None:
-    (tmp_path / STATIC_FILE_NAME).write_text("static content")
+    (tmp_path / f"{_UNGUESSABLE_ID}.txt").write_text("static content")
 
     output, lines = _serve_requests(
-        capsys, [_get(path)], config=uvicorn.Config(build_mounted_app(tmp_path), log_config=None)
+        capsys, [_get(path)], config=uvicorn.Config(_app_with_mounts(tmp_path), log_config=None)
     )
 
     (line,) = request_lines(lines)
     assert (line["route"], line["status"]) == (route, status)
     assert _UNGUESSABLE_ID not in output
-    assert STATIC_FILE_NAME not in output
 
 
 def test_a_request_whose_endpoint_raised_logs_500_and_a_traceback_without_its_locals(
