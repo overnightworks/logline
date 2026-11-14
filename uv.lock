@@ -287,8 +287,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "opentelemetry-api", specifier = ">=1.30,<2" },
-    { name = "structlog", specifier = ">=25.1,<26" },
+    { name = "opentelemetry-api", specifier = ">=1.30" },
+    { name = "structlog", specifier = ">=25.1" },
 ]
 
 [package.metadata.requires-dev]

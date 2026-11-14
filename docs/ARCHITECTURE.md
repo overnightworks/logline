@@ -25,9 +25,11 @@ Module owners in `logline`:
 - `configuration` owns `configure`: the root JSON handler on stdout, the root level from `LOG_LEVEL`, the
   `logline.request` level pin, the HTTP client loggers' level and the routing of uvicorn's loggers.
 - `record` owns the record shape: the processors that stamp `ts`, `level`, `service`, `version`, `logger` and
-  `trace_id`, and render exceptions as text.
+  `trace_id`, and render exceptions as structlog's text traceback.
 - `request` owns the request line, the per-request record in `scope["state"]` and the functions that set
   `sub` and `ip`.
+- `testing` owns `configured`, the host tests' way to run `configure` and restore the logging state it
+  changed; it is the one module that reads `configuration`'s list of touched loggers.
 - `trace` owns the request's trace: it starts or continues it in OpenTelemetry's context, reads `trace_id`
   from it and hands it on as headers.
 
@@ -71,8 +73,9 @@ what it is told.
 
 **Never logged.** Credentials, tokens, cookies, header values, contents, raw paths and query strings stay out
 of every line logline writes or routes. The mechanisms are the route template instead of the path, text
-tracebacks of frames and exception types, without messages or locals, the HTTP client loggers at WARNING and
-the filter on uvicorn's WebSocket lines and DEBUG records, which carry websockets' request headers and frames.
+tracebacks without local variables, the HTTP client loggers at WARNING and the filter on uvicorn's WebSocket
+lines and DEBUG records, which carry websockets' request headers and frames. An exception message is logged
+as written: the log shows what happened, and a secret in a message is the app's defect.
 
 **Proof strategy.** The tests drive a real FastAPI app through the middleware under a real `uvicorn.Server`
 and read stdout; only the clock and randomness may be faked. Branch coverage is 100 %, measured over all
@@ -103,8 +106,10 @@ tests. The lowest direct dependency floors run the same tests.
 
 ## 8. Risks and Technical Debt
 
-- Under a Starlette `Mount`, the route template is the innermost route's, relative to the mount; the mount's
-  `root_path` is never joined in.
+- `route` is what the framework left in `scope["route"]`; logline never re-matches routes, hosts or paths. Inside
+  a mounted FastAPI app it is that app's own template, relative to the mount. FastAPI's router leaves it only for
+  an `APIRoute`, so a `Mount` or a plain Starlette `Route` answering under FastAPI logs `null`, as do an unmatched
+  path and a gate that answered before the router.
 - `duration_ms` runs until the last body chunk, so a long streamed response logs when it ends and
   background work after the response is not counted; a client disconnect logs the status already sent, or 500 if none.
 - A public client can choose its `trace_id`; stripping `traceparent` at the edge is the platform's.

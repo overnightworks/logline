@@ -49,6 +49,8 @@ if __name__ == "__main__":
   request's trace.
 - `set_sub(scope, sub)` and `set_client_ip(scope, ip)` take the ASGI scope. Call them from an async or a sync
   endpoint, from a dependency, or from below a `BaseHTTPMiddleware`. Outside an HTTP request they do nothing.
+  They may run at any point before the response ends, so a sign-in callback that establishes the person calls
+  `set_sub` itself.
 
 ## The record
 
@@ -60,23 +62,27 @@ object with these keys, plus the key-value fields the caller adds:
 | `ts` | ISO 8601, UTC |
 | `level` | `debug`, `info`, `warning`, `error` or `critical` |
 | `service` | the name given to `configure` |
-| `version` | the environment variable `SERVICE_VERSION` at `configure`, `null` when it is unset |
+| `version` | the environment variable `SERVICE_VERSION` at `configure`, `null` when it is unset or empty |
 | `logger` | the logger's name |
 | `event` | the message |
 | `trace_id` | the running request's trace id as 32 hex digits, `null` outside a request |
 
 A caller's own field named `ts`, `level`, `service`, `version`, `logger` or `trace_id` is overwritten. An
-exception renders as text in `exception`: its frames and the type of each exception in the chain,
-never a message.
+exception renders as Python's text traceback in `exception`: its frames, its message and the whole chain
+(`__cause__`, `__context__`, the members of an `ExceptionGroup`), never local variables.
 An image build bakes `SERVICE_VERSION` from the release it builds.
 
 ## The request line
 
-The middleware writes one line per HTTP request on the logger `logline.request`, with `event` `request` and
-`method`, `route`, `status`, `duration_ms`, `sub` and `ip`:
+The middleware writes one line per HTTP request on the logger `logline.request`, with `event`
+`logline.REQUEST_EVENT` (`request`) and `method`, `route`, `status`, `duration_ms`, `sub` and `ip`:
 
-- `route` is the route template (`/notes/{note_id}`), never the path. A request that matched no route logs
-  `route: null` and status 404. An exception that reaches the middleware logs 500, or the status already sent.
+- `route` is the route template (`/notes/{note_id}`), never the path: what the framework left in
+  `scope["route"]`, which inside a mounted FastAPI app is that app's own template, relative to the mount.
+  `null` means no template in the scope: no route matched (404), a gate answered before the router (401), or
+  a `Mount` (static files, a mounted ASGI app) or a plain Starlette `Route` answered under FastAPI, which
+  leaves the template only for an `APIRoute`. An exception that reaches the middleware logs 500, or the
+  status already sent.
 - `sub` is `null` until the host calls `set_sub`.
 - `ip` is the ASGI client address until the host calls `set_client_ip`.
 - `duration_ms` runs until the last body chunk is sent, and the line is written then; background work after
@@ -114,7 +120,18 @@ request: `httpx.get(url, headers=outgoing_headers())`.
 | Variable | Effect |
 |---|---|
 | `LOG_LEVEL` | the root level: `debug`, `info`, `warning`, `error` or `critical`, case-insensitive; `info` when unset. Anything else, an empty value included, makes `configure` raise `ValueError` |
-| `SERVICE_VERSION` | the `version` of every line |
+| `SERVICE_VERSION` | the `version` of every line; unset or empty makes it `null` |
+
+## The host's duties
+
+logline shows what the app logs; the app keeps its logs meaningful and safe:
+
+- An exception message is logged as written. A secret in a message, or in a field the app logs, is the app's
+  defect: it raises and logs ids, never tokens or contents.
+- No `logging.config.dictConfig` after `configure`: it replaces the handlers `configure` installed.
+- uvicorn runs with `log_config=None` (see below).
+
+quality's check rule for hosts is where these duties get checked.
 
 ## Starting uvicorn
 
@@ -129,14 +146,46 @@ logline writes no credentials, tokens, cookies, header values, contents (bodies,
 transcripts, audio), raw paths or query strings, and a host adds none through a field: it logs ids and the
 `trace_id`. For this, `configure` also:
 
-- renders exceptions as text, never as a dict with local variables and never with a message, which a
-  library fills with the URL it called, its query and the redirect location; a host logs the ids it needs
-  as fields;
+- renders exceptions as text, never as a dict with local variables;
 - sets the `httpx`, `httpx2` and `httpcore` loggers to WARNING, because their INFO lines carry the full URL
   with its query; the callee's request line with the same `trace_id` covers the call;
 - drops uvicorn's WebSocket connection lines, which carry the raw path with its query;
 - drops records below INFO on `uvicorn.error` at every `LOG_LEVEL`, because websockets writes the request path, every
   header and every frame there at DEBUG.
+
+## Testing a host
+
+`logline.testing.configured(service)` is a context manager for a host's in-process tests. It calls
+`configure(service)` and on exit restores the process's logging as it was before: the root logger's handlers
+and level, the handlers, filters, levels and propagation of the uvicorn, HTTP client and `logline.request`
+loggers, structlog's configuration and the stdlib logger class its factory installs. The module imports no
+test framework.
+
+```python
+import json
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from logline import REQUEST_EVENT, RequestLineMiddleware
+from logline.testing import configured
+
+
+def test_the_app_logs_its_request(capsys):
+    app = FastAPI()
+    app.add_middleware(RequestLineMiddleware)
+
+    @app.get("/notes/{note_id}")
+    def read_note(note_id: str):
+        return {"id": note_id}
+
+    with configured("notes"):
+        TestClient(app).get("/notes/7")
+
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    (request,) = [line for line in lines if line["event"] == REQUEST_EVENT]
+    assert request["route"] == "/notes/{note_id}"
+```
 
 ## Versioning
 

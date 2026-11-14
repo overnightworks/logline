@@ -1,11 +1,10 @@
 import logging
 from collections.abc import AsyncIterator
 
-import httpx
 import structlog
 from fastapi import BackgroundTasks, FastAPI, Request, WebSocket
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.responses import RedirectResponse, Response, StreamingResponse
+from starlette.responses import Response, StreamingResponse
 
 from logline import RequestLineMiddleware, outgoing_headers, set_client_ip, set_sub
 
@@ -14,8 +13,9 @@ HOST_CLIENT_IP = "198.51.100.7"
 WEBSOCKET_GREETING = "greeting-frame-content"
 BACKGROUND_LOGGER = "tests.background"
 BACKGROUND_EVENT = "background work after the response"
-UPSTREAM_QUERY_SECRET = "upstream-query-secret"
-UPSTREAM_LOCATION_SECRET = "upstream-location-secret"
+CHAIN_CAUSE_MESSAGE = "inner cause message"
+CHAIN_MESSAGE = "visible message"
+GROUP_MEMBER_MESSAGES = ("first member message", "second member message")
 
 
 async def _pass_through(request: Request, call_next: RequestResponseEndpoint) -> Response:
@@ -63,15 +63,18 @@ def _add_request_routes(app: FastAPI) -> None:
         secret_in_a_local = request.headers["x-secret"]
         raise RuntimeError(f"boom after reading {len(secret_in_a_local)} characters")
 
-    @app.get("/redirecting-upstream")
-    async def redirecting_upstream() -> RedirectResponse:
-        return RedirectResponse(f"/elsewhere?token={UPSTREAM_LOCATION_SECRET}")
+    @app.get("/chained")
+    async def chained() -> None:
+        _raise_chained()
 
-    @app.get("/failing-upstream-call")
-    async def failing_upstream_call(request: Request) -> None:
-        async with httpx.AsyncClient(base_url=str(request.base_url)) as client:
-            response = await client.get(f"/redirecting-upstream?key={UPSTREAM_QUERY_SECRET}")
-        response.raise_for_status()
+    @app.get("/chained-sync")
+    def chained_sync() -> None:
+        _raise_chained()
+
+    @app.get("/group")
+    async def group() -> None:
+        first, second = GROUP_MEMBER_MESSAGES
+        raise ExceptionGroup("group message", [ValueError(first), TypeError(second)])
 
     @app.get("/background-task")
     async def background_task(tasks: BackgroundTasks) -> dict[str, bool]:
@@ -85,6 +88,13 @@ def _add_request_routes(app: FastAPI) -> None:
             yield b"last chunk"
 
         return StreamingResponse(chunks())
+
+
+def _raise_chained() -> None:
+    try:
+        raise KeyError(CHAIN_CAUSE_MESSAGE)
+    except KeyError as cause:
+        raise ValueError(CHAIN_MESSAGE) from cause
 
 
 def _log_background_work() -> None:

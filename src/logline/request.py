@@ -12,7 +12,13 @@ import structlog
 
 from logline.trace import request_trace
 
-__all__ = ["REQUEST_LOGGER_NAME", "RequestLineMiddleware", "set_client_ip", "set_sub"]
+__all__ = [
+    "REQUEST_EVENT",
+    "REQUEST_LOGGER_NAME",
+    "RequestLineMiddleware",
+    "set_client_ip",
+    "set_sub",
+]
 
 type Scope = MutableMapping[str, Any]
 type Message = MutableMapping[str, Any]
@@ -21,6 +27,7 @@ type Send = Callable[[Message], Awaitable[None]]
 type ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
 
 REQUEST_LOGGER_NAME = "logline.request"
+REQUEST_EVENT = "request"
 _STATE_KEY = "logline.request"
 _STATUS_WHEN_NONE_SENT = 500
 
@@ -80,7 +87,7 @@ class RequestLineMiddleware:
             nonlocal written
             written = True
             _request_logger.info(
-                "request",
+                REQUEST_EVENT,
                 method=scope["method"],
                 route=_route_template(scope),
                 status=sent_status or _STATUS_WHEN_NONE_SENT,

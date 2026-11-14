@@ -24,7 +24,17 @@ _DEFAULT_LEVEL_NAME = "info"
 _UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access", "uvicorn.asgi")
 # Their INFO lines carry the full URL with its query.
 _CLIENT_LOGGERS_WITH_URLS = ("httpx", "httpx2", "httpcore")
+_ROOT_LOGGER_NAME = ""
 _UVICORN_WEBSOCKET_LINE = '"WebSocket %s"'
+
+
+# The loggers `configure` changes, for a caller that restores them.
+TOUCHED_LOGGER_NAMES = (
+    _ROOT_LOGGER_NAME,
+    REQUEST_LOGGER_NAME,
+    *_UVICORN_LOGGERS,
+    *_CLIENT_LOGGERS_WITH_URLS,
+)
 
 
 class _DropAll(logging.Filter):
@@ -84,7 +94,7 @@ def configure(service: str) -> None:
     root level; a malformed `LOG_LEVEL` raises `ValueError` before anything changes.
     """
     root_level = _root_level()
-    processors = record_shape(service, os.environ.get("SERVICE_VERSION"))
+    processors = record_shape(service, os.environ.get("SERVICE_VERSION") or None)
     structlog.configure(
         processors=[filter_by_level, *processors, ProcessorFormatter.wrap_for_formatter],
         logger_factory=LoggerFactory(),
