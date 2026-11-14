@@ -1,0 +1,8 @@
+claim_id = "eb0d6d513ced41e2b89dd9461c55e795"
+agent = "Claude a1cd69a1-a2ad-475d-b925-408ebb99c070"
+role = "builder"
+base = "f3ea55d16036ea84bbbd06f8bb303490d4934c94"
+branch = "claude/issue-5-logline-0-1-1"
+scope = ["README.md", "docs", "pyproject.toml", "src", "tests", "uv.lock"]
+opened_commit = "460f6b9a1f0c94183d10e56c11aad2be822ea810"
+whole_reason = "One release of small changes the pilot found; they share the README, the record module and the release."
