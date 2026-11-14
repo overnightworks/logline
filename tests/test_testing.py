@@ -63,6 +63,21 @@ def test_leaving_the_block_restores_the_logging_the_host_had(
     assert _seen() == before
 
 
+def test_leaving_the_block_restores_the_logger_class_the_host_had() -> None:
+    class HostLogger(logging.Logger):
+        pass
+
+    original_class = logging.getLoggerClass()
+    logging.setLoggerClass(HostLogger)
+    try:
+        with configured("logger-class"):
+            pass
+
+        assert logging.getLoggerClass() is HostLogger
+    finally:
+        logging.setLoggerClass(original_class)
+
+
 def test_a_failing_block_still_restores_the_logging() -> None:
     before = _seen()
 
