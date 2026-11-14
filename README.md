@@ -134,7 +134,9 @@ transcripts, audio), raw paths or query strings, and a host adds none through a 
   as fields;
 - sets the `httpx`, `httpx2` and `httpcore` loggers to WARNING, because their INFO lines carry the full URL
   with its query; the callee's request line with the same `trace_id` covers the call;
-- drops uvicorn's WebSocket connection lines, which carry the raw path with its query.
+- drops uvicorn's WebSocket connection lines, which carry the raw path with its query;
+- drops records below INFO on `uvicorn.error` at every `LOG_LEVEL`, because websockets writes the request path, every
+  header and every frame there at DEBUG.
 
 ## Versioning
 
