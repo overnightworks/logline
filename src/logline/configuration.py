@@ -84,7 +84,7 @@ def configure(service: str) -> None:
     root level; a malformed `LOG_LEVEL` raises `ValueError` before anything changes.
     """
     root_level = _root_level()
-    processors = record_shape(service, os.environ.get("SERVICE_VERSION"))
+    processors = record_shape(service, os.environ.get("SERVICE_VERSION") or None)
     structlog.configure(
         processors=[filter_by_level, *processors, ProcessorFormatter.wrap_for_formatter],
         logger_factory=LoggerFactory(),

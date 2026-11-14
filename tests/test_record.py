@@ -45,7 +45,11 @@ def test_every_line_of_a_served_request_is_json_in_the_record_shape(
 
 @pytest.mark.parametrize(
     ("environment", "expected_version"),
-    [({}, None), ({"SERVICE_VERSION": "2026.11.14.1"}, "2026.11.14.1")],
+    [
+        ({}, None),
+        ({"SERVICE_VERSION": ""}, None),
+        ({"SERVICE_VERSION": "2026.11.14.1"}, "2026.11.14.1"),
+    ],
 )
 def test_version_comes_from_service_version_or_is_null(
     monkeypatch: pytest.MonkeyPatch,

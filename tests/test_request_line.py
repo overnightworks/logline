@@ -8,7 +8,7 @@ import httpx
 import pytest
 import uvicorn
 
-from logline import RequestLineMiddleware, configure, set_client_ip, set_sub
+from logline import REQUEST_EVENT, RequestLineMiddleware, configure, set_client_ip, set_sub
 from logline.request import REQUEST_LOGGER_NAME
 from tests.support.apps import (
     BACKGROUND_LOGGER,
@@ -73,7 +73,7 @@ def test_a_request_with_a_route_logs_one_line_with_its_template_and_never_its_pa
     )
 
     (line,) = request_lines(lines)
-    assert line["event"] == "request"
+    assert line["event"] == REQUEST_EVENT
     assert line["method"] == "GET"
     assert line["route"] == "/items/{item_id}"
     assert line["status"] == 200

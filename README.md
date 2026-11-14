@@ -60,7 +60,7 @@ object with these keys, plus the key-value fields the caller adds:
 | `ts` | ISO 8601, UTC |
 | `level` | `debug`, `info`, `warning`, `error` or `critical` |
 | `service` | the name given to `configure` |
-| `version` | the environment variable `SERVICE_VERSION` at `configure`, `null` when it is unset |
+| `version` | the environment variable `SERVICE_VERSION` at `configure`, `null` when it is unset or empty |
 | `logger` | the logger's name |
 | `event` | the message |
 | `trace_id` | the running request's trace id as 32 hex digits, `null` outside a request |
@@ -72,8 +72,8 @@ An image build bakes `SERVICE_VERSION` from the release it builds.
 
 ## The request line
 
-The middleware writes one line per HTTP request on the logger `logline.request`, with `event` `request` and
-`method`, `route`, `status`, `duration_ms`, `sub` and `ip`:
+The middleware writes one line per HTTP request on the logger `logline.request`, with `event`
+`logline.REQUEST_EVENT` (`request`) and `method`, `route`, `status`, `duration_ms`, `sub` and `ip`:
 
 - `route` is the route template (`/notes/{note_id}`), never the path. A request answered inside a Starlette
   `Mount` logs the mount's path joined with the inner route's template where one matched: `/static` for a
@@ -119,7 +119,7 @@ request: `httpx.get(url, headers=outgoing_headers())`.
 | Variable | Effect |
 |---|---|
 | `LOG_LEVEL` | the root level: `debug`, `info`, `warning`, `error` or `critical`, case-insensitive; `info` when unset. Anything else, an empty value included, makes `configure` raise `ValueError` |
-| `SERVICE_VERSION` | the `version` of every line |
+| `SERVICE_VERSION` | the `version` of every line; unset or empty makes it `null` |
 
 ## Starting uvicorn
 
