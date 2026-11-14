@@ -1,11 +1,13 @@
 import logging
 from collections.abc import Iterator
+from dataclasses import replace
 
 import pytest
 import structlog
 from structlog.stdlib import ProcessorFormatter
 
 from logline.configuration import TOUCHED_LOGGER_NAMES
+from logline.testing import LoggerState
 
 pytest.register_assert_rewrite("tests.support")
 
@@ -15,21 +17,16 @@ def isolated_logging(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Give each test the process's logging as it was, and no logline environment."""
     monkeypatch.delenv("LOG_LEVEL", raising=False)
     monkeypatch.delenv("SERVICE_VERSION", raising=False)
-    loggers = [logging.getLogger(name) for name in TOUCHED_LOGGER_NAMES]
-    saved = [
-        (logger, logger.handlers[:], logger.filters[:], logger.level, logger.propagate)
-        for logger in loggers
-    ]
+    saved = [LoggerState.of(logging.getLogger(name)) for name in TOUCHED_LOGGER_NAMES]
     yield
-    for logger, handlers, filters, level, propagate in saved:
-        # The root's handlers belong to pytest's capture; only the ones `configure` added go.
-        if logger.name == "root":
-            for handler in logger.handlers[:]:
+    for state in saved:
+        if state.logger is logging.getLogger():
+            # The root's handlers belong to pytest's capture, which swaps them between the phases of
+            # a test, so restoring the snapshot would bring back the setup phase's; only the ones
+            # `configure` added go.
+            for handler in state.logger.handlers[:]:
                 if isinstance(handler.formatter, ProcessorFormatter):
-                    logger.removeHandler(handler)
-        else:
-            logger.handlers[:] = handlers
-        logger.filters[:] = filters
-        logger.setLevel(level)
-        logger.propagate = propagate
+                    state.logger.removeHandler(handler)
+            state = replace(state, handlers=state.logger.handlers[:])
+        state.restore()
     structlog.reset_defaults()

@@ -5,11 +5,12 @@ from logline.request import (
     REQUEST_EVENT,
     RequestLineMiddleware,
     set_client_ip,
+    set_route,
     set_sub,
 )
 from logline.trace import outgoing_headers
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 __all__ = [
     "REQUEST_EVENT",
@@ -18,5 +19,6 @@ __all__ = [
     "configure",
     "outgoing_headers",
     "set_client_ip",
+    "set_route",
     "set_sub",
 ]

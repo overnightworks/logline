@@ -8,7 +8,7 @@ developers start at the [README](../README.md).
 ```mermaid
 flowchart LR
     subgraph process["Host process"]
-        host["Host app<br/>routes, libraries, uvicorn"] -- "log calls, set_sub,<br/>set_client_ip, outgoing_headers" --> logline["logline<br/>configure, middleware"]
+        host["Host app<br/>routes, libraries, uvicorn"] -- "log calls, set_sub,<br/>set_client_ip, set_route,<br/>outgoing_headers" --> logline["logline<br/>configure, middleware"]
     end
     logline -- "one JSON object per line" --> stdout[("stdout<br/>(collected by the platform)")]
     client["Caller (any client, in scope)"] -- "HTTP, traceparent" --> host
@@ -27,7 +27,7 @@ Module owners in `logline`:
 - `record` owns the record shape: the processors that stamp `ts`, `level`, `service`, `version`, `logger` and
   `trace_id`, and render exceptions as structlog's text traceback.
 - `request` owns the request line, the per-request record in `scope["state"]` and the functions that set
-  `sub` and `ip`.
+  `sub`, `ip` and `route`.
 - `testing` owns `configured`, the host tests' way to run `configure` and restore the logging state it
   changed; it is the one module that reads `configuration`'s list of touched loggers.
 - `trace` owns the request's trace: it starts or continues it in OpenTelemetry's context, reads `trace_id`
@@ -50,7 +50,7 @@ sequenceDiagram
     M->>T: request_trace(traceparent, tracestate)
     T-->>M: fresh span in OpenTelemetry's context
     M->>A: scope["state"] holds sub=None, ip=client
-    A->>M: set_sub / set_client_ip (same state dict)
+    A->>M: set_sub / set_client_ip / set_route (same state dict)
     A->>L: any line, trace_id read from the context
     A->>M: last body chunk, or an exception
     M->>L: the request line (sub, ip, route, status)
@@ -87,7 +87,7 @@ tests. The lowest direct dependency floors run the same tests.
   hide the line that audits every request.
 - The trace lives only in OpenTelemetry's context, read through `opentelemetry-api`: a second contextvar
   could disagree with the first, and a worker thread inherits the one the framework copies.
-- `sub` and `ip` live in `scope["state"]`: the same dict reaches `BaseHTTPMiddleware`, Starlette's routing
+- `sub`, `ip` and `route` live in `scope["state"]`: the same dict reaches `BaseHTTPMiddleware`, Starlette's routing
   and the threadpool, where a contextvar set below `BaseHTTPMiddleware` would not reach the middleware.
 - `TraceContextTextMapPropagator` is used directly, never `opentelemetry.propagate`, so baggage and the
   `OTEL_PROPAGATORS` switch cannot change what the fleet propagates.
@@ -106,10 +106,12 @@ tests. The lowest direct dependency floors run the same tests.
 
 ## 8. Risks and Technical Debt
 
-- `route` is what the framework left in `scope["route"]`; logline never re-matches routes, hosts or paths. Inside
-  a mounted FastAPI app it is that app's own template, relative to the mount. FastAPI's router leaves it only for
-  an `APIRoute`, so a `Mount` or a plain Starlette `Route` answering under FastAPI logs `null`, as do an unmatched
-  path and a gate that answered before the router.
+- `route` is the host's template from `set_route`, else what the framework left in `scope["route"]`; logline
+  never re-matches routes, hosts or paths, because a template it derived would carry raw values of parameterised
+  mounts. Inside a mounted FastAPI app it is that app's own template, relative to the mount. FastAPI's router
+  leaves it only for an `APIRoute`, so a `Mount` or a plain Starlette `Route` answering under FastAPI logs
+  `null` unless the host calls `set_route`, as do an unmatched path and a gate that answered before the router.
+  That the template is a literal pattern is the host's duty; logline cannot tell one from a path.
 - `duration_ms` runs until the last body chunk, so a long streamed response logs when it ends and
   background work after the response is not counted; a client disconnect logs the status already sent, or 500 if none.
 - A public client can choose its `trace_id`; stripping `traceparent` at the edge is the platform's.

@@ -1,4 +1,4 @@
-"""One request line per HTTP request, and how a host reports the person and address.
+"""One request line per HTTP request, and how a host reports the person, address and route.
 
 This module imports no web framework: it speaks ASGI.
 """
@@ -17,6 +17,7 @@ __all__ = [
     "REQUEST_LOGGER_NAME",
     "RequestLineMiddleware",
     "set_client_ip",
+    "set_route",
     "set_sub",
 ]
 
@@ -38,6 +39,7 @@ _request_logger = structlog.get_logger(REQUEST_LOGGER_NAME)
 class _RequestRecord:
     sub: str | None
     ip: str | None
+    route: str | None
 
 
 def _record_of(scope: Scope) -> _RequestRecord | None:
@@ -58,12 +60,24 @@ def set_client_ip(scope: Scope, ip: str | None) -> None:
         record.ip = ip
 
 
+def set_route(scope: Scope, template: str) -> None:
+    """Report the route template for this request's line; no effect outside an HTTP request.
+
+    The template is a literal pattern such as `/static`, never the raw path or a request value.
+    """
+    record = _record_of(scope)
+    if record is not None:
+        record.route = template
+
+
 def _client_host(scope: Scope) -> str | None:
     client = scope.get("client")
     return client[0] if client else None
 
 
-def _route_template(scope: Scope) -> str | None:
+def _route_template(scope: Scope, record: _RequestRecord) -> str | None:
+    if record.route is not None:
+        return record.route
     return getattr(scope.get("route"), "path", None)
 
 
@@ -77,7 +91,7 @@ class RequestLineMiddleware:
         if scope["type"] != "http":
             await self._app(scope, receive, send)
             return
-        record = _RequestRecord(sub=None, ip=_client_host(scope))
+        record = _RequestRecord(sub=None, ip=_client_host(scope), route=None)
         scope.setdefault("state", {})[_STATE_KEY] = record
         sent_status: int | None = None
         written = False
@@ -89,7 +103,7 @@ class RequestLineMiddleware:
             _request_logger.info(
                 REQUEST_EVENT,
                 method=scope["method"],
-                route=_route_template(scope),
+                route=_route_template(scope, record),
                 status=sent_status or _STATUS_WHEN_NONE_SENT,
                 duration_ms=round((time.perf_counter() - started) * 1000, 3),
                 sub=record.sub,

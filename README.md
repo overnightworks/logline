@@ -51,6 +51,8 @@ if __name__ == "__main__":
   endpoint, from a dependency, or from below a `BaseHTTPMiddleware`. Outside an HTTP request they do nothing.
   They may run at any point before the response ends, so a sign-in callback that establishes the person calls
   `set_sub` itself.
+- `set_route(scope, template)` names the route of an answer the framework leaves without one; see
+  [The request line](#the-request-line).
 
 ## The record
 
@@ -77,12 +79,12 @@ An image build bakes `SERVICE_VERSION` from the release it builds.
 The middleware writes one line per HTTP request on the logger `logline.request`, with `event`
 `logline.REQUEST_EVENT` (`request`) and `method`, `route`, `status`, `duration_ms`, `sub` and `ip`:
 
-- `route` is the route template (`/notes/{note_id}`), never the path: what the framework left in
-  `scope["route"]`, which inside a mounted FastAPI app is that app's own template, relative to the mount.
-  `null` means no template in the scope: no route matched (404), a gate answered before the router (401), or
-  a `Mount` (static files, a mounted ASGI app) or a plain Starlette `Route` answered under FastAPI, which
-  leaves the template only for an `APIRoute`. An exception that reaches the middleware logs 500, or the
-  status already sent.
+- `route` is the route template (`/notes/{note_id}`), never the path: the template the host gave to
+  `set_route`, else what the framework left in `scope["route"]`, which inside a mounted FastAPI app is that
+  app's own template, relative to the mount. `null` means neither: no route matched (404), a gate answered
+  before the router (401), or a `Mount` (static files, a mounted ASGI app) or a plain Starlette `Route`
+  answered under FastAPI, which leaves the template only for an `APIRoute`, and the host did not call
+  `set_route`. An exception that reaches the middleware logs 500, or the status already sent.
 - `sub` is `null` until the host calls `set_sub`.
 - `ip` is the ASGI client address until the host calls `set_client_ip`.
 - `duration_ms` runs until the last body chunk is sent, and the line is written then; background work after
@@ -90,6 +92,41 @@ The middleware writes one line per HTTP request on the logger `logline.request`,
 - WebSocket connections get no line.
 
 The line is written at INFO whatever `LOG_LEVEL` says: no setting turns it off.
+
+### The route of a mount or a plain route
+
+Under FastAPI a `Mount` and a plain Starlette `Route` leave no template, so the host names it where it
+answers. A later call replaces an earlier one, and `set_route` on an `APIRoute` replaces its template. The
+template is a literal pattern such as `/static` or `/mcp`, written in the code, never the raw path or a value
+from the request: a path or a request value in `route` puts personal data and unbounded values into every
+line.
+
+```python
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Route
+from starlette.staticfiles import StaticFiles
+from starlette.types import ASGIApp, Receive, Scope, Send
+
+from logline import set_route
+
+
+def named(template: str, app: ASGIApp) -> ASGIApp:
+    async def named_app(scope: Scope, receive: Receive, send: Send) -> None:
+        set_route(scope, template)
+        await app(scope, receive, send)
+
+    return named_app
+
+
+async def mcp(request: Request) -> JSONResponse:
+    set_route(request.scope, "/mcp")
+    return JSONResponse({"ok": True})
+
+
+app.mount("/static", named("/static", StaticFiles(directory="static")))  # a mounted app
+app.router.routes.append(Route("/mcp", mcp))  # a plain Route endpoint
+```
 
 ### The client address
 
