@@ -8,7 +8,13 @@ import pytest
 import uvicorn
 
 from logline import RequestLineMiddleware, configure, set_client_ip, set_sub
-from tests.support.apps import HOST_CLIENT_IP, SUB, build_app
+from tests.support.apps import (
+    HOST_CLIENT_IP,
+    SUB,
+    UPSTREAM_LOCATION_SECRET,
+    UPSTREAM_QUERY_SECRET,
+    build_app,
+)
 from tests.support.lines import Line, json_lines, lines_of, request_lines
 from tests.support.serving import serve
 
@@ -88,8 +94,20 @@ def test_a_request_whose_endpoint_raised_logs_500_and_the_traceback_as_text(
     assert line["route"] == "/boom"
     assert line["status"] == 500
     (failure,) = [line for line in lines_of(lines, "uvicorn.error") if line["level"] == "error"]
-    assert "RuntimeError: boom after reading 17 characters" in str(failure["exception"])
+    assert "builtins.RuntimeError" in str(failure["exception"])
     assert "secret-in-a-local" not in output
+    assert "reading 17 characters" not in output
+
+
+def test_an_unhandled_http_client_error_logs_neither_its_url_nor_the_redirect_location(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output, lines = _serve_requests(capsys, [_get("/failing-upstream-call")])
+
+    (failure,) = [line for line in lines_of(lines, "uvicorn.error") if line["level"] == "error"]
+    assert "httpx.HTTPStatusError" in str(failure["exception"])
+    for secret in (UPSTREAM_QUERY_SECRET, UPSTREAM_LOCATION_SECRET):
+        assert secret not in output
 
 
 def test_each_request_gets_exactly_one_line(capsys: pytest.CaptureFixture[str]) -> None:

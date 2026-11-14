@@ -12,6 +12,9 @@ from tests.support.apps import build_app
 from tests.support.lines import BASE_KEYS, Line, json_lines
 from tests.support.serving import serve
 
+_LOCAL_SECRET = "local-secret-value"
+_MESSAGE_SECRET = "message-secret-value"
+
 
 def _logged_lines(capsys: pytest.CaptureFixture[str]) -> list[Line]:
     return json_lines(capsys.readouterr().out)
@@ -106,14 +109,14 @@ def test_a_second_configure_does_not_duplicate_lines(capsys: pytest.CaptureFixtu
         pytest.param(lambda: logging.getLogger("tests").exception("failed"), id="stdlib"),
     ],
 )
-def test_an_exception_renders_as_text_without_local_variables(
+def test_an_exception_renders_as_text_with_its_type_and_neither_message_nor_locals(
     capsys: pytest.CaptureFixture[str], emit: Callable[[], None]
 ) -> None:
     configure("exceptions")
 
     def raise_holding_a_secret() -> None:
-        secret_in_a_local = "local-secret-value"
-        raise RuntimeError(f"failed with {len(secret_in_a_local)} characters")
+        secret_in_a_local = _LOCAL_SECRET
+        raise RuntimeError(f"{_MESSAGE_SECRET} after {len(secret_in_a_local)} characters")
 
     try:
         raise_holding_a_secret()
@@ -123,5 +126,65 @@ def test_an_exception_renders_as_text_without_local_variables(
     output = capsys.readouterr().out
     (line,) = json_lines(output)
     assert isinstance(line["exception"], str)
-    assert "RuntimeError: failed with 18 characters" in line["exception"]
-    assert "local-secret-value" not in output
+    assert "builtins.RuntimeError" in line["exception"]
+    assert "raise_holding_a_secret" in line["exception"]
+    assert _LOCAL_SECRET not in output
+    assert _MESSAGE_SECRET not in output
+
+
+def _raise_with_a_cause() -> None:
+    try:
+        raise KeyError(_MESSAGE_SECRET)
+    except KeyError as cause:
+        raise ValueError(_MESSAGE_SECRET) from cause
+
+
+def _raise_during_handling() -> None:
+    try:
+        raise KeyError(_MESSAGE_SECRET)
+    except KeyError:
+        raise ValueError(_MESSAGE_SECRET)  # noqa: B904 - the implicit context is the subject
+
+
+def _raise_with_the_context_suppressed() -> None:
+    try:
+        raise KeyError(_MESSAGE_SECRET)
+    except KeyError:
+        raise ValueError(_MESSAGE_SECRET) from None
+
+
+@pytest.mark.parametrize(
+    ("raiser", "rendered_in_order"),
+    [
+        pytest.param(
+            _raise_with_a_cause,
+            ["builtins.KeyError", "direct cause of the following", "builtins.ValueError"],
+            id="cause",
+        ),
+        pytest.param(
+            _raise_during_handling,
+            ["builtins.KeyError", "another exception occurred", "builtins.ValueError"],
+            id="context",
+        ),
+        pytest.param(_raise_with_the_context_suppressed, ["builtins.ValueError"], id="suppressed"),
+    ],
+)
+def test_a_chained_exception_renders_every_type_in_order_and_no_message(
+    capsys: pytest.CaptureFixture[str],
+    raiser: Callable[[], None],
+    rendered_in_order: list[str],
+) -> None:
+    configure("exceptions")
+
+    try:
+        raiser()
+    except ValueError:
+        structlog.get_logger("tests").exception("failed")
+
+    output = capsys.readouterr().out
+    (line,) = json_lines(output)
+    text = str(line["exception"])
+    positions = [text.index(part) for part in rendered_in_order]
+    assert positions == sorted(positions)
+    assert ("KeyError" in text) == ("builtins.KeyError" in rendered_in_order)
+    assert _MESSAGE_SECRET not in output

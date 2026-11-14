@@ -66,7 +66,8 @@ object with these keys, plus the key-value fields the caller adds:
 | `trace_id` | the running request's trace id as 32 hex digits, `null` outside a request |
 
 A caller's own field named `ts`, `level`, `service`, `version`, `logger` or `trace_id` is overwritten. An
-exception renders as text in `exception`.
+exception renders as text in `exception`: its frames and the type of each exception in the chain,
+never a message.
 An image build bakes `SERVICE_VERSION` from the release it builds.
 
 ## The request line
@@ -127,7 +128,9 @@ logline writes no credentials, tokens, cookies, header values, contents (bodies,
 transcripts, audio), raw paths or query strings, and a host adds none through a field: it logs ids and the
 `trace_id`. For this, `configure` also:
 
-- renders exceptions as text, never as a dict with local variables;
+- renders exceptions as text, never as a dict with local variables and never with a message, which a
+  library fills with the URL it called, its query and the redirect location; a host logs the ids it needs
+  as fields;
 - sets the `httpx`, `httpx2` and `httpcore` loggers to WARNING, because their INFO lines carry the full URL
   with its query; the callee's request line with the same `trace_id` covers the call;
 - drops uvicorn's WebSocket connection lines, which carry the raw path with its query.
