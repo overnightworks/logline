@@ -65,8 +65,8 @@ entry point; there is nothing of logline to deploy or run.
 **Trust.** The host and the libraries it loads are trusted; the lines go to stdout, which the platform
 collects. A public caller is untrusted: it can set `traceparent`, which chooses the `trace_id` of its request's
 lines and poisons correlation and no data, and it chooses the path and query, which logline never writes.
-A log call's own `service`, `version` or `trace_id` field is overwritten, so the caller's `traceparent` is
-the only way into those three. The host decides who the person and the client address are; logline writes
+A log call's own `service`, `version` or `trace_id` field is overwritten, so `traceparent` reaches only
+the `trace_id`. The host decides who the person and the client address are; logline writes
 what it is told.
 
 **Never logged.** Credentials, tokens, cookies, header values, contents, raw paths and query strings stay out

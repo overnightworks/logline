@@ -15,4 +15,6 @@ forbidden_modules =
     starlette
     uvicorn
     httpx
+    httpx2
+    httpcore
     websockets
