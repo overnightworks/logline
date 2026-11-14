@@ -7,7 +7,7 @@ import uvicorn
 
 from logline import configure, outgoing_headers
 from tests.support.apps import build_app
-from tests.support.lines import json_lines, request_lines
+from tests.support.lines import json_lines, lines_of, request_lines
 from tests.support.serving import serve
 
 _TRACEPARENT = re.compile(
@@ -84,6 +84,31 @@ def test_without_a_valid_traceparent_the_request_starts_a_new_trace_with_flags_0
     assert int(match["span_id"], 16) != 0
     assert match["flags"] == "00"
     assert "tracestate" not in body["headers"]
+
+
+def test_the_error_line_of_an_unhandled_exception_carries_the_requests_trace_id(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure("trace-service")
+
+    async def exercise(base_url: str) -> None:
+        async with httpx.AsyncClient(base_url=base_url) as client:
+            await client.get(
+                "/boom",
+                headers={
+                    "x-secret": "a value",
+                    "traceparent": f"00-{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}-01",
+                },
+            )
+
+    serve(uvicorn.Config(build_app(), log_config=None), exercise)
+
+    lines = json_lines(capsys.readouterr().out)
+    failures = [line for line in lines_of(lines, "uvicorn.error") if line["level"] == "error"]
+    assert [line["trace_id"] for line in [*failures, *request_lines(lines)]] == [
+        _INCOMING_TRACE_ID,
+        _INCOMING_TRACE_ID,
+    ]
 
 
 def test_two_requests_without_a_traceparent_get_different_traces() -> None:

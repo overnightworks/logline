@@ -25,6 +25,9 @@ def request_trace(incoming_headers: Mapping[str, str]) -> Iterator[None]:
 
     `incoming_headers` maps lower-case header names to values; only `traceparent` and `tracestate`
     are read. The block gets a fresh span id either way.
+
+    An exception that leaves the block leaves the trace attached: the server writes its error line
+    after the block, in the same task, and that line belongs to this trace.
     """
     parent_context = _PROPAGATOR.extract(incoming_headers, context=context.Context())
     parent = trace.get_current_span(parent_context).get_span_context()
@@ -42,10 +45,8 @@ def request_trace(incoming_headers: Mapping[str, str]) -> Iterator[None]:
         trace_state=trace_state,
     )
     token = context.attach(trace.set_span_in_context(trace.NonRecordingSpan(span_context)))
-    try:
-        yield
-    finally:
-        context.detach(token)
+    yield
+    context.detach(token)
 
 
 def current_trace_id() -> str | None:
