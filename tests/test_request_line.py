@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import Awaitable, Callable, MutableMapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -13,10 +14,15 @@ from tests.support.apps import (
     BACKGROUND_LOGGER,
     CHAIN_CAUSE_MESSAGE,
     CHAIN_MESSAGE,
+    GATED_PATH,
     GROUP_MEMBER_MESSAGES,
     HOST_CLIENT_IP,
+    STATIC_FILE_NAME,
+    STATIC_MOUNT,
     SUB,
+    SUB_APP_MOUNT,
     build_app,
+    build_mounted_app,
 )
 from tests.support.lines import Line, json_lines, lines_of, request_lines
 from tests.support.serving import serve
@@ -87,6 +93,33 @@ def test_a_request_that_matched_no_route_logs_null_and_404_and_never_its_path(
     assert line["status"] == 404
     assert "no/such/place" not in output
     assert "private-query" not in output
+
+
+@pytest.mark.parametrize(
+    ("path", "route", "status"),
+    [
+        pytest.param(f"{STATIC_MOUNT}/{STATIC_FILE_NAME}", STATIC_MOUNT, 200, id="static-file"),
+        pytest.param(f"{STATIC_MOUNT}/{_UNGUESSABLE_ID}.txt", STATIC_MOUNT, 404, id="static-miss"),
+        pytest.param(
+            f"{SUB_APP_MOUNT}/{_UNGUESSABLE_ID}", f"{SUB_APP_MOUNT}/{{x}}", 200, id="sub-app"
+        ),
+        pytest.param(GATED_PATH, None, 401, id="gate-in-front-of-the-router"),
+        pytest.param(f"/{_UNGUESSABLE_ID}", None, 404, id="no-route"),
+    ],
+)
+def test_a_mounted_request_logs_the_joined_template_and_never_its_path(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path, path: str, route: str | None, status: int
+) -> None:
+    (tmp_path / STATIC_FILE_NAME).write_text("static content")
+
+    output, lines = _serve_requests(
+        capsys, [_get(path)], config=uvicorn.Config(build_mounted_app(tmp_path), log_config=None)
+    )
+
+    (line,) = request_lines(lines)
+    assert (line["route"], line["status"]) == (route, status)
+    assert _UNGUESSABLE_ID not in output
+    assert STATIC_FILE_NAME not in output
 
 
 def test_a_request_whose_endpoint_raised_logs_500_and_a_traceback_without_its_locals(

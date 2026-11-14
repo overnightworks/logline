@@ -103,8 +103,8 @@ tests. The lowest direct dependency floors run the same tests.
 
 ## 8. Risks and Technical Debt
 
-- Under a Starlette `Mount`, the route template is the innermost route's, relative to the mount; the mount's
-  `root_path` is never joined in.
+- Starlette leaves the mount's matched path, not its template, in the scope's `root_path`; the route is
+  right for a mount with a fixed path and carries the matched value for one with parameters.
 - `duration_ms` runs until the last body chunk, so a long streamed response logs when it ends and
   background work after the response is not counted; a client disconnect logs the status already sent, or 500 if none.
 - A public client can choose its `trace_id`; stripping `traceparent` at the edge is the platform's.

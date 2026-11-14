@@ -75,8 +75,13 @@ An image build bakes `SERVICE_VERSION` from the release it builds.
 The middleware writes one line per HTTP request on the logger `logline.request`, with `event` `request` and
 `method`, `route`, `status`, `duration_ms`, `sub` and `ip`:
 
-- `route` is the route template (`/notes/{note_id}`), never the path. A request that matched no route logs
-  `route: null` and status 404. An exception that reaches the middleware logs 500, or the status already sent.
+- `route` is the route template (`/notes/{note_id}`), never the path. A request answered inside a Starlette
+  `Mount` logs the mount's path joined with the inner route's template where one matched: `/static` for a
+  static file or a mounted app without routes, `/mcp/{x}` for a mounted app's route. `route: null` means
+  that no route or mount matched before the answer was sent, and the status says why: 404, or a 401 from a
+  gate in front of the router. A mount's path is a fixed prefix, never one with parameters: the scope
+  carries the matched value, which would reach the line. An exception that reaches the middleware logs 500,
+  or the status already sent.
 - `sub` is `null` until the host calls `set_sub`.
 - `ip` is the ASGI client address until the host calls `set_client_ip`.
 - `duration_ms` runs until the last body chunk is sent, and the line is written then; background work after

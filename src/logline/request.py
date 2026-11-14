@@ -57,7 +57,15 @@ def _client_host(scope: Scope) -> str | None:
 
 
 def _route_template(scope: Scope) -> str | None:
-    return getattr(scope.get("route"), "path", None)
+    """The matched mount's path joined with the matched route's template, `None` when neither matched.
+
+    Starlette leaves the mount's path in `root_path`, past the `app_root_path` the server set, and
+    the matched route's template on `route`.
+    """
+    app_root_path = scope.get("app_root_path")
+    mount = "" if app_root_path is None else scope["root_path"].removeprefix(app_root_path)
+    route = getattr(scope.get("route"), "path", "")
+    return f"{mount}{route}" or None
 
 
 class RequestLineMiddleware:
