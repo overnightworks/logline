@@ -158,7 +158,8 @@ transcripts, audio), raw paths or query strings, and a host adds none through a 
 `logline.testing.configured(service)` is a context manager for a host's in-process tests. It calls
 `configure(service)` and on exit restores the process's logging as it was before: the root logger's handlers
 and level, the handlers, filters, levels and propagation of the uvicorn, HTTP client and `logline.request`
-loggers, structlog's configuration and the stdlib logger class its factory installs. The module imports no test framework.
+loggers, structlog's configuration and the stdlib logger class its factory installs. The module imports no
+test framework.
 
 ```python
 import json
