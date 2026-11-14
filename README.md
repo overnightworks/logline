@@ -163,15 +163,27 @@ loggers, and structlog's configuration. The module imports no test framework.
 ```python
 import json
 
-from logline import REQUEST_EVENT
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from logline import REQUEST_EVENT, RequestLineMiddleware
 from logline.testing import configured
 
 
 def test_the_app_logs_its_request(capsys):
+    app = FastAPI()
+    app.add_middleware(RequestLineMiddleware)
+
+    @app.get("/notes/{note_id}")
+    def read_note(note_id: str):
+        return {"id": note_id}
+
     with configured("notes"):
-        ...  # drive the app
+        TestClient(app).get("/notes/7")
+
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert any(line["event"] == REQUEST_EVENT for line in lines)
+    (request,) = [line for line in lines if line["event"] == REQUEST_EVENT]
+    assert request["route"] == "/notes/{note_id}"
 ```
 
 ## Versioning
