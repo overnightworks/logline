@@ -63,23 +63,38 @@ def _client_host(scope: Scope) -> str | None:
     return client[0] if client else None
 
 
-def _mount_template(routes: Iterable[Any], mount_path: str) -> str:
+def _host_name(scope: Scope) -> str:
+    """The `host` header without its port, as Starlette's host routes match it; empty if absent."""
+    for name, value in scope["headers"]:
+        if name == b"host":
+            return value.decode("latin-1").split(":")[0]
+    return ""
+
+
+def _mount_template(routes: Iterable[Any], mount_path: str, host: str) -> str:
     """The path templates of the nested mounts whose matched paths add up to `mount_path`.
 
     Empty where no mount in `routes` matches it. A mount is a route that has a `path_regex` with a
-    `path` group for what it hands on, and routes of its own.
+    `path` group for what it hands on, and routes of its own. A host route (a `host_regex` and
+    routes of its own) matching `host` adds nothing but the mounts beneath it.
     """
     if not mount_path:
         return ""
     for route in routes:
-        path_regex = getattr(route, "path_regex", None)
         inner_routes = getattr(route, "routes", None)
-        if path_regex is None or inner_routes is None:
+        if inner_routes is None:
             continue
-        match = path_regex.match(f"{mount_path}/")
-        if match is not None:
+        host_regex = getattr(route, "host_regex", None)
+        if host_regex is not None:
+            template = host_regex.match(host) and _mount_template(inner_routes, mount_path, host)
+            if template:
+                return template
+            continue
+        path_regex = getattr(route, "path_regex", None)
+        match = path_regex and path_regex.match(f"{mount_path}/")
+        if match:
             handed_on = mount_path[match.start("path") - 1 :]
-            return f"{route.path}{_mount_template(inner_routes, handed_on)}"
+            return f"{route.path}{_mount_template(inner_routes, handed_on, host)}"
     return ""
 
 
@@ -88,12 +103,15 @@ def _route_template(scope: Scope) -> str | None:
 
     Starlette leaves what the mounts matched, the request's own path segments, in `root_path` past
     the `app_root_path` the server set, so the mounts' templates come from the outermost `router`;
-    the matched route's template is on `route`. A mount that cannot be found adds nothing.
+    the matched route's template is on `route`, unless `route` is a mount itself, which the
+    mounts' templates already cover. A mount that cannot be found adds nothing.
     """
     app_root_path = scope.get("app_root_path")
     mount_path = "" if app_root_path is None else scope["root_path"].removeprefix(app_root_path)
-    mount = _mount_template(getattr(scope.get("router"), "routes", ()), mount_path)
-    route = getattr(scope.get("route"), "path", "")
+    host = _host_name(scope)
+    mount = _mount_template(getattr(scope.get("router"), "routes", ()), mount_path, host)
+    matched = scope.get("route")
+    route = "" if hasattr(matched, "routes") else getattr(matched, "path", "")
     return f"{mount}{route}" or None
 
 
