@@ -22,7 +22,6 @@ type ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
 
 REQUEST_LOGGER_NAME = "logline.request"
 _STATE_KEY = "logline.request"
-_TRACE_HEADER_NAMES = frozenset({b"traceparent", b"tracestate"})
 _STATUS_WHEN_NONE_SENT = 500
 
 _request_logger = structlog.get_logger(REQUEST_LOGGER_NAME)
@@ -61,14 +60,6 @@ def _route_template(scope: Scope) -> str | None:
     return getattr(scope.get("route"), "path", None)
 
 
-def _incoming_trace_headers(scope: Scope) -> dict[str, str]:
-    return {
-        name.decode("latin-1"): value.decode("latin-1")
-        for name, value in scope["headers"]
-        if name in _TRACE_HEADER_NAMES
-    }
-
-
 class RequestLineMiddleware:
     """ASGI middleware: writes one `logline.request` line per `http` scope and joins its trace."""
 
@@ -82,24 +73,33 @@ class RequestLineMiddleware:
         record = _RequestRecord(sub=None, ip=_client_host(scope))
         scope.setdefault("state", {})[_STATE_KEY] = record
         sent_status: int | None = None
+        written = False
+        started = time.perf_counter()
+
+        def write_line() -> None:
+            nonlocal written
+            written = True
+            _request_logger.info(
+                "request",
+                method=scope["method"],
+                route=_route_template(scope),
+                status=sent_status or _STATUS_WHEN_NONE_SENT,
+                duration_ms=round((time.perf_counter() - started) * 1000, 3),
+                sub=record.sub,
+                ip=record.ip,
+            )
 
         async def send_noting_status(message: Message) -> None:
             nonlocal sent_status
             if message["type"] == "http.response.start":
                 sent_status = message["status"]
             await send(message)
+            if message["type"] == "http.response.body" and not message.get("more_body", False):
+                write_line()
 
-        started = time.perf_counter()
-        with request_trace(_incoming_trace_headers(scope)):
+        with request_trace(scope["headers"]):
             try:
                 await self._app(scope, receive, send_noting_status)
             finally:
-                _request_logger.info(
-                    "request",
-                    method=scope["method"],
-                    route=_route_template(scope),
-                    status=sent_status or _STATUS_WHEN_NONE_SENT,
-                    duration_ms=round((time.perf_counter() - started) * 1000, 3),
-                    sub=record.sub,
-                    ip=record.ip,
-                )
+                if not written:
+                    write_line()

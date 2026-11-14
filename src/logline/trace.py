@@ -1,7 +1,7 @@
 """W3C trace context. OpenTelemetry's context is the one owner of the running request's trace."""
 
 import secrets
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 
 from opentelemetry import context, trace
@@ -19,17 +19,23 @@ def _non_zero_random(bits: int) -> int:
     return secrets.randbelow(2**bits - 1) + 1
 
 
+def _trace_headers(raw_headers: Iterable[tuple[bytes, bytes]]) -> dict[str, str]:
+    fields = _PROPAGATOR.fields
+    decoded = ((name.decode("latin-1"), value.decode("latin-1")) for name, value in raw_headers)
+    return {name: value for name, value in decoded if name in fields}
+
+
 @contextmanager
-def request_trace(incoming_headers: Mapping[str, str]) -> Iterator[None]:
+def request_trace(raw_headers: Iterable[tuple[bytes, bytes]]) -> Iterator[None]:
     """Run the block inside the request's trace: the incoming one, else a new one.
 
-    `incoming_headers` maps lower-case header names to values; only `traceparent` and `tracestate`
-    are read. The block gets a fresh span id either way.
+    `raw_headers` are the ASGI scope's headers, lower-case names as bytes; only `traceparent` and
+    `tracestate` are read. The block gets a fresh span id either way.
 
     An exception that leaves the block leaves the trace attached: the server writes its error line
     after the block, in the same task, and that line belongs to this trace.
     """
-    parent_context = _PROPAGATOR.extract(incoming_headers, context=context.Context())
+    parent_context = _PROPAGATOR.extract(_trace_headers(raw_headers), context=context.Context())
     parent = trace.get_current_span(parent_context).get_span_context()
     if parent.is_valid:
         trace_id, trace_flags, trace_state = parent.trace_id, parent.trace_flags, parent.trace_state

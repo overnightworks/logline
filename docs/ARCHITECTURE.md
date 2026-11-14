@@ -50,9 +50,9 @@ sequenceDiagram
     M->>A: scope["state"] holds sub=None, ip=client
     A->>M: set_sub / set_client_ip (same state dict)
     A->>L: any line, trace_id read from the context
-    A-->>M: response status, or an exception
+    A->>M: last body chunk, or an exception
     M->>L: the request line (sub, ip, route, status)
-    M->>T: detach
+    M->>T: detach, except on an exception
 ```
 
 ## 4. Deployment View
@@ -104,7 +104,7 @@ tests. The lowest direct dependency floors run the same tests.
 
 - Under a Starlette `Mount`, the route template is the innermost route's, relative to the mount; the mount's
   `root_path` is never joined in.
-- `duration_ms` runs until the last body chunk, so a long streamed response logs when it ends; a client
-  disconnect logs the status already sent, or 500 if none.
+- `duration_ms` runs until the last body chunk, so a long streamed response logs when it ends and
+  background work after the response is not counted; a client disconnect logs the status already sent, or 500 if none.
 - A public client can choose its `trace_id`; stripping `traceparent` at the edge is the platform's.
 - WebSocket connections get no request line; usage by a host with sockets decides what they get.

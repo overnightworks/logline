@@ -79,7 +79,8 @@ The middleware writes one line per HTTP request on the logger `logline.request`,
   `route: null` and status 404. An exception that reaches the middleware logs 500, or the status already sent.
 - `sub` is `null` until the host calls `set_sub`.
 - `ip` is the ASGI client address until the host calls `set_client_ip`.
-- `duration_ms` runs until the last body chunk is sent.
+- `duration_ms` runs until the last body chunk is sent, and the line is written then; background work after
+  the response is not counted, and a `sub` or `ip` set there is too late.
 - WebSocket connections get no line.
 
 The line is written at INFO whatever `LOG_LEVEL` says: no setting turns it off.

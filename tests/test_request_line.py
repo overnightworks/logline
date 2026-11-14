@@ -8,7 +8,9 @@ import pytest
 import uvicorn
 
 from logline import RequestLineMiddleware, configure, set_client_ip, set_sub
+from logline.request import REQUEST_LOGGER_NAME
 from tests.support.apps import (
+    BACKGROUND_LOGGER,
     HOST_CLIENT_IP,
     SUB,
     UPSTREAM_LOCATION_SECRET,
@@ -20,6 +22,7 @@ from tests.support.serving import serve
 
 # Twelve digits: the timestamps, process ids and trace ids in the output cannot hold them by chance.
 _UNGUESSABLE_ID = "918273645012"
+_LOGGERS_OF_THE_REQUEST = {REQUEST_LOGGER_NAME, BACKGROUND_LOGGER}
 
 
 @dataclass(frozen=True)
@@ -108,6 +111,25 @@ def test_an_unhandled_http_client_error_logs_neither_its_url_nor_the_redirect_lo
     assert "httpx.HTTPStatusError" in str(failure["exception"])
     for secret in (UPSTREAM_QUERY_SECRET, UPSTREAM_LOCATION_SECRET):
         assert secret not in output
+
+
+def test_the_request_line_is_written_when_the_response_ends_not_after_background_work(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, lines = _serve_requests(capsys, [_get("/background-task")])
+
+    written = [line["logger"] for line in lines if line["logger"] in _LOGGERS_OF_THE_REQUEST]
+    assert written == [REQUEST_LOGGER_NAME, BACKGROUND_LOGGER]
+
+
+def test_a_streamed_response_gets_one_line_when_its_last_chunk_is_sent(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, lines = _serve_requests(capsys, [_get("/stream")])
+
+    (line,) = request_lines(lines)
+    assert line["route"] == "/stream"
+    assert line["status"] == 200
 
 
 def test_each_request_gets_exactly_one_line(capsys: pytest.CaptureFixture[str]) -> None:

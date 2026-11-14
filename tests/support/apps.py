@@ -1,16 +1,19 @@
 import logging
+from collections.abc import AsyncIterator
 
 import httpx
 import structlog
-from fastapi import FastAPI, Request, WebSocket
+from fastapi import BackgroundTasks, FastAPI, Request, WebSocket
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.responses import RedirectResponse, Response
+from starlette.responses import RedirectResponse, Response, StreamingResponse
 
 from logline import RequestLineMiddleware, outgoing_headers, set_client_ip, set_sub
 
 SUB = "sub-of-the-person"
 HOST_CLIENT_IP = "198.51.100.7"
 WEBSOCKET_GREETING = "greeting-frame-content"
+BACKGROUND_LOGGER = "tests.background"
+BACKGROUND_EVENT = "background work after the response"
 UPSTREAM_QUERY_SECRET = "upstream-query-secret"
 UPSTREAM_LOCATION_SECRET = "upstream-location-secret"
 
@@ -69,6 +72,23 @@ def _add_request_routes(app: FastAPI) -> None:
         async with httpx.AsyncClient(base_url=str(request.base_url)) as client:
             response = await client.get(f"/redirecting-upstream?key={UPSTREAM_QUERY_SECRET}")
         response.raise_for_status()
+
+    @app.get("/background-task")
+    async def background_task(tasks: BackgroundTasks) -> dict[str, bool]:
+        tasks.add_task(_log_background_work)
+        return {"ok": True}
+
+    @app.get("/stream")
+    async def stream() -> StreamingResponse:
+        async def chunks() -> AsyncIterator[bytes]:
+            yield b"first chunk"
+            yield b"last chunk"
+
+        return StreamingResponse(chunks())
+
+
+def _log_background_work() -> None:
+    structlog.get_logger(BACKGROUND_LOGGER).info(BACKGROUND_EVENT)
 
 
 def _add_logging_routes(app: FastAPI) -> None:
