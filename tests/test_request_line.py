@@ -12,6 +12,9 @@ from tests.support.apps import HOST_CLIENT_IP, SUB, build_app
 from tests.support.lines import Line, json_lines, lines_of, request_lines
 from tests.support.serving import serve
 
+# Twelve digits: the timestamps, process ids and trace ids in the output cannot hold them by chance.
+_UNGUESSABLE_ID = "918273645012"
+
 
 @dataclass(frozen=True)
 class _Call:
@@ -49,7 +52,9 @@ def _serve_requests(
 def test_a_request_with_a_route_logs_one_line_with_its_template_and_never_its_path(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    output, lines = _serve_requests(capsys, [_get("/items/4711?search=private-query")])
+    output, lines = _serve_requests(
+        capsys, [_get(f"/items/{_UNGUESSABLE_ID}?search=private-query")]
+    )
 
     (line,) = request_lines(lines)
     assert line["event"] == "request"
@@ -58,7 +63,7 @@ def test_a_request_with_a_route_logs_one_line_with_its_template_and_never_its_pa
     assert line["status"] == 200
     assert isinstance(line["duration_ms"], float)
     assert line["duration_ms"] >= 0
-    assert "4711" not in output
+    assert _UNGUESSABLE_ID not in output
     assert "private-query" not in output
 
 
