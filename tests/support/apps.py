@@ -153,7 +153,7 @@ class _DenyingGate:
 
 
 def build_mounted_app(static_directory: Path) -> FastAPI:
-    """A FastAPI app with a static-files mount, a mounted sub-app and a gate in front of the router."""
+    """A FastAPI app: a static-files mount, a mounted sub-app and a gate before the router."""
     app = FastAPI()
     sub_app = FastAPI()
 

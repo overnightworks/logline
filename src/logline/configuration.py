@@ -11,7 +11,7 @@ from structlog.stdlib import BoundLogger, LoggerFactory, ProcessorFormatter, fil
 from logline.record import record_shape
 from logline.request import REQUEST_LOGGER_NAME
 
-__all__ = ["configure"]
+__all__ = ["TOUCHED_LOGGER_NAMES", "configure"]
 
 _LEVELS = {
     "debug": logging.DEBUG,
@@ -24,7 +24,17 @@ _DEFAULT_LEVEL_NAME = "info"
 _UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access", "uvicorn.asgi")
 # Their INFO lines carry the full URL with its query.
 _CLIENT_LOGGERS_WITH_URLS = ("httpx", "httpx2", "httpcore")
+_ROOT_LOGGER_NAME = ""
 _UVICORN_WEBSOCKET_LINE = '"WebSocket %s"'
+
+
+# The loggers `configure` changes, for a caller that restores them.
+TOUCHED_LOGGER_NAMES = (
+    _ROOT_LOGGER_NAME,
+    REQUEST_LOGGER_NAME,
+    *_UVICORN_LOGGERS,
+    *_CLIENT_LOGGERS_WITH_URLS,
+)
 
 
 class _DropAll(logging.Filter):

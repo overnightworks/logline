@@ -64,7 +64,7 @@ def _client_host(scope: Scope) -> str | None:
 
 
 def _route_template(scope: Scope) -> str | None:
-    """The matched mount's path joined with the matched route's template, `None` when neither matched.
+    """The matched mount's path joined with the matched route's template; `None` if neither matched.
 
     Starlette leaves the mount's path in `root_path`, past the `app_root_path` the server set, and
     the matched route's template on `route`.

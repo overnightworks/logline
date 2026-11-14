@@ -49,6 +49,8 @@ if __name__ == "__main__":
   request's trace.
 - `set_sub(scope, sub)` and `set_client_ip(scope, ip)` take the ASGI scope. Call them from an async or a sync
   endpoint, from a dependency, or from below a `BaseHTTPMiddleware`. Outside an HTTP request they do nothing.
+  They may run at any point before the response ends, so a sign-in callback that establishes the person calls
+  `set_sub` itself.
 
 ## The record
 
@@ -66,8 +68,8 @@ object with these keys, plus the key-value fields the caller adds:
 | `trace_id` | the running request's trace id as 32 hex digits, `null` outside a request |
 
 A caller's own field named `ts`, `level`, `service`, `version`, `logger` or `trace_id` is overwritten. An
-exception renders as text in `exception`: its frames and the type of each exception in the chain,
-never a message.
+exception renders as Python's text traceback in `exception`: its frames, its message and the whole chain
+(`__cause__`, `__context__`, the members of an `ExceptionGroup`), never local variables.
 An image build bakes `SERVICE_VERSION` from the release it builds.
 
 ## The request line
@@ -121,6 +123,17 @@ request: `httpx.get(url, headers=outgoing_headers())`.
 | `LOG_LEVEL` | the root level: `debug`, `info`, `warning`, `error` or `critical`, case-insensitive; `info` when unset. Anything else, an empty value included, makes `configure` raise `ValueError` |
 | `SERVICE_VERSION` | the `version` of every line; unset or empty makes it `null` |
 
+## The host's duties
+
+logline shows what the app logs; the app keeps its logs meaningful and safe:
+
+- An exception message is logged as written. A secret in a message, or in a field the app logs, is the app's
+  defect: it raises and logs ids, never tokens or contents.
+- No `logging.config.dictConfig` after `configure`: it replaces the handlers `configure` installed.
+- uvicorn runs with `log_config=None` (see below).
+
+quality's check rule for hosts is where these duties get checked.
+
 ## Starting uvicorn
 
 Call `configure` first, then give uvicorn `log_config=None` and no `log_level`: `uvicorn.run(app, log_config=None)`
@@ -134,14 +147,33 @@ logline writes no credentials, tokens, cookies, header values, contents (bodies,
 transcripts, audio), raw paths or query strings, and a host adds none through a field: it logs ids and the
 `trace_id`. For this, `configure` also:
 
-- renders exceptions as text, never as a dict with local variables and never with a message, which a
-  library fills with the URL it called, its query and the redirect location; a host logs the ids it needs
-  as fields;
+- renders exceptions as text, never as a dict with local variables;
 - sets the `httpx`, `httpx2` and `httpcore` loggers to WARNING, because their INFO lines carry the full URL
   with its query; the callee's request line with the same `trace_id` covers the call;
 - drops uvicorn's WebSocket connection lines, which carry the raw path with its query;
 - drops records below INFO on `uvicorn.error` at every `LOG_LEVEL`, because websockets writes the request path, every
   header and every frame there at DEBUG.
+
+## Testing a host
+
+`logline.testing.configured(service)` is a context manager for a host's in-process tests. It calls
+`configure(service)` and on exit restores the process's logging as it was before: the root logger's handlers
+and level, the handlers, filters, levels and propagation of the uvicorn, HTTP client and `logline.request`
+loggers, and structlog's configuration. The module imports no test framework.
+
+```python
+import json
+
+from logline import REQUEST_EVENT
+from logline.testing import configured
+
+
+def test_the_app_logs_its_request(capsys):
+    with configured("notes"):
+        ...  # drive the app
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert any(line["event"] == REQUEST_EVENT for line in lines)
+```
 
 ## Versioning
 
