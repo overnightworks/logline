@@ -11,7 +11,7 @@ from structlog.stdlib import BoundLogger, LoggerFactory, ProcessorFormatter, fil
 from logline.record import record_shape
 from logline.request import REQUEST_LOGGER_NAME
 
-__all__ = ["TOUCHED_LOGGER_NAMES", "configure"]
+__all__ = ["configure"]
 
 _LEVELS = {
     "debug": logging.DEBUG,

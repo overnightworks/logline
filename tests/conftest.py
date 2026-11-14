@@ -5,19 +5,9 @@ import pytest
 import structlog
 from structlog.stdlib import ProcessorFormatter
 
-pytest.register_assert_rewrite("tests.support")
+from logline.configuration import TOUCHED_LOGGER_NAMES
 
-_TOUCHED_LOGGERS = (
-    "",
-    "uvicorn",
-    "uvicorn.error",
-    "uvicorn.access",
-    "uvicorn.asgi",
-    "httpx",
-    "httpx2",
-    "httpcore",
-    "logline.request",
-)
+pytest.register_assert_rewrite("tests.support")
 
 
 @pytest.fixture(autouse=True)
@@ -25,7 +15,7 @@ def isolated_logging(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Give each test the process's logging as it was, and no logline environment."""
     monkeypatch.delenv("LOG_LEVEL", raising=False)
     monkeypatch.delenv("SERVICE_VERSION", raising=False)
-    loggers = [logging.getLogger(name) for name in _TOUCHED_LOGGERS]
+    loggers = [logging.getLogger(name) for name in TOUCHED_LOGGER_NAMES]
     saved = [
         (logger, logger.handlers[:], logger.filters[:], logger.level, logger.propagate)
         for logger in loggers

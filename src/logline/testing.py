@@ -7,11 +7,14 @@ import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING
 
 import structlog
 
 from logline.configuration import TOUCHED_LOGGER_NAMES, configure
+
+if TYPE_CHECKING:
+    from logging import _FilterType
 
 __all__ = ["configured"]
 
@@ -20,7 +23,7 @@ __all__ = ["configured"]
 class _LoggerState:
     logger: logging.Logger
     handlers: list[logging.Handler]
-    filters: list[Any]
+    filters: list[_FilterType]
     level: int
     propagate: bool
 
