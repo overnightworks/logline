@@ -92,8 +92,7 @@ def configure(service: str) -> None:
         cache_logger_on_first_use=False,
     )
     root = logging.getLogger()
-    for handler in list(root.handlers):
-        root.removeHandler(handler)
+    root.handlers.clear()
     root.addHandler(_json_stdout_handler(processors))
     root.setLevel(root_level)
     logging.getLogger(REQUEST_LOGGER_NAME).setLevel(logging.INFO)
