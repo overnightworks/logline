@@ -1,8 +1,0 @@
-claim_id = "a0732a6ea17644ad83d0cac365085bc9"
-agent = "Claude a1cd69a1-a2ad-475d-b925-408ebb99c070"
-role = "builder"
-base = "8a3b91fe30086a28574051447c9474e37bbb1eee"
-branch = "claude/issue-1-logline-0-1-0"
-scope = [".github", ".gitignore", ".importlinter", ".python-version", "AGENTS.md", "CLAUDE.md", "LICENSE", "README.md", "docs", "pyproject.toml", "quality", "scripts", "sonar-project.properties", "src", "tests", "uv.lock"]
-opened_commit = "8fc98dc39e198e13edf8500738c93e04837f3df9"
-whole_reason = "The repository's first slice: the gate needs the package to judge, and the release needs the gate, so they land together."
