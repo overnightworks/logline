@@ -127,4 +127,3 @@ def _add_websocket_route(app: FastAPI) -> None:
         await websocket.accept()
         await websocket.send_text(WEBSOCKET_GREETING)
         await websocket.close()
-
