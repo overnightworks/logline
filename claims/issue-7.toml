@@ -1,8 +1,0 @@
-claim_id = "77f87d0e1da544aeb8a65315b41c5fe7"
-agent = "Claude a1cd69a1-a2ad-475d-b925-408ebb99c070"
-role = "builder"
-base = "3c14846186c604ffa348685149602a044d70042f"
-branch = "claude/issue-7-set-route"
-scope = ["README.md", "docs/ARCHITECTURE.md", "src/logline", "tests", "uv.lock"]
-opened_commit = "e1f29138a4d3b7caf72cc66c393c94c8436d738a"
-whole_reason = "One public function, its tests, the README section that names it, the version raise and the test hygiene it folds in."
