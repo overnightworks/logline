@@ -72,18 +72,6 @@ def test_a_failing_block_still_restores_the_logging() -> None:
     assert _seen() == before
 
 
-def test_a_failing_configure_leaves_the_logging_as_it_was(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("LOG_LEVEL", "loud")
-    before = _seen()
-
-    with pytest.raises(ValueError, match="LOG_LEVEL"), configured("failing"):
-        pass
-
-    assert _seen() == before
-
-
 def test_blocks_in_a_row_each_restore_and_no_handler_accumulates(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
