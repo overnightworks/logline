@@ -153,6 +153,27 @@ def _raise_with_the_context_suppressed() -> None:
         raise ValueError(_MESSAGE_SECRET) from None
 
 
+def _raise_from_itself() -> None:
+    exception = ValueError(_MESSAGE_SECRET)
+    raise exception from exception
+
+
+def _raise_in_a_cause_cycle() -> None:
+    first = ValueError(_MESSAGE_SECRET)
+    second = KeyError(_MESSAGE_SECRET)
+    first.__cause__ = second
+    second.__cause__ = first
+    raise first
+
+
+def _raise_in_a_context_cycle() -> None:
+    first = ValueError(_MESSAGE_SECRET)
+    second = KeyError(_MESSAGE_SECRET)
+    first.__context__ = second
+    second.__context__ = first
+    raise first
+
+
 @pytest.mark.parametrize(
     ("raiser", "rendered_in_order"),
     [
@@ -167,6 +188,17 @@ def _raise_with_the_context_suppressed() -> None:
             id="context",
         ),
         pytest.param(_raise_with_the_context_suppressed, ["builtins.ValueError"], id="suppressed"),
+        pytest.param(_raise_from_itself, ["builtins.ValueError"], id="cause-is-itself"),
+        pytest.param(
+            _raise_in_a_cause_cycle,
+            ["builtins.KeyError", "direct cause of the following", "builtins.ValueError"],
+            id="cause-cycle",
+        ),
+        pytest.param(
+            _raise_in_a_context_cycle,
+            ["builtins.KeyError", "another exception occurred", "builtins.ValueError"],
+            id="context-cycle",
+        ),
     ],
 )
 def test_a_chained_exception_renders_every_type_in_order_and_no_message(

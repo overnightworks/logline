@@ -34,7 +34,11 @@ def _exception_without_messages(exc_info: ExcInfo) -> str:
     A message is text the raiser composed, and a library's carries the URL it called, with its
     query and the `Location` header it was redirected to.
     """
-    exception = exc_info[1]
+    return _chain_without_messages(exc_info[1], set())
+
+
+def _chain_without_messages(exception: BaseException, seen: set[int]) -> str:
+    seen.add(id(exception))
     own = "".join(
         [
             "Traceback (most recent call last):\n",
@@ -43,16 +47,14 @@ def _exception_without_messages(exc_info: ExcInfo) -> str:
         ]
     )
     if exception.__cause__ is not None:
-        return f"{_exception_without_messages(_info_of(exception.__cause__))}\n{_CAUSE}\n\n{own}"
-    if exception.__context__ is not None and not exception.__suppress_context__:
-        return (
-            f"{_exception_without_messages(_info_of(exception.__context__))}\n{_CONTEXT}\n\n{own}"
-        )
-    return own
-
-
-def _info_of(exception: BaseException) -> ExcInfo:
-    return type(exception), exception, exception.__traceback__
+        earlier, link = exception.__cause__, _CAUSE
+    elif exception.__context__ is not None and not exception.__suppress_context__:
+        earlier, link = exception.__context__, _CONTEXT
+    else:
+        return own
+    if id(earlier) in seen:
+        return own
+    return f"{_chain_without_messages(earlier, seen)}\n{link}\n\n{own}"
 
 
 def record_shape(service: str, version: str | None) -> list[Processor]:
