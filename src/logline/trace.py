@@ -51,7 +51,7 @@ def request_trace(raw_headers: Iterable[tuple[bytes, bytes]]) -> Iterator[None]:
         trace_state=trace_state,
     )
     token = context.attach(trace.set_span_in_context(trace.NonRecordingSpan(span_context)))
-    yield
+    yield  # NOSONAR(S9152) an exception skips the detach on purpose, see the docstring
     context.detach(token)
 
 
