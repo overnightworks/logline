@@ -38,21 +38,35 @@ class Stopwatch:
         return round((time.perf_counter() - self._started) * 1000, 3)
 
 
+def _step_fields(fields: dict[str, Scalar]) -> dict[str, Scalar]:
+    """The fields a step line may carry: a record attribute name raises, a timer key is dropped."""
+    reserved = sorted(fields.keys() & _RECORD_ATTRIBUTES)
+    if reserved:
+        raise ValueError(f"step fields named like logging.LogRecord attributes: {reserved}")
+    return {key: value for key, value in fields.items() if key not in _TIMER_KEYS}
+
+
 class StepTimer:
     """Time one step and write its single `.ended` line when the block ends, whatever happened.
 
     Works as `with` and as `async with`; the line is written once, in the thread or task the block
-    runs in, so it carries that context's `trace_id`. The timer starts when it is constructed.
+    runs in, so it carries that context's `trace_id`. The timer starts when it is constructed, not
+    when the block is entered. A step that no block surrounds is ended by `end`.
 
     - `event` is the literal `<noun>.ended` name and `fields` are the step's id fields. The timer
       owns `duration_ms`, `outcome`, `reason`, `first_output_ms` and `error_type`: a field of one of
       these names is dropped, and the line carries them only as the timer sets them. A field named
       like an attribute of `logging.LogRecord` (`name`, `module`, `process`, `args`, ...) raises
-      `ValueError` at construction.
-    - A block that ends normally is `ok`, or `refused` after `refuse`. An `Exception` makes it
-      `failed` with `error_type` (the class name; never the message or a traceback) and propagates
-      unchanged. Any other `BaseException`, a cancellation or `GeneratorExit`, makes it `cancelled`,
-      without `error_type`; the exception propagates too.
+      `ValueError`, at construction and in `add`, which sets more fields before the line is
+      written; a later value for the same key replaces the earlier one.
+    - A block that ends normally is `ok`, or `refused` after `refuse`, or `failed` with `reason`
+      after `fail`, which wins over `refuse` in either order. An `Exception` makes it `failed`
+      with `error_type` (the class name; never the message or a traceback), beside the `reason`
+      when `fail` named one, and propagates unchanged. Any other `BaseException`, a cancellation
+      or `GeneratorExit`, makes it `cancelled`, without `error_type` and `reason`; the exception
+      propagates too.
+    - `end` writes the line now, as a block that ends normally would. The line is written once:
+      after `end` or the block's exit, a later one writes nothing.
     - The line is at INFO. `degraded` makes it WARNING. A failed step is at ERROR, or WARNING when
       `handled` says its unit goes on; one that is degraded and failed unhandled stays at ERROR.
     """
@@ -60,15 +74,18 @@ class StepTimer:
     def __init__(self, event: str, logger: logging.Logger, /, **fields: Scalar) -> None:
         self._event = event
         self._logger = logger
-        reserved = sorted(fields.keys() & _RECORD_ATTRIBUTES)
-        if reserved:
-            raise ValueError(f"step fields named like logging.LogRecord attributes: {reserved}")
-        self._fields = {key: value for key, value in fields.items() if key not in _TIMER_KEYS}
+        self._fields = _step_fields(fields)
         self._stopwatch = Stopwatch()
         self._degraded = False
         self._handled = False
         self._refusal_reason: str | None = None
+        self._failure_reason: str | None = None
         self._first_output_ms: float | None = None
+        self._written = False
+
+    def add(self, **fields: Scalar) -> None:
+        """Add id or count fields known only before the step ends; a later value replaces."""
+        self._fields.update(_step_fields(fields))
 
     def degraded(self) -> None:
         """The step worked but not as designed, such as a call the unit retried."""
@@ -81,6 +98,14 @@ class StepTimer:
     def refuse(self, reason: str) -> None:
         """End the step as `refused` for `reason`, a code from the caller's closed set."""
         self._refusal_reason = reason
+
+    def fail(self, reason: str) -> None:
+        """End the step as `failed` for `reason`, a code from the caller's closed set."""
+        self._failure_reason = reason
+
+    def end(self) -> None:
+        """Write the line now, for a step no block surrounds; later calls and exits write none."""
+        self._write_line(None)
 
     def first_output(self) -> None:
         """Mark the first output of a streaming step; only the first call counts."""
@@ -110,6 +135,9 @@ class StepTimer:
         self._write_line(exc)
 
     def _write_line(self, exc: BaseException | None) -> None:
+        if self._written:
+            return
+        self._written = True
         outcome = self._outcome(exc)
         fields: dict[str, Scalar] = {
             **self._fields,
@@ -121,13 +149,26 @@ class StepTimer:
         if outcome is Outcome.REFUSED:
             fields["reason"] = self._refusal_reason
         if outcome is Outcome.FAILED:
-            fields["error_type"] = type(exc).__name__
+            fields.update(self._failure_fields(exc))
         self._logger.log(self._level(outcome), self._event, extra=fields)
+
+    def _failure_fields(self, exc: BaseException | None) -> dict[str, Scalar]:
+        fields: dict[str, Scalar] = {}
+        if exc is not None:
+            fields["error_type"] = type(exc).__name__
+        if self._failure_reason is not None:
+            fields["reason"] = self._failure_reason
+        return fields
 
     def _outcome(self, exc: BaseException | None) -> Outcome:
         if exc is None:
-            return Outcome.OK if self._refusal_reason is None else Outcome.REFUSED
+            return self._outcome_of_a_normal_end()
         return Outcome.FAILED if isinstance(exc, Exception) else Outcome.CANCELLED
+
+    def _outcome_of_a_normal_end(self) -> Outcome:
+        if self._failure_reason is not None:
+            return Outcome.FAILED
+        return Outcome.OK if self._refusal_reason is None else Outcome.REFUSED
 
     def _level(self, outcome: Outcome) -> int:
         if outcome is Outcome.FAILED and not self._handled:

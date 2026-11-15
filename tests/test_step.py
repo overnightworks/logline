@@ -8,10 +8,14 @@ import logline.step
 from logline import Outcome, StepTimer
 from tests.support.apps import (
     STEP_AGENT_ID,
+    STEP_COUNT,
     STEP_EVENT,
     STEP_FAILURE_MESSAGE,
+    STEP_FAILURE_REASON,
+    STEP_LATER_AGENT_ID,
     STEP_LOGGER,
     STEP_REFUSAL_REASON,
+    STEP_RESERVED_FIELD,
 )
 from tests.support.lines import Line, lines_of, request_lines
 from tests.support.serving import get, serve_requests, serve_requests_answered
@@ -55,6 +59,73 @@ def _step_line(lines: list[Line]) -> Line:
             {"reason": STEP_REFUSAL_REASON},
             id="refused-and-degraded",
         ),
+        pytest.param(
+            "/step/fail",
+            _ERROR,
+            Outcome.FAILED,
+            {"reason": STEP_FAILURE_REASON},
+            id="fail-without-an-exception",
+        ),
+        pytest.param(
+            "/step/fail-handled",
+            _WARNING,
+            Outcome.FAILED,
+            {"reason": STEP_FAILURE_REASON},
+            id="fail-without-an-exception-and-its-unit-goes-on",
+        ),
+        pytest.param(
+            "/step/fail-then-refuse",
+            _ERROR,
+            Outcome.FAILED,
+            {"reason": STEP_FAILURE_REASON},
+            id="refuse-after-fail-changes-nothing",
+        ),
+        pytest.param(
+            "/step/refuse-then-fail",
+            _ERROR,
+            Outcome.FAILED,
+            {"reason": STEP_FAILURE_REASON},
+            id="fail-after-refuse-fails-the-step",
+        ),
+        pytest.param(
+            "/step/fail-then-raise",
+            _ERROR,
+            Outcome.FAILED,
+            {"reason": STEP_FAILURE_REASON, "error_type": "ValueError"},
+            id="exception-after-fail-carries-both",
+        ),
+        pytest.param(
+            "/step/fail-then-cancel", _INFO, Outcome.CANCELLED, {}, id="cancellation-after-fail"
+        ),
+        pytest.param(
+            "/step/add",
+            _INFO,
+            Outcome.OK,
+            {
+                "input_tokens": STEP_COUNT,
+                "output_tokens": STEP_COUNT,
+                "agent_id": STEP_LATER_AGENT_ID,
+            },
+            id="add-puts-counts-on-the-line-and-a-later-value-wins",
+        ),
+        pytest.param(
+            "/step/end",
+            _INFO,
+            Outcome.OK,
+            {"output_tokens": STEP_COUNT},
+            id="end-writes-the-line-of-a-step-without-a-block",
+        ),
+        pytest.param("/step/end-twice", _INFO, Outcome.OK, {}, id="a-second-end-writes-none"),
+        pytest.param(
+            "/step/end-in-block", _INFO, Outcome.OK, {}, id="the-exit-after-end-writes-none"
+        ),
+        pytest.param(
+            "/step/end-then-raise",
+            _INFO,
+            Outcome.OK,
+            {},
+            id="an-exception-after-end-writes-no-second-line",
+        ),
         pytest.param("/step/cancelled", _INFO, Outcome.CANCELLED, {}, id="cancelled"),
         pytest.param("/step/generator-closed", _INFO, Outcome.CANCELLED, {}, id="generator-closed"),
         pytest.param("/step/generator-finished", _INFO, Outcome.OK, {}, id="generator-finished"),
@@ -82,18 +153,25 @@ def test_a_step_writes_exactly_one_line_with_its_outcome_and_level(
 
     line = _step_line(lines)
     assert line["event"] == STEP_EVENT
-    assert line["agent_id"] == STEP_AGENT_ID
+    assert line["agent_id"] == extra.get("agent_id", STEP_AGENT_ID)
     assert (line["level"], line["outcome"]) == (level, outcome.value)
     assert isinstance(line["duration_ms"], float)
     assert line["duration_ms"] >= 0
     assert {key: line[key] for key in extra} == extra
     assert "first_output_ms" not in line
-    assert ("error_type" in line) == (outcome is Outcome.FAILED)
-    assert ("reason" in line) == (outcome is Outcome.REFUSED)
+    assert ("error_type" in line) == ("error_type" in extra)
+    assert ("reason" in line) == ("reason" in extra)
 
 
 @pytest.mark.parametrize(
-    "path", ["/step/failed", "/step/failed-handled", "/step/failed-escaping", "/step/thread-failed"]
+    "path",
+    [
+        "/step/failed",
+        "/step/failed-handled",
+        "/step/failed-escaping",
+        "/step/thread-failed",
+        "/step/fail-then-raise",
+    ],
 )
 def test_a_failed_steps_line_carries_neither_the_message_nor_a_traceback(
     capsys: pytest.CaptureFixture[str], path: str
@@ -106,7 +184,16 @@ def test_a_failed_steps_line_carries_neither_the_message_nor_a_traceback(
     assert "Traceback" not in str(line)
 
 
-@pytest.mark.parametrize("path", ["/step/failed", "/step/failed-handled", "/step/thread-failed"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/step/failed",
+        "/step/failed-handled",
+        "/step/thread-failed",
+        "/step/fail-then-raise",
+        "/step/end-then-raise",
+    ],
+)
 def test_a_failed_steps_exception_reaches_the_caller_as_the_same_object(
     capsys: pytest.CaptureFixture[str], path: str
 ) -> None:
@@ -143,6 +230,14 @@ def test_a_field_named_like_a_key_the_timer_owns_never_reaches_the_line(
     assert isinstance(line["duration_ms"], float)
     assert line["duration_ms"] >= 0
     assert not {"reason", "first_output_ms", "error_type"} & line.keys()
+
+
+def test_a_field_added_under_a_log_record_attribute_name_raises(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, _, (answer,) = serve_requests_answered(capsys, [get("/step/add-reserved")])
+
+    assert STEP_RESERVED_FIELD in str(answer.json()["caught"])
 
 
 def test_the_first_output_mark_keeps_the_time_of_the_first_call_only(
