@@ -14,7 +14,9 @@ __all__ = ["Outcome", "StepTimer"]
 
 type Scalar = str | int | float | bool | None
 
-_TIMER_KEYS = frozenset({"duration_ms", "outcome", "reason", "first_output_ms", "error_type"})
+_TIMER_KEYS = frozenset(
+    {"duration_ms", "outcome", "reason", "first_output_ms", "error_type", "started_at"}
+)
 # Logger.makeRecord raises KeyError on an extra key that names one of these record attributes.
 _RECORD_ATTRIBUTES = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
 
@@ -65,7 +67,8 @@ class StepTimer:
       written; a later value for the same key replaces the earlier one.
     - `started_at` is a keyword-only `time.perf_counter()` value, for a step that began before the
       timer can be constructed: `duration_ms` and `first_output_ms` count from it. One later than
-      `time.perf_counter()` raises `ValueError` at construction. It is no step field name.
+      `time.perf_counter()` raises `ValueError` at construction. It is no step field name: `add`
+      drops a field of that name, and the line never carries it.
     - A block that ends normally is `ok`, or `refused` after `refuse`, or `failed` with `reason`
       after `fail`, which wins over `refuse` in either order. An `Exception` makes it `failed`
       with `error_type` (the class name; never the message or a traceback), beside the `reason`

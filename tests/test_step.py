@@ -278,6 +278,7 @@ def test_a_failed_steps_line_carries_neither_the_message_nor_a_traceback(
     line = _step_line(lines)
     assert "exception" not in line
     assert STEP_FAILURE_MESSAGE not in str(line)
+    assert "started_at" not in line
     assert "Traceback" not in str(line)
 
 

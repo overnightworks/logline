@@ -360,9 +360,9 @@ async def ask_model(client, request):
 - The timer starts when it is constructed, not when the block is entered. A step that began earlier, such as
   a wait whose start a host keeps as a `time.perf_counter()` value, passes it as the keyword `started_at`,
   and `duration_ms` and `first_output_ms` count from it; a value later than `time.perf_counter()` raises
-  `ValueError` at construction, and `started_at` is no step field name. The line carries the step's id fields (scalars), `duration_ms`
-  on the request line's clock and rounding, and `outcome`; it is written in `finally`, so a failed or
-  cancelled step still leaves it.
+  `ValueError` at construction. `started_at` is no step field name: `add` drops it. The line carries the
+  step's id fields (scalars), `duration_ms` on the request line's clock and rounding, and `outcome`; it is
+  written in `finally`, so a failed or cancelled step still leaves it.
 - The timer owns the keys `duration_ms`, `outcome`, `reason`, `first_output_ms` and `error_type`: a field of
   one of those names is dropped. A field named like an attribute of `logging.LogRecord` (`name`, `module`,
   `process`, `thread`, `args`, `message`, ...) raises `ValueError` when the timer is constructed, because the

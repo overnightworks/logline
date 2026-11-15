@@ -451,6 +451,7 @@ def _add_step_routes(app: FastAPI) -> None:
         async with _step() as step:
             step.add(input_tokens=1, output_tokens=STEP.count, duration_ms=-1, reason="caller")
             step.add(input_tokens=STEP.count, agent_id=STEP.later_agent_id, error_type="Caller")
+            step.add(started_at=STEP.earlier_start_seconds)
         return {"caught": None}
 
     @app.get("/step/add-reserved")
