@@ -140,9 +140,19 @@ def test_a_websocket_connection_gets_no_request_line(capsys: pytest.CaptureFixtu
     assert lines_of(json_lines(capsys.readouterr().out), "logline.request") == []
 
 
-@pytest.mark.parametrize("logger_name", ["httpx", "httpx2", "httpcore", "httpcore2"])
+CAPPED_LOGGER_NAMES = [
+    "httpx",
+    "httpx2",
+    "httpcore",
+    "httpcore2",
+    "mcp",
+    "sqlalchemy.dialects.postgresql",
+]
+
+
+@pytest.mark.parametrize("logger_name", CAPPED_LOGGER_NAMES)
 @pytest.mark.parametrize("level", [None, "debug"])
-def test_a_http_client_info_line_with_a_url_never_appears(
+def test_a_capped_library_info_line_with_content_never_appears(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     logger_name: str,
@@ -155,6 +165,17 @@ def test_a_http_client_info_line_with_a_url_never_appears(
     logging.getLogger(logger_name).info('HTTP Request: GET http://host/path?query=secret "200 OK"')
 
     assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize("logger_name", CAPPED_LOGGER_NAMES)
+def test_a_capped_library_warning_still_appears(
+    capsys: pytest.CaptureFixture[str], logger_name: str
+) -> None:
+    configure("clients")
+
+    logging.getLogger(logger_name).warning("visible")
+
+    assert [line["event"] for line in json_lines(capsys.readouterr().out)] == ["visible"]
 
 
 def test_a_real_httpx_call_logs_no_line_with_its_url(capsys: pytest.CaptureFixture[str]) -> None:
