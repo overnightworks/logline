@@ -28,6 +28,7 @@ STATIC_MOUNT = "/static"
 NAMED_STATIC_MOUNT = "/named-static"
 MCP_ROUTE = "/mcp"
 PLAIN_ROUTE = "/plain"
+EMPTY_ROUTE_PATH = "/empty-route"
 WEBSOCKET_GREETING = "greeting-frame-content"
 BACKGROUND_LOGGER = "tests.background"
 BACKGROUND_EVENT = "background work after the response"
@@ -125,6 +126,11 @@ def _add_request_routes(app: FastAPI) -> None:
     async def reset_route(request: Request) -> dict[str, bool]:
         set_route(request.scope, SUPERSEDED_ROUTE)
         set_route(request.scope, HOST_ROUTE)
+        return {"ok": True}
+
+    @app.get(EMPTY_ROUTE_PATH)
+    async def empty_route(request: Request) -> dict[str, bool]:
+        set_route(request.scope, "")
         return {"ok": True}
 
     @app.get("/sync-route")

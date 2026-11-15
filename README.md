@@ -99,7 +99,8 @@ Under FastAPI a `Mount` and a plain Starlette `Route` leave no template, so the 
 answers. A later call replaces an earlier one, and `set_route` on an `APIRoute` replaces its template. The
 template is a literal pattern such as `/static` or `/mcp`, written in the code, never the raw path or a value
 from the request: a path or a request value in `route` puts personal data and unbounded values into every
-line.
+line. An empty template logs `null`, as when no template is known, and does not fall back to the framework's
+route.
 
 ```python
 from starlette.requests import Request
