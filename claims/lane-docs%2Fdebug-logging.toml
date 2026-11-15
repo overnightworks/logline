@@ -1,7 +1,0 @@
-claim_id = "d2a2738cef234a928cb98c5b44c89828"
-agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
-role = "builder"
-base = "414b4d1ee8bbc08035aa196f6d7b12b765816cf1"
-branch = "docs/debug-logging"
-scope = ["README.md", "docs/ARCHITECTURE.md", "docs/VISION.md"]
-opened_commit = "2864dd02457ae97e9588fb19a378532dfe498c4b"
