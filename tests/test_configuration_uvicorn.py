@@ -147,6 +147,7 @@ CAPPED_LOGGER_NAMES = [
     "httpcore2",
     "mcp.client.streamable_http",
     "sqlalchemy.dialects.postgresql",
+    "piper.voice",
 ]
 
 
@@ -174,7 +175,7 @@ def test_a_capped_library_info_line_with_content_never_appears(
     assert "capped-secret" not in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("logger_name", CAPPED_LOGGER_NAMES)
+@pytest.mark.parametrize("logger_name", CAPPED_LOGGER_NAMES[:-1])
 def test_a_capped_library_warning_still_appears(
     capsys: pytest.CaptureFixture[str], logger_name: str
 ) -> None:
@@ -184,6 +185,26 @@ def test_a_capped_library_warning_still_appears(
 
     lines = lines_of(json_lines(capsys.readouterr().out), logger_name)
     assert [line["event"] for line in lines] == ["capped-visible"]
+
+
+@pytest.mark.parametrize("level", [None, "debug"])
+def test_a_piper_warning_with_spoken_text_never_appears_but_an_error_does(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], level: str | None
+) -> None:
+    if level:
+        monkeypatch.setenv("LOG_LEVEL", level)
+    configure("speech")
+
+    def log_both(logger: logging.Logger) -> None:
+        logger.warning("Missing phoneme: spoken-secret")
+        logger.error("piper-failed")
+
+    _serve_logging("piper.voice", log_both)
+
+    out = capsys.readouterr().out
+    assert "spoken-secret" not in out
+    events = [line["event"] for line in lines_of(json_lines(out), "piper.voice")]
+    assert events == ["piper-failed"]
 
 
 def test_a_real_httpx_call_logs_no_line_with_its_url(capsys: pytest.CaptureFixture[str]) -> None:

@@ -257,7 +257,7 @@ frames; logline neither masks nor caps them. `configure` also does the following
   with its query; the callee's request line with the same `trace_id` covers the call;
 - sets the `mcp` tree to WARNING, because `mcp.client.streamable_http` logs the session id, which works like a bearer
   token, and a new INFO line must not leak, and `sqlalchemy.dialects.postgresql` to WARNING, because it logs the text
-  of a server notice;
+  of a server notice, and `piper` to ERROR, because it writes spoken text and phonemes at WARNING;
 - drops uvicorn's WebSocket connection lines, which carry the raw path with its query;
 - drops records below INFO on `uvicorn.error`, because websockets writes the request path, every
   header and every frame there at DEBUG.

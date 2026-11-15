@@ -22,15 +22,17 @@ _LEVELS = {
 }
 _DEFAULT_LEVEL_NAME = "info"
 _UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access", "uvicorn.asgi")
-# Their INFO lines carry content: a URL with its query, an MCP session id, a postgres server notice.
-_LOGGERS_CAPPED_AT_WARNING = (
-    "httpx",
-    "httpx2",
-    "httpcore",
-    "httpcore2",
-    "mcp",
-    "sqlalchemy.dialects.postgresql",
-)
+# Each carries content at the levels below its cap: a URL with its query, an MCP session id, a postgres server
+# notice, and spoken text and phonemes, which piper writes at WARNING.
+_CAPPED_LOGGER_LEVELS = {
+    "httpx": logging.WARNING,
+    "httpx2": logging.WARNING,
+    "httpcore": logging.WARNING,
+    "httpcore2": logging.WARNING,
+    "mcp": logging.WARNING,
+    "sqlalchemy.dialects.postgresql": logging.WARNING,
+    "piper": logging.ERROR,
+}
 _ROOT_LOGGER_NAME = ""
 _UVICORN_WEBSOCKET_LINE = '"WebSocket %s"'
 
@@ -40,7 +42,7 @@ TOUCHED_LOGGER_NAMES = (
     _ROOT_LOGGER_NAME,
     REQUEST_LOGGER_NAME,
     *_UVICORN_LOGGERS,
-    *_LOGGERS_CAPPED_AT_WARNING,
+    *_CAPPED_LOGGER_LEVELS,
 )
 
 
@@ -113,6 +115,6 @@ def configure(service: str) -> None:
     root.addHandler(_json_stdout_handler(processors))
     root.setLevel(root_level)
     logging.getLogger(REQUEST_LOGGER_NAME).setLevel(logging.INFO)
-    for name in _LOGGERS_CAPPED_AT_WARNING:
-        logging.getLogger(name).setLevel(logging.WARNING)
+    for name, level in _CAPPED_LOGGER_LEVELS.items():
+        logging.getLogger(name).setLevel(level)
     _route_uvicorn_through_root()
