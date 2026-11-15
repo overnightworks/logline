@@ -43,8 +43,8 @@ def configured(service: str) -> Iterator[None]:
     """Call `configure(service)`, and on exit restore the logging state it changed.
 
     Restored are the handlers, filters, level and propagation of the root logger, uvicorn's, the
-    HTTP clients' and the request logger, structlog's configuration and the stdlib logger class
-    structlog's factory installs, as they were on entry.
+    HTTP clients', the request and the capped library loggers, structlog's configuration and the
+    stdlib logger class structlog's factory installs, as they were on entry.
     """
     logger_states = [LoggerState.of(logging.getLogger(name)) for name in TOUCHED_LOGGER_NAMES]
     logger_class = logging.getLoggerClass()

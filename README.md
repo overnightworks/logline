@@ -255,6 +255,10 @@ frames; logline neither masks nor caps them. `configure` also does the following
 - renders exceptions as text, never as a dict with local variables;
 - sets the `httpx`, `httpx2`, `httpcore` and `httpcore2` loggers to WARNING, because their INFO lines carry the full URL
   with its query; the callee's request line with the same `trace_id` covers the call;
+- sets the `mcp` tree to WARNING, because `mcp.client.streamable_http` logs the session id, which works like a bearer
+  token, and a new INFO line must not leak;
+- sets `sqlalchemy.dialects.postgresql` to WARNING, because it logs the text of a server notice;
+- sets `piper` to ERROR, because it writes spoken text and phonemes at WARNING;
 - drops uvicorn's WebSocket connection lines, which carry the raw path with its query;
 - drops records below INFO on `uvicorn.error`, because websockets writes the request path, every
   header and every frame there at DEBUG.
@@ -454,9 +458,9 @@ Why this log is the target:
 
 `logline.testing.configured(service)` is a context manager for a host's in-process tests. It calls
 `configure(service)` and on exit restores the process's logging as it was before: the root logger's handlers
-and level, the handlers, filters, levels and propagation of the uvicorn, HTTP client and `logline.request`
-loggers, structlog's configuration and the stdlib logger class its factory installs. The module imports no
-test framework.
+and level, the handlers, filters, levels and propagation of the uvicorn, HTTP client, `logline.request` and
+capped library (`mcp`, `sqlalchemy.dialects.postgresql`, `piper`) loggers, structlog's configuration and the
+stdlib logger class its factory installs. The module imports no test framework.
 
 ```python
 import json

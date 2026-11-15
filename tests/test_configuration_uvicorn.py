@@ -140,9 +140,27 @@ def test_a_websocket_connection_gets_no_request_line(capsys: pytest.CaptureFixtu
     assert lines_of(json_lines(capsys.readouterr().out), "logline.request") == []
 
 
-@pytest.mark.parametrize("logger_name", ["httpx", "httpx2", "httpcore", "httpcore2"])
+WARNING_CAPPED_LOGGER_NAMES = [
+    "httpx",
+    "httpx2",
+    "httpcore",
+    "httpcore2",
+    "mcp.client.streamable_http",
+    "sqlalchemy.dialects.postgresql",
+]
+CAPPED_LOGGER_NAMES = [*WARNING_CAPPED_LOGGER_NAMES, "piper.voice"]
+
+
+def _serve_logging(logger_name: str, log: Callable[[logging.Logger], None]) -> None:
+    async def exercise(_base_url: str) -> None:
+        log(logging.getLogger(logger_name))
+
+    serve(uvicorn.Config(build_app(), log_config=None), exercise)
+
+
+@pytest.mark.parametrize("logger_name", CAPPED_LOGGER_NAMES)
 @pytest.mark.parametrize("level", [None, "debug"])
-def test_a_http_client_info_line_with_a_url_never_appears(
+def test_a_capped_library_info_line_with_content_never_appears(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     logger_name: str,
@@ -152,9 +170,41 @@ def test_a_http_client_info_line_with_a_url_never_appears(
         monkeypatch.setenv("LOG_LEVEL", level)
     configure("clients")
 
-    logging.getLogger(logger_name).info('HTTP Request: GET http://host/path?query=secret "200 OK"')
+    _serve_logging(logger_name, lambda logger: logger.info("GET /path?query=capped-secret"))
 
-    assert capsys.readouterr().out == ""
+    assert "capped-secret" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("logger_name", WARNING_CAPPED_LOGGER_NAMES)
+def test_a_capped_library_warning_still_appears(
+    capsys: pytest.CaptureFixture[str], logger_name: str
+) -> None:
+    configure("clients")
+
+    _serve_logging(logger_name, lambda logger: logger.warning("capped-visible"))
+
+    lines = lines_of(json_lines(capsys.readouterr().out), logger_name)
+    assert [line["event"] for line in lines] == ["capped-visible"]
+
+
+@pytest.mark.parametrize("level", [None, "debug"])
+def test_a_piper_warning_with_spoken_text_never_appears_but_an_error_does(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], level: str | None
+) -> None:
+    if level:
+        monkeypatch.setenv("LOG_LEVEL", level)
+    configure("speech")
+
+    def log_both(logger: logging.Logger) -> None:
+        logger.warning("Missing phoneme: spoken-secret")
+        logger.error("piper-failed")
+
+    _serve_logging("piper.voice", log_both)
+
+    out = capsys.readouterr().out
+    assert "spoken-secret" not in out
+    events = [line["event"] for line in lines_of(json_lines(out), "piper.voice")]
+    assert events == ["piper-failed"]
 
 
 def test_a_real_httpx_call_logs_no_line_with_its_url(capsys: pytest.CaptureFixture[str]) -> None:
