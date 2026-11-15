@@ -280,9 +280,9 @@ def _add_turn_route(app: FastAPI) -> None:
     """A socket that answers each JSON message `{"traceparent": str | null, "failure": str | null,
     "logger": str}`.
 
-    Each message is a turn that logs to the named logger and sends one frame from inside its trace and
-    one from after it. A turn with a `failure` raises `RuntimeError(failure)` from inside its trace; the
-    frame from after it says whether the exception the host caught is the one raised.
+    Each message is a turn that logs to the named logger and sends one frame from inside its trace
+    and one from after it. A turn with a `failure` raises `RuntimeError(failure)` from inside its
+    trace; the frame from after it says whether the exception the host caught is the one raised.
     """
 
     @app.websocket("/turns")
