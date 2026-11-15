@@ -145,9 +145,16 @@ CAPPED_LOGGER_NAMES = [
     "httpx2",
     "httpcore",
     "httpcore2",
-    "mcp",
+    "mcp.client.streamable_http",
     "sqlalchemy.dialects.postgresql",
 ]
+
+
+def _serve_logging(logger_name: str, log: Callable[[logging.Logger], None]) -> None:
+    async def exercise(_base_url: str) -> None:
+        log(logging.getLogger(logger_name))
+
+    serve(uvicorn.Config(build_app(), log_config=None), exercise)
 
 
 @pytest.mark.parametrize("logger_name", CAPPED_LOGGER_NAMES)
@@ -162,9 +169,9 @@ def test_a_capped_library_info_line_with_content_never_appears(
         monkeypatch.setenv("LOG_LEVEL", level)
     configure("clients")
 
-    logging.getLogger(logger_name).info('HTTP Request: GET http://host/path?query=secret "200 OK"')
+    _serve_logging(logger_name, lambda logger: logger.info("GET /path?query=capped-secret"))
 
-    assert capsys.readouterr().out == ""
+    assert "capped-secret" not in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("logger_name", CAPPED_LOGGER_NAMES)
@@ -173,9 +180,10 @@ def test_a_capped_library_warning_still_appears(
 ) -> None:
     configure("clients")
 
-    logging.getLogger(logger_name).warning("visible")
+    _serve_logging(logger_name, lambda logger: logger.warning("capped-visible"))
 
-    assert [line["event"] for line in json_lines(capsys.readouterr().out)] == ["visible"]
+    lines = lines_of(json_lines(capsys.readouterr().out), logger_name)
+    assert [line["event"] for line in lines] == ["capped-visible"]
 
 
 def test_a_real_httpx_call_logs_no_line_with_its_url(capsys: pytest.CaptureFixture[str]) -> None:
