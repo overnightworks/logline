@@ -1,8 +1,0 @@
-claim_id = "1ae1504f377a46d189f8168e639fc673"
-agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
-role = "builder"
-base = "50305a814117409b546d6f684dfaafe71622ab9b"
-branch = "claude/issue-31-steptimer-add-fail-end"
-scope = ["README.md", "src/logline/step.py", "tests"]
-opened_commit = "35e03ede1feb6c6fc668d7086cf63746f5f7e57d"
-whole_reason = "One public-contract extension of StepTimer with its real-server proof and README lines."
