@@ -9,6 +9,7 @@ from tests.support.apps import (
     STEP_FAILURE_MESSAGE,
     STEP_LOGGER,
     STEP_REFUSAL_REASON,
+    STEP_SECOND_MARK_DELAY_SECONDS,
 )
 from tests.support.lines import Line, lines_of, request_lines
 from tests.support.serving import get, serve_requests, serve_requests_answered
@@ -142,7 +143,7 @@ def test_a_field_named_like_a_key_the_timer_owns_never_reaches_the_line(
     assert not {"reason", "first_output_ms", "error_type"} & line.keys()
 
 
-def test_the_first_output_mark_adds_first_output_ms_within_the_duration(
+def test_the_first_output_mark_keeps_the_time_of_the_first_call_only(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _, lines = serve_requests(capsys, [get("/step/first-output")])
@@ -151,6 +152,9 @@ def test_the_first_output_mark_adds_first_output_ms_within_the_duration(
     assert isinstance(line["first_output_ms"], float)
     assert isinstance(line["duration_ms"], float)
     assert 0 <= line["first_output_ms"] <= line["duration_ms"]
+    # A second mark taken after the delay would put first_output_ms at the end of the step.
+    gap_ms = line["duration_ms"] - line["first_output_ms"]
+    assert gap_ms >= STEP_SECOND_MARK_DELAY_SECONDS * 1000 * 0.8
 
 
 @pytest.mark.parametrize(
@@ -169,6 +173,11 @@ def test_a_step_line_carries_the_trace_of_the_request_it_ran_in(
 def test_a_step_line_is_written_through_the_logger_the_caller_names_without_configure(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """Reads the logger directly through caplog, not through uvicorn and stdout.
+
+    A host that never calls `configure` is the case under test, and `configure` would replace
+    the host's own logging setup, so this is the one step test that does not serve a real app.
+    """
     with caplog.at_level(logging.INFO, logger=STEP_LOGGER):
         with StepTimer(STEP_EVENT, logging.getLogger(STEP_LOGGER), agent_id=STEP_AGENT_ID):
             pass
