@@ -34,8 +34,8 @@ Module owners in `logline`:
   `record` shapes it like any library's line.
 - `testing` owns `configured`, the host tests' way to run `configure` and restore the logging state it
   changed; it is the one module that reads `configuration`'s list of touched loggers.
-- `trace` owns the request's trace: it starts or continues it in OpenTelemetry's context, reads `trace_id`
-  from it and hands it on as headers.
+- `trace` owns the request's and the unit's trace: it starts or continues it in OpenTelemetry's context,
+  reads `trace_id` from it and hands it on as headers or, for a message, as a `traceparent` value.
 
 `record` and `request` use `trace`; `request` uses `step`; `configuration` uses `record` and names the request
 logger.
@@ -61,6 +61,11 @@ sequenceDiagram
     M->>L: the request line (outcome, sub, ip, route, status)
     M->>T: detach, except on an exception
 ```
+
+A unit outside a request, such as a turn on a long-lived WebSocket, runs in `unit_trace(traceparent)` instead:
+the same start or continue, but the trace is detached whenever the block ends, an exception included, so no
+later line of the socket carries it. The request's trace stays attached after an exception because the
+server's error line follows in the same task; a unit has no such line.
 
 ## 4. Deployment View
 

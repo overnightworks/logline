@@ -165,6 +165,40 @@ There is no baggage, no SDK and no exporter.
 `outgoing_headers()` returns the current context as the headers of an outgoing call, an empty dict outside a
 request: `httpx.get(url, headers=outgoing_headers())`.
 
+### A turn on a WebSocket
+
+A WebSocket connection is one long-lived task, so its turns need their own trace, and each must end with
+it. `unit_trace(traceparent)` runs a block, one turn, in the incoming trace or a new one, with a fresh span
+id, and detaches it when the block ends. An exception leaves the block unchanged, and no later line of the
+socket carries the failed turn's `trace_id`. `current_traceparent()` returns the `traceparent` value for a
+message, `None` outside a trace.
+
+The sending side puts the value in the message it sends:
+
+```python
+from logline import current_traceparent, unit_trace
+
+async def speak(websocket, text):
+    with unit_trace(None):
+        await websocket.send_json({"text": text, "traceparent": current_traceparent()})
+        ...
+```
+
+The receiving side runs the turn under the value it received, `None` when the message has none or a
+malformed one, which starts a new trace as a request does. The block's own errors reach the handler, which
+logs them after the block:
+
+```python
+async for message in websocket.iter_json():
+    try:
+        with unit_trace(message.get("traceparent")):
+            await handle_turn(message)
+    except Exception:
+        logger.exception("turn_failed")
+```
+
+`tracestate` is not carried in a message.
+
 ## Settings
 
 | Variable | Effect |

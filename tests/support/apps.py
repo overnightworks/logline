@@ -15,10 +15,12 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from logline import (
     RequestLineMiddleware,
     StepTimer,
+    current_traceparent,
     outgoing_headers,
     set_client_ip,
     set_route,
     set_sub,
+    unit_trace,
 )
 
 SUB = "sub-of-the-person"
@@ -39,6 +41,8 @@ BACKGROUND_LOGGER = "tests.background"
 BACKGROUND_EVENT = "background work after the response"
 CHAIN_CAUSE_MESSAGE = "inner cause message"
 CHAIN_MESSAGE = "visible message"
+TURN_LOGGER = "tests.turns"
+TURN_FAILURE_MESSAGE = "the turn failed"
 STEP_LOGGER = "tests.steps"
 STEP_EVENT = "gateway_call.ended"
 STEP_AGENT_ID = "agent-7"
@@ -95,6 +99,7 @@ def build_app(
     _add_logging_routes(app)
     _add_step_routes(app)
     _add_websocket_route(app)
+    _add_turn_route(app)
     return app
 
 
@@ -271,6 +276,30 @@ def _add_websocket_route(app: FastAPI) -> None:
         await websocket.accept()
         await websocket.send_text(WEBSOCKET_GREETING)
         await websocket.close()
+
+
+def _add_turn_route(app: FastAPI) -> None:
+    """A socket that answers each JSON message `{"traceparent": str | null, "fail": bool}`.
+
+    Each message is a turn that sends one frame from inside its trace and one from after it.
+    """
+
+    @app.websocket("/turns")
+    async def socket(websocket: WebSocket) -> None:
+        await websocket.accept()
+        logger = structlog.get_logger(TURN_LOGGER)
+        async for message in websocket.iter_json():
+            raised: str | None = None
+            try:
+                with unit_trace(message["traceparent"]):
+                    logger.info("inside the turn")
+                    await websocket.send_json({"traceparent": current_traceparent()})
+                    if message["fail"]:
+                        raise RuntimeError(TURN_FAILURE_MESSAGE)
+            except RuntimeError as failure:
+                raised = str(failure)
+            logger.info("after the turn")
+            await websocket.send_json({"traceparent": current_traceparent(), "raised": raised})
 
 
 def _step(**fields: str | float) -> StepTimer:

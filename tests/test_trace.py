@@ -1,13 +1,15 @@
+import json
 import re
 
 import httpx
 import pytest
 import structlog
 import uvicorn
+from websockets.asyncio.client import connect
 
 from logline import configure, outgoing_headers
-from tests.support.apps import build_app
-from tests.support.lines import json_lines, lines_of, request_lines
+from tests.support.apps import TURN_FAILURE_MESSAGE, TURN_LOGGER, build_app
+from tests.support.lines import Line, json_lines, lines_of, request_lines
 from tests.support.serving import serve
 
 _TRACEPARENT = re.compile(
@@ -132,3 +134,77 @@ def test_outside_a_request_there_is_no_trace_to_hand_on(
     assert outgoing_headers() == {}
     (line,) = json_lines(capsys.readouterr().out)
     assert line["trace_id"] is None
+
+
+type _Frame = dict[str, str | None]
+
+
+def _play_turns(
+    capsys: pytest.CaptureFixture[str], turns: list[dict[str, str | bool | None]]
+) -> tuple[list[tuple[_Frame, _Frame]], list[Line]]:
+    """Send each turn to the served socket; return its two frames and the socket's own lines."""
+    configure("trace-service")
+    frames: list[tuple[_Frame, _Frame]] = []
+
+    async def exercise(base_url: str) -> None:
+        async with connect(base_url.replace("http", "ws") + "/turns") as websocket:
+            for turn in turns:
+                await websocket.send(json.dumps(turn))
+                inside = json.loads(await websocket.recv())
+                after = json.loads(await websocket.recv())
+                frames.append((inside, after))
+
+    serve(uvicorn.Config(build_app(), log_config=None), exercise)
+    return frames, lines_of(json_lines(capsys.readouterr().out), TURN_LOGGER)
+
+
+def _turn(traceparent: str | None = None, *, fail: bool = False) -> dict[str, str | bool | None]:
+    return {"traceparent": traceparent, "fail": fail}
+
+
+def test_a_turn_that_raises_leaves_no_trace_id_on_the_sockets_later_lines(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    incoming = f"00-{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}-01"
+
+    frames, lines = _play_turns(capsys, [_turn(incoming, fail=True), _turn()])
+
+    (_, failed_after), (_, later_after) = frames
+    assert failed_after == {"traceparent": None, "raised": TURN_FAILURE_MESSAGE}
+    assert later_after["raised"] is None
+    failed_inside, failed_after_line, later_inside, later_after_line = lines
+    assert failed_inside["trace_id"] == _INCOMING_TRACE_ID
+    assert failed_after_line["trace_id"] is None
+    assert later_inside["trace_id"] not in (None, _INCOMING_TRACE_ID)
+    assert later_after_line["trace_id"] is None
+
+
+def test_two_turns_carrying_one_traceparent_log_that_trace_id(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    incoming = f"00-{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}-01"
+
+    frames, lines = _play_turns(capsys, [_turn(incoming), _turn(incoming)])
+
+    inside_lines = [line for line in lines if line["event"] == "inside the turn"]
+    assert [line["trace_id"] for line in inside_lines] == [_INCOMING_TRACE_ID] * 2
+    outgoing = [_TRACEPARENT.match(str(inside["traceparent"])) for inside, _ in frames]
+    assert [match and match["trace_id"] for match in outgoing] == [_INCOMING_TRACE_ID] * 2
+    assert {match and match["span_id"] for match in outgoing}.isdisjoint({_INCOMING_SPAN_ID})
+
+
+@pytest.mark.parametrize(
+    "incoming",
+    [None, "garbage", f"00-{'0' * 32}-{_INCOMING_SPAN_ID}-01"],
+    ids=["absent", "malformed", "all-zero trace id"],
+)
+def test_a_turn_without_a_valid_traceparent_starts_a_new_trace_with_flags_00(
+    capsys: pytest.CaptureFixture[str], incoming: str | None
+) -> None:
+    frames, lines = _play_turns(capsys, [_turn(incoming)])
+
+    match = _TRACEPARENT.match(str(frames[0][0]["traceparent"]))
+    assert match
+    assert lines[0]["trace_id"] == match["trace_id"]
+    assert int(match["trace_id"], 16) != 0
+    assert match["flags"] == "00"
