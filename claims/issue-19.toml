@@ -1,8 +1,0 @@
-claim_id = "16dc4104f2e84a35b4cc064b6c24d3b6"
-agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
-role = "builder"
-base = "9862b6a8b79feb3c9e7126ad956aced5eebcfe0d"
-branch = "claude/issue-19-standard-library-records-keep-their-extr"
-scope = ["README.md", "src/logline/configuration.py", "src/logline/record.py", "tests"]
-opened_commit = "6fc5938ab3be855a4e2a7843bfbc9f75a633f363"
-whole_reason = "One processor in the foreign-record chain, its test and the README's record section."
