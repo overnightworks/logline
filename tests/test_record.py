@@ -17,6 +17,10 @@ _MESSAGE = "visible message"
 _CAUSE_MESSAGE = "inner cause message"
 
 
+async def _no_requests(_base_url: str) -> None:
+    return None
+
+
 def _logged_lines(capsys: pytest.CaptureFixture[str]) -> list[Line]:
     return json_lines(capsys.readouterr().out)
 
@@ -96,6 +100,45 @@ def test_a_caller_cannot_overwrite_a_base_field(capsys: pytest.CaptureFixture[st
     (line,) = _logged_lines(capsys)
     assert line["service"] == "honest"
     assert line["level"] == "info"
+
+
+def test_a_library_records_extra_fields_reach_the_line_without_forging_it(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure("honest")
+
+    async def exercise(base_url: str) -> None:
+        async with httpx.AsyncClient(base_url=base_url) as client:
+            await client.get("/library-line-with-fields")
+
+    serve(uvicorn.Config(build_app(), log_config=None), exercise)
+
+    (line,) = [line for line in _logged_lines(capsys) if line["logger"] == "some_library"]
+    assert line["room_id"] == "r-1"
+    assert line["duration_ms"] == 12
+    assert line["service"] == "honest"
+    assert line["event"] == "library with fields"
+    assert line["trace_id"] != "forged"
+    assert "connection" not in line
+
+
+def test_a_uvicorn_line_carries_no_color_message(capsys: pytest.CaptureFixture[str]) -> None:
+    configure("honest")
+
+    serve(uvicorn.Config(build_app(), log_config=None), _no_requests)
+
+    startup = [line for line in _logged_lines(capsys) if line["logger"] == "uvicorn.error"]
+    assert startup
+    assert all("color_message" not in line for line in startup)
+
+
+def test_a_structlog_field_named_color_message_stays(capsys: pytest.CaptureFixture[str]) -> None:
+    configure("honest")
+
+    structlog.get_logger("tests").info("hue", color_message="teal")
+
+    (line,) = _logged_lines(capsys)
+    assert line["color_message"] == "teal"
 
 
 def test_a_second_configure_does_not_duplicate_lines(capsys: pytest.CaptureFixture[str]) -> None:

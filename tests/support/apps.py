@@ -206,6 +206,21 @@ def _add_logging_routes(app: FastAPI) -> None:
         logging.getLogger("some_library").warning("library says %s", "hello")
         return {"ok": True}
 
+    @app.get("/library-line-with-fields")
+    async def library_line_with_fields() -> dict[str, bool]:
+        logging.getLogger("some_library").warning(
+            "library with fields",
+            extra={
+                "room_id": "r-1",
+                "duration_ms": 12,
+                "trace_id": "forged",
+                "service": "forged",
+                "event": "forged",
+                "connection": object(),
+            },
+        )
+        return {"ok": True}
+
     @app.get("/trace")
     async def trace() -> dict[str, dict[str, str]]:
         structlog.get_logger("tests.app").info("inside the request")

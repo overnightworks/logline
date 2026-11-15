@@ -69,7 +69,9 @@ object with these keys, plus the key-value fields the caller adds:
 | `event` | the message |
 | `trace_id` | the running request's trace id as 32 hex digits, `null` outside a request |
 
-A caller's own field named `ts`, `level`, `service`, `version`, `logger` or `trace_id` is overwritten. An
+A caller's own field named `ts`, `level`, `service`, `version`, `logger` or `trace_id` is overwritten. The
+scalar `extra=` fields (text, numbers, booleans, `null`) of a standard-library record reach the line, and cannot
+override these keys or `event`; an object is not copied, and uvicorn's `color_message` is not copied. An
 exception renders as Python's text traceback in `exception`: its frames, its message and the whole chain
 (`__cause__`, `__context__`, the members of an `ExceptionGroup`), never local variables.
 An image build bakes `SERVICE_VERSION` from the release it builds.
