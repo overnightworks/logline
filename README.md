@@ -193,6 +193,134 @@ frames; logline neither masks nor caps them. `configure` also does the following
 - drops records below INFO on `uvicorn.error`, because websockets writes the request path, every
   header and every frame there at DEBUG.
 
+## Fleet standard: logging through logline
+
+The rules for what a covered host logs and how. What a line never carries is [Never logged](#never-logged).
+
+### Who is covered, from when
+
+- Every fleet repository whose code runs as a deployed process: a server, a worker or an app.
+- Every library whose code runs on a hop of such a process.
+- Not covered: forks of third-party projects and pure command-line tools.
+- New code complies at once; existing repositories adopt now.
+- The rules a machine checks: a released logline tag, a literal event name of the form below, no
+  value formatted into a message, no field from the deny list (`duration`, `elapsed`, `*_seconds`, `error`,
+  `user_id`, `subject_id`, `url`, `path`, `query`, `text`, `prompt`, `token`), and no logging setup of the
+  host's own. Whether the log points, levels and single errors are right is judged by a scheduled audit.
+
+### Where to log
+
+| Point | Level |
+|---|---|
+| Inbound HTTP request (the middleware writes it) | info |
+| Unit of work that is not an HTTP request (a turn, a job run, a queue message), one line at its end | info; error when it failed |
+| Step inside a unit (each outbound call to another process, each wait or compute stage the caller waits on), one line at its end | info; warning when it failed and the unit went on; error when the unit failed with it |
+| State change of a domain object | info |
+| Refusal, with `reason` | info |
+| Background run, one line per run with its counts | info |
+| Process start, ready and stop | info |
+| Error, once, where the exception stops | error |
+
+Not logged: start lines of short steps, lines per item, per frame, per chunk or per token, a second request
+line, the same error at each layer.
+
+### Event names
+
+`event` is a literal `<noun>.<verb_past>`: snake_case, exactly one dot, no service prefix and no values, such as
+`turn.ended`, `hearing.ended` or `sign_in.refused`. The request line is `request.ended` with `outcome`;
+until logline's next minor release the middleware still writes `request` (`REQUEST_EVENT`), without `outcome`.
+
+- `.ended` closes a timed step and always carries `duration_ms` and `outcome`.
+- `.started` is only for a process or for work that runs for minutes.
+- `.failed` is an error outside a timed step.
+
+One event per step, whatever its outcome.
+
+### Shared fields
+
+The same name and type in every app. A new field is an id, a number whose name carries its unit, or a code
+from a closed set.
+
+| Field | Type | Use |
+|---|---|---|
+| `duration_ms` | number | the step's start to the line's `ts`, on a monotonic clock, each process measuring its own |
+| `first_output_ms` | number | the time to the first output, streaming steps only |
+| `outcome` | `ok`, `refused`, `failed` or `cancelled` | on every `.ended` line |
+| `reason` | code from a closed set in the app | why it was refused, failed or ended |
+| `error_type` | string | the exception's class name |
+| `status` | integer | the HTTP status of an outbound call |
+| `sub` | string | the person; never `subject_id` or `user_id` |
+| `<entity>_id` | string | a durable id |
+| `<noun>_count`, `_bytes`, `_tokens`, `_ms` | number | the unit is in the name |
+
+### Levels
+
+- `info`: something happened as designed, a refusal included.
+- `warning`: degraded, but the unit went on.
+- `error`: a unit or step failed and its caller did not get the result.
+- `critical`: the process cannot go on, or data is at risk.
+- `debug`: developer detail.
+
+### Errors
+
+- The layer where the exception stops writes the one line; a layer that re-raises writes none.
+- A failed timed step is its own `.ended` line with `outcome` `failed` and `error_type`.
+- A traceback goes only on an exception the code did not expect.
+- A step line is written in `finally`, so a failed or cancelled step still leaves it.
+
+### Correlation
+
+`trace_id` is the one correlation id. Every outbound call and every message of a unit carries it
+([Trace context](#trace-context)). The service where a turn begins starts the turn's trace, and every later
+message of the turn carries it, a call back to that service included.
+
+### Deviations
+
+A deviation is a request that names its enduring harm. logline's head reviews it and only the operator rules
+it. A ruled deviation is recorded here; none is recorded today.
+
+### The target picture
+
+The picture is the target. Until logline's next minor release the middleware writes the request line as `request`
+without `outcome`.
+
+One spoken turn across three services. After the first line, `version`, `logger` and the full `trace_id` are
+cut for width only.
+
+```json
+{"ts":"2026-11-15T16:02:11.640113Z","level":"info","service":"speech","version":"1.9.0","logger":"speech_service.live_session","event":"turn_end_wait.ended","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","duration_ms":640.0,"outcome":"ok","reason":"silence","item_id":"item_81c2"}
+{"ts":"2026-11-15T16:02:11.982260Z","level":"info","service":"speech","event":"hearing.ended","trace_id":"4bf92f35","duration_ms":342.1,"outcome":"ok","item_id":"item_81c2","audio_ms":3120,"partial_count":2}
+{"ts":"2026-11-15T16:02:11.991402Z","level":"info","service":"hopin","event":"transcript_relay.ended","trace_id":"4bf92f35","duration_ms":8.6,"outcome":"ok","room_id":"room_5d0e","agent_id":"agent_19"}
+{"ts":"2026-11-15T16:02:12.066318Z","level":"info","service":"personas","event":"turn_setup.ended","trace_id":"4bf92f35","duration_ms":71.3,"outcome":"ok","agent_id":"agent_19"}
+{"ts":"2026-11-15T16:02:13.310247Z","level":"info","service":"personas","event":"model_request.ended","trace_id":"4bf92f35","duration_ms":1243.9,"first_output_ms":418.2,"outcome":"ok","status":200,"input_tokens":5210,"output_tokens":64}
+{"ts":"2026-11-15T16:02:15.202431Z","level":"info","service":"speech","event":"speak.ended","trace_id":"4bf92f35","duration_ms":1876.4,"first_output_ms":186.5,"outcome":"ok","audio_ms":4100,"character_count":61}
+{"ts":"2026-11-15T16:02:15.204018Z","level":"info","service":"speech","event":"request.ended","trace_id":"4bf92f35","outcome":"ok","method":"POST","route":"/v1/audio/speech","status":200,"duration_ms":1878.0,"sub":"9d2c4b1e-6f0a-4c3d-8a77-1b5e0c9f2d41","ip":"10.42.1.17"}
+{"ts":"2026-11-15T16:02:15.217306Z","level":"info","service":"hopin","event":"speak.ended","trace_id":"4bf92f35","duration_ms":1893.2,"first_output_ms":201.7,"outcome":"ok","room_id":"room_5d0e","agent_id":"agent_19"}
+{"ts":"2026-11-15T16:02:15.222540Z","level":"info","service":"hopin","event":"request.ended","trace_id":"4bf92f35","outcome":"ok","method":"POST","route":"/mcp","status":200,"duration_ms":1899.5,"sub":"c81f0a55-2b9e-4d17-9e3a-7f6d21a4b0c2","ip":"10.42.2.8"}
+{"ts":"2026-11-15T16:02:15.230077Z","level":"info","service":"personas","event":"turn.ended","trace_id":"4bf92f35","duration_ms":3235.0,"outcome":"ok","agent_id":"agent_19","model_request_count":1,"tool_call_count":1}
+```
+
+One web request with an outbound call and one error:
+
+```json
+{"ts":"2026-11-15T16:07:40.118204Z","level":"info","service":"skat","event":"token_exchange.ended","trace_id":"0af7651916cd43dd8448eb211c80319c","duration_ms":84.2,"outcome":"ok","status":200}
+{"ts":"2026-11-15T16:07:40.129733Z","level":"error","service":"skat","event":"sign_in.failed","trace_id":"0af76519","error_type":"OperationalError","exception":"Traceback (most recent call last):\n  ...\nsqlalchemy.exc.OperationalError: connection refused"}
+{"ts":"2026-11-15T16:07:40.131090Z","level":"info","service":"skat","event":"request.ended","trace_id":"0af76519","outcome":"failed","method":"GET","route":"/auth/callback","status":500,"duration_ms":96.7,"sub":null,"ip":"203.0.113.9"}
+```
+
+Why this log is the target:
+
+- **What happened:** each line is one finished thing under a fixed event name, and the ten lines are the turn's
+  whole path through three services under one `trace_id`.
+- **Where the time went:** `ts` minus `duration_ms` is a step's start, so the gaps between services are the
+  network. The turn takes about 2.5 s from the person's silence to the first audio: 640 ms wait, 342 ms hearing,
+  9 ms relay, 71 ms setup, 1244 ms model and 202 ms to first audio.
+- **Both sides of a hop:** `speak.ended` in speech and in hopin differ by 17 ms, so the relay is not the problem.
+- **What failed:** one error line names the exception's class and the frame that raised it, and the request line
+  shows the 500.
+- **What it leaves out:** transcripts, spoken text, prompts, tokens, paths, queries, start lines and per-chunk
+  lines. Ids point to the content instead.
+
 ## Testing a host
 
 `logline.testing.configured(service)` is a context manager for a host's in-process tests. It calls
