@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncGenerator, AsyncIterator
+from dataclasses import dataclass
 from pathlib import Path
 
 import structlog
@@ -47,6 +48,19 @@ STEP_AGENT_ID = "agent-7"
 STEP_REFUSAL_REASON = "overloaded"
 STEP_FAILURE_MESSAGE = "failure message that stays out of the line"
 GROUP_MEMBER_MESSAGES = ("first member message", "second member message")
+
+
+@dataclass(frozen=True)
+class StepScenario:
+    """What the step routes add, fail with and collide on, which the step tests read back."""
+
+    failure_reason: str = "rate_limited"
+    count: int = 42
+    later_agent_id: str = "agent-8"
+    reserved_field: str = "module"
+
+
+STEP = StepScenario()
 
 
 async def _pass_through(request: Request, call_next: RequestResponseEndpoint) -> Response:
@@ -426,6 +440,137 @@ def _add_step_routes(app: FastAPI) -> None:
             step.first_output()
             step.first_output()
         return {"caught": None}
+
+    @app.get("/step/add")
+    async def step_add() -> _Answer:
+        async with _step() as step:
+            step.add(input_tokens=1, output_tokens=STEP.count, duration_ms=-1, reason="caller")
+            step.add(input_tokens=STEP.count, agent_id=STEP.later_agent_id, error_type="Caller")
+        return {"caught": None}
+
+    @app.get("/step/add-reserved")
+    async def step_add_reserved() -> _Answer:
+        try:
+            async with _step() as step:
+                step.add(**{STEP.reserved_field: "value"})
+        except ValueError as caught:
+            return {"caught": str(caught)}
+        return {"caught": None}
+
+    @app.get("/step/fail")
+    async def step_fail() -> _Answer:
+        async with _step() as step:
+            step.fail(STEP.failure_reason)
+        return {"caught": None}
+
+    @app.get("/step/degraded-then-fail")
+    async def step_degraded_then_fail() -> _Answer:
+        async with _step() as step:
+            step.degraded()
+            step.fail(STEP.failure_reason)
+        return {"caught": None}
+
+    @app.get("/step/fail-handled")
+    async def step_fail_handled() -> _Answer:
+        async with _step() as step:
+            step.handled()
+            step.fail(STEP.failure_reason)
+        return {"caught": None}
+
+    @app.get("/step/fail-then-refuse")
+    async def step_fail_then_refuse() -> _Answer:
+        async with _step() as step:
+            step.fail(STEP.failure_reason)
+            step.refuse(STEP_REFUSAL_REASON)
+        return {"caught": None}
+
+    @app.get("/step/refuse-then-fail")
+    async def step_refuse_then_fail() -> _Answer:
+        async with _step() as step:
+            step.refuse(STEP_REFUSAL_REASON)
+            step.fail(STEP.failure_reason)
+        return {"caught": None}
+
+    @app.get("/step/fail-then-raise")
+    async def step_fail_then_raise() -> _Answer:
+        failure = ValueError(STEP_FAILURE_MESSAGE)
+        try:
+            async with _step() as step:
+                step.fail(STEP.failure_reason)
+                raise failure
+        except ValueError as caught:
+            return _caught(caught, failure)
+
+    @app.get("/step/fail-then-cancel")
+    async def step_fail_then_cancel() -> _Answer:
+        async def wait_forever() -> None:
+            async with _step() as step:
+                step.fail(STEP.failure_reason)
+                await asyncio.Event().wait()
+
+        waiting = asyncio.create_task(wait_forever())
+        await asyncio.sleep(0)
+        waiting.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await waiting
+        return {"caught": None}
+
+    @app.get("/step/end")
+    async def step_end() -> _Answer:
+        step = _step()
+        step.add(output_tokens=STEP.count)
+        step.end()
+        return {"caught": None}
+
+    @app.get("/step/fail-then-end")
+    async def step_fail_then_end() -> _Answer:
+        step = _step()
+        step.fail(STEP.failure_reason)
+        step.end()
+        return {"caught": None}
+
+    @app.get("/step/refuse-then-end")
+    async def step_refuse_then_end() -> _Answer:
+        step = _step()
+        step.refuse(STEP_REFUSAL_REASON)
+        step.end()
+        return {"caught": None}
+
+    @app.get("/step/sync-end")
+    def step_sync_end() -> _Answer:
+        _step().end()
+        return {"caught": None}
+
+    @app.get("/step/constructed-before-the-block")
+    async def step_constructed_before_the_block() -> _Answer:
+        step = _step()
+        step.first_output()
+        async with step:
+            pass
+        return {"caught": None}
+
+    @app.get("/step/end-twice")
+    async def step_end_twice() -> _Answer:
+        step = _step()
+        step.end()
+        step.end()
+        return {"caught": None}
+
+    @app.get("/step/end-in-block")
+    async def step_end_in_block() -> _Answer:
+        async with _step() as step:
+            step.end()
+        return {"caught": None}
+
+    @app.get("/step/end-then-raise")
+    async def step_end_then_raise() -> _Answer:
+        failure = ValueError(STEP_FAILURE_MESSAGE)
+        try:
+            async with _step() as step:
+                step.end()
+                raise failure
+        except ValueError as caught:
+            return _caught(caught, failure)
 
     @app.get("/step/thread")
     async def step_thread() -> _Answer:
