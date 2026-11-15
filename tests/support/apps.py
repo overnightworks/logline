@@ -450,16 +450,23 @@ def _add_step_routes(app: FastAPI) -> None:
 
     @app.get("/step/add-reserved")
     async def step_add_reserved() -> _Answer:
-        async with _step() as step:
-            try:
+        try:
+            async with _step() as step:
                 step.add(**{STEP.reserved_field: "value"})
-            except ValueError as caught:
-                return {"caught": str(caught)}
+        except ValueError as caught:
+            return {"caught": str(caught)}
         return {"caught": None}
 
     @app.get("/step/fail")
     async def step_fail() -> _Answer:
         async with _step() as step:
+            step.fail(STEP.failure_reason)
+        return {"caught": None}
+
+    @app.get("/step/degraded-then-fail")
+    async def step_degraded_then_fail() -> _Answer:
+        async with _step() as step:
+            step.degraded()
             step.fail(STEP.failure_reason)
         return {"caught": None}
 
@@ -513,6 +520,33 @@ def _add_step_routes(app: FastAPI) -> None:
         step = _step()
         step.add(output_tokens=STEP.count)
         step.end()
+        return {"caught": None}
+
+    @app.get("/step/fail-then-end")
+    async def step_fail_then_end() -> _Answer:
+        step = _step()
+        step.fail(STEP.failure_reason)
+        step.end()
+        return {"caught": None}
+
+    @app.get("/step/refuse-then-end")
+    async def step_refuse_then_end() -> _Answer:
+        step = _step()
+        step.refuse(STEP_REFUSAL_REASON)
+        step.end()
+        return {"caught": None}
+
+    @app.get("/step/sync-end")
+    def step_sync_end() -> _Answer:
+        _step().end()
+        return {"caught": None}
+
+    @app.get("/step/constructed-before-the-block")
+    async def step_constructed_before_the_block() -> _Answer:
+        step = _step()
+        step.first_output()
+        async with step:
+            pass
         return {"caught": None}
 
     @app.get("/step/end-twice")
