@@ -172,6 +172,15 @@ def test_the_request_line_is_written_when_the_response_ends_not_after_background
     assert written == [REQUEST_LOGGER_NAME, BACKGROUND_LOGGER]
 
 
+def test_an_exception_after_the_response_ended_leaves_the_line_the_response_wrote(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, lines = serve_requests(capsys, [get("/background-task-raising")])
+
+    (line,) = request_lines(lines)
+    assert (line["status"], line["outcome"]) == (200, Outcome.OK.value)
+
+
 def test_a_streamed_response_gets_one_line_when_its_last_chunk_is_sent(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

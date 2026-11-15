@@ -194,6 +194,11 @@ def _add_request_routes(app: FastAPI) -> None:
         first, second = GROUP_MEMBER_MESSAGES
         raise ExceptionGroup("group message", [ValueError(first), TypeError(second)])
 
+    @app.get("/background-task-raising")
+    async def background_task_raising(tasks: BackgroundTasks) -> dict[str, bool]:
+        tasks.add_task(_fail_background_work)
+        return {"ok": True}
+
     @app.get("/background-task")
     async def background_task(tasks: BackgroundTasks) -> dict[str, bool]:
         tasks.add_task(_log_background_work)
@@ -217,6 +222,10 @@ def _raise_chained() -> None:
 
 def _log_background_work() -> None:
     structlog.get_logger(BACKGROUND_LOGGER).info(BACKGROUND_EVENT)
+
+
+def _fail_background_work() -> None:
+    raise RuntimeError("background work failed")
 
 
 def _add_logging_routes(app: FastAPI) -> None:

@@ -85,7 +85,9 @@ The middleware writes one line per HTTP request on the logger `logline.request`,
 
 - `outcome` is `failed` when the app raised an `Exception` or the status is 5xx, `cancelled` when the app raised
   another `BaseException` (a cancellation), and `ok` otherwise, a 4xx status included: a refused request is
-  the app's answer, not a failure. A host compares `event` with `REQUEST_EVENT`, never with the literal.
+  the app's answer, not a failure. The line is written when the response ends, so an exception raised after
+  that (in a background task) leaves the line's `outcome` and `status` as the response wrote them. A host
+  compares `event` with `REQUEST_EVENT`, never with the literal.
 
 - `route` is the route template (`/notes/{note_id}`), never the path: the template the host gave to
   `set_route`, else what the framework left in `scope["route"]`, which inside a mounted FastAPI app is that
