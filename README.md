@@ -189,7 +189,7 @@ libraries pass as those libraries write them, and some of those write paths, que
 frames; logline neither masks nor caps them. `configure` also does the following at every `LOG_LEVEL`:
 
 - renders exceptions as text, never as a dict with local variables;
-- sets the `httpx`, `httpx2` and `httpcore` loggers to WARNING, because their INFO lines carry the full URL
+- sets the `httpx`, `httpx2`, `httpcore` and `httpcore2` loggers to WARNING, because their INFO lines carry the full URL
   with its query; the callee's request line with the same `trace_id` covers the call;
 - drops uvicorn's WebSocket connection lines, which carry the raw path with its query;
 - drops records below INFO on `uvicorn.error`, because websockets writes the request path, every
