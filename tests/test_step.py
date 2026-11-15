@@ -104,12 +104,20 @@ def test_a_failed_steps_line_carries_neither_the_message_nor_a_traceback(
 
 
 @pytest.mark.parametrize("path", ["/step/failed", "/step/failed-handled", "/step/thread-failed"])
-def test_a_failed_steps_exception_reaches_the_caller_unchanged(
+def test_a_failed_steps_exception_reaches_the_caller_as_the_same_object(
     capsys: pytest.CaptureFixture[str], path: str
 ) -> None:
     _, _, (answer,) = serve_requests_answered(capsys, [get(path)])
 
-    assert answer.json() == {"caught": STEP_FAILURE_MESSAGE}
+    assert answer.json() == {"caught": STEP_FAILURE_MESSAGE, "same": True}
+
+
+def test_a_cancelled_step_lets_the_cancellation_propagate(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, _, (answer,) = serve_requests_answered(capsys, [get("/step/cancelled")])
+
+    assert answer.json()["cancelled"] is True
 
 
 def test_an_exception_that_leaves_the_step_unhandled_fails_the_request_with_one_step_line(

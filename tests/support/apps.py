@@ -279,10 +279,17 @@ def _step(**fields: str | float) -> StepTimer:
     )
 
 
-def _sync_step(*, fail: bool) -> None:
+type _Answer = dict[str, str | bool | None]
+
+
+def _caught(caught: Exception, raised: Exception) -> _Answer:
+    return {"caught": str(caught), "same": caught is raised}
+
+
+def _sync_step(*, failure: Exception | None) -> None:
     with _step():
-        if fail:
-            raise ValueError(STEP_FAILURE_MESSAGE)
+        if failure is not None:
+            raise failure
 
 
 async def _generator_of_a_step() -> AsyncGenerator[int]:
@@ -295,27 +302,29 @@ def _add_step_routes(app: FastAPI) -> None:
     """Routes that each run one step; the response says which exception reached the endpoint."""
 
     @app.get("/step/ok")
-    async def step_ok() -> dict[str, str | None]:
+    async def step_ok() -> _Answer:
         async with _step():
             pass
         return {"caught": None}
 
     @app.get("/step/failed")
-    async def step_failed() -> dict[str, str | None]:
+    async def step_failed() -> _Answer:
+        failure = ValueError(STEP_FAILURE_MESSAGE)
         try:
             async with _step():
-                raise ValueError(STEP_FAILURE_MESSAGE)
+                raise failure
         except ValueError as caught:
-            return {"caught": str(caught)}
+            return _caught(caught, failure)
 
     @app.get("/step/failed-handled")
-    async def step_failed_handled() -> dict[str, str | None]:
+    async def step_failed_handled() -> _Answer:
+        failure = ValueError(STEP_FAILURE_MESSAGE)
         try:
             async with _step() as step:
                 step.handled()
-                raise ValueError(STEP_FAILURE_MESSAGE)
+                raise failure
         except ValueError as caught:
-            return {"caught": str(caught)}
+            return _caught(caught, failure)
 
     @app.get("/step/failed-escaping")
     async def step_failed_escaping() -> None:
@@ -323,26 +332,26 @@ def _add_step_routes(app: FastAPI) -> None:
             raise ValueError(STEP_FAILURE_MESSAGE)
 
     @app.get("/step/degraded")
-    async def step_degraded() -> dict[str, str | None]:
+    async def step_degraded() -> _Answer:
         async with _step() as step:
             step.degraded()
         return {"caught": None}
 
     @app.get("/step/refused")
-    async def step_refused() -> dict[str, str | None]:
+    async def step_refused() -> _Answer:
         async with _step() as step:
             step.refuse(STEP_REFUSAL_REASON)
         return {"caught": None}
 
     @app.get("/step/refused-degraded")
-    async def step_refused_degraded() -> dict[str, str | None]:
+    async def step_refused_degraded() -> _Answer:
         async with _step() as step:
             step.degraded()
             step.refuse(STEP_REFUSAL_REASON)
         return {"caught": None}
 
     @app.get("/step/cancelled")
-    async def step_cancelled() -> dict[str, str | None]:
+    async def step_cancelled() -> _Answer:
         async def wait_forever() -> None:
             async with _step():
                 await asyncio.Event().wait()
@@ -352,24 +361,24 @@ def _add_step_routes(app: FastAPI) -> None:
         waiting.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await waiting
-        return {"caught": None}
+        return {"caught": None, "cancelled": waiting.cancelled()}
 
     @app.get("/step/generator-closed")
-    async def step_generator_closed() -> dict[str, str | None]:
+    async def step_generator_closed() -> _Answer:
         generator = _generator_of_a_step()
         await anext(generator)
         await generator.aclose()
         return {"caught": None}
 
     @app.get("/step/generator-finished")
-    async def step_generator_finished() -> dict[str, str | None]:
+    async def step_generator_finished() -> _Answer:
         async with contextlib.aclosing(_generator_of_a_step()) as generator:
             async for _ in generator:
                 pass
         return {"caught": None}
 
     @app.get("/step/timer-named-fields")
-    async def step_timer_named_fields() -> dict[str, str | None]:
+    async def step_timer_named_fields() -> _Answer:
         async with _step(
             duration_ms=-1, outcome="failed", reason="caller", first_output_ms=-1, error_type="Caller"
         ):
@@ -377,7 +386,7 @@ def _add_step_routes(app: FastAPI) -> None:
         return {"caught": None}
 
     @app.get("/step/first-output")
-    async def step_first_output() -> dict[str, str | None]:
+    async def step_first_output() -> _Answer:
         async with _step() as step:
             step.first_output()
             await asyncio.sleep(0)
@@ -385,19 +394,20 @@ def _add_step_routes(app: FastAPI) -> None:
         return {"caught": None}
 
     @app.get("/step/thread")
-    async def step_thread() -> dict[str, str | None]:
-        await asyncio.to_thread(_sync_step, fail=False)
+    async def step_thread() -> _Answer:
+        await asyncio.to_thread(_sync_step, failure=None)
         return {"caught": None}
 
     @app.get("/step/thread-failed")
-    async def step_thread_failed() -> dict[str, str | None]:
+    async def step_thread_failed() -> _Answer:
+        failure = ValueError(STEP_FAILURE_MESSAGE)
         try:
-            await asyncio.to_thread(_sync_step, fail=True)
+            await asyncio.to_thread(_sync_step, failure=failure)
         except ValueError as caught:
-            return {"caught": str(caught)}
+            return _caught(caught, failure)
         return {"caught": None}
 
     @app.get("/step/sync-endpoint")
-    def step_sync_endpoint() -> dict[str, str | None]:
-        _sync_step(fail=False)
+    def step_sync_endpoint() -> _Answer:
+        _sync_step(failure=None)
         return {"caught": None}
