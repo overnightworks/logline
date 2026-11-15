@@ -71,11 +71,13 @@ A log call's own `service`, `version` or `trace_id` field is overwritten, so `tr
 the `trace_id`. The host decides who the person and the client address are; logline writes
 what it is told.
 
-**Never logged.** Credentials, tokens, cookies, header values, contents, raw paths and query strings stay out
-of every line logline writes or routes. The mechanisms are the route template instead of the path, text
-tracebacks without local variables, the HTTP client loggers at WARNING and the filter on uvicorn's WebSocket
-lines and DEBUG records, which carry websockets' request headers and frames. An exception message is logged
-as written: the log shows what happened, and a secret in a message is the app's defect.
+**Never logged.** At the default level and above, credentials, tokens, cookies, header values, contents, raw
+paths and query strings stay out of every line logline writes or routes. At `LOG_LEVEL=debug`, other libraries'
+DEBUG records pass as those libraries write them; some carry paths, query strings, header values or frames,
+and logline neither masks nor caps them (see the [vision](VISION.md)). The mechanisms are the route template
+instead of the path, text tracebacks without local variables, the HTTP client loggers at WARNING and the filter
+on uvicorn's WebSocket lines and DEBUG records, which carry websockets' request headers and frames. An exception
+message is logged as written: the log shows what happened, and a secret in a message is the app's defect.
 
 **Proof strategy.** The tests drive a real FastAPI app through the middleware under a real `uvicorn.Server`
 and read stdout; only the clock and randomness may be faked. Branch coverage is 100 %, measured over all
@@ -106,8 +108,9 @@ tests. The lowest direct dependency floors run the same tests.
 
 ## 8. Risks and Technical Debt
 
-- `route` is the host's template from `set_route`, else what the framework left in `scope["route"]`; logline
-  never re-matches routes, hosts or paths, because a template it derived would carry raw values of parameterised
+- `route` is the host's template from `set_route`, else what the framework left in `scope["route"]`. An empty
+  template logs `null`, with no fallback to the framework's route. logline never re-matches routes, hosts or
+  paths, because a template it derived would carry raw values of parameterised
   mounts. Inside a mounted FastAPI app it is that app's own template, relative to the mount. FastAPI's router
   leaves it only for an `APIRoute`, so a `Mount` or a plain Starlette `Route` answering under FastAPI logs
   `null` unless the host calls `set_route`, as do an unmatched path and a gate that answered before the router.
