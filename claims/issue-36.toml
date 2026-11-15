@@ -1,0 +1,8 @@
+claim_id = "485c0c23dffc467aaa130108ec1010bd"
+agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
+role = "builder"
+base = "b4f28608f03a1f7a27cf39839f5c3bd9494e8b8d"
+branch = "claude/issue-36-steptimer-end-cancelled-started-at"
+scope = ["README.md", "src/logline/step.py", "tests"]
+opened_commit = "d1b3bdb922a504706fbb2848606606a4aed63912"
+whole_reason = "One public-contract extension of StepTimer with its real-server proof and README lines."
