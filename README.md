@@ -71,7 +71,8 @@ object with these keys, plus the key-value fields the caller adds:
 
 A caller's own field named `ts`, `level`, `service`, `version`, `logger` or `trace_id` is overwritten. The
 scalar `extra=` fields (text, numbers, booleans, `null`) of a standard-library record reach the line, and cannot
-override these keys or `event`; an object is not copied, and uvicorn's `color_message` is not copied. An
+override these keys or `event`; an object is not copied, and neither are `exception` (the key the traceback
+renders into) and uvicorn's `color_message`. An
 exception renders as Python's text traceback in `exception`: its frames, its message and the whole chain
 (`__cause__`, `__context__`, the members of an `ExceptionGroup`), never local variables.
 An image build bakes `SERVICE_VERSION` from the release it builds.
@@ -79,7 +80,16 @@ An image build bakes `SERVICE_VERSION` from the release it builds.
 ## The request line
 
 The middleware writes one line per HTTP request on the logger `logline.request`, with `event`
-`logline.REQUEST_EVENT` (`request`) and `method`, `route`, `status`, `duration_ms`, `sub` and `ip`:
+`logline.REQUEST_EVENT` (`request.ended`) and `outcome`, `method`, `route`, `status`, `duration_ms`, `sub` and
+`ip`:
+
+- `outcome` is `failed` when the app raised an `Exception` or the status is 5xx, `cancelled` when the app raised
+  another `BaseException` (a cancellation), and `ok` otherwise, a 4xx status included: a refused request is
+  the app's answer, not a failure. Such a `BaseException` still reaches the server, which answers 500 before
+  the response starts, so the line then reads `cancelled` with `status` 500; once the response has started, the
+  line keeps the status already sent, such as 200, with `cancelled`: read the two together. The line is written
+  when the response ends, so an exception raised after that (in a background task) leaves the line's `outcome`
+  and `status` as the response wrote them. A host compares `event` with `REQUEST_EVENT`, never with the literal.
 
 - `route` is the route template (`/notes/{note_id}`), never the path: the template the host gave to
   `set_route`, else what the framework left in `scope["route"]`, which inside a mounted FastAPI app is that
@@ -231,8 +241,8 @@ line, the same error at each layer.
 ### Event names
 
 `event` is a literal `<noun>.<verb_past>`: snake_case, exactly one dot, no service prefix and no values, such as
-`turn.ended`, `hearing.ended` or `sign_in.refused`. The request line is `request.ended` with `outcome`;
-until logline's next minor release the middleware still writes `request` (`REQUEST_EVENT`), without `outcome`.
+`turn.ended`, `hearing.ended` or `sign_in.refused`. The request line is `request.ended` with `outcome`
+(`REQUEST_EVENT`).
 
 - `.ended` closes a timed step and always carries `duration_ms` and `outcome`.
 - `.started` is only for a process or for work that runs for minutes.
@@ -261,14 +271,66 @@ from a closed set.
 
 - `info`: something happened as designed, a refusal included.
 - `warning`: degraded, but the unit went on.
-- `error`: a unit or step failed and its caller did not get the result.
+- `error`: a unit or step failed and its unit did not go on.
 - `critical`: the process cannot go on, or data is at risk.
 - `debug`: developer detail.
+
+### The helpers
+
+`Outcome` is the one owner of the four `outcome` values (`ok`, `refused`, `failed`, `cancelled`), a `StrEnum`
+that writes as its text. `StepTimer` writes a step's one `.ended` line, as `with` or `async with`:
+
+```python
+import logging
+
+from logline import StepTimer
+
+_LOGGER = logging.getLogger(__name__)
+
+
+async def ask_model(client, request):
+    async with StepTimer("model_request.ended", _LOGGER, agent_id=request.agent_id) as step:
+        async for chunk in client.stream(request):
+            step.first_output()
+            yield chunk
+```
+
+- The line goes through the standard-library logger the caller names, a library's own, so a host without
+  `configure` gets an ordinary record under its own logging setup, and one with `configure` gets the JSON
+  line with the running request's `trace_id`. A sync `with` on a worker thread (`asyncio.to_thread`, a sync
+  endpoint) carries the request's `trace_id` too.
+- The timer starts when it is constructed. The line carries the step's id fields (scalars), `duration_ms`
+  on the request line's clock and rounding, and `outcome`; it is written in `finally`, so a failed or
+  cancelled step still leaves it.
+- The timer owns the keys `duration_ms`, `outcome`, `reason`, `first_output_ms` and `error_type`: a field of
+  one of those names is dropped. A field named like an attribute of `logging.LogRecord` (`name`, `module`,
+  `process`, `thread`, `args`, `message`, ...) raises `ValueError` when the timer is constructed, because the
+  standard library refuses it as an `extra` key.
+- A block that ends normally is `ok`. `step.refuse(reason)` makes it `refused` with `reason`, a code from the
+  app's closed set. `step.first_output()` adds `first_output_ms`, from the first call only.
+- An `Exception` makes it `failed` with `error_type`, the class name, and propagates unchanged. The line
+  never carries the message or a traceback: the layer where the exception stops logs it.
+- Any other `BaseException` (`asyncio.CancelledError`, `GeneratorExit`) makes it `cancelled` without
+  `error_type`, and propagates.
+- The line is at INFO. `step.degraded()` makes it a warning, such as a `refused` call the unit retried. A
+  `failed` step is at ERROR, or at WARNING after `step.handled()` when its unit goes on; a step that is
+  degraded and failed unhandled stays at ERROR.
+- An async generator that is dropped without `aclose()` runs its `finally` at garbage collection, under
+  whatever trace is current then, so its step line can carry another unit's `trace_id`. A host wraps such a
+  generator in `contextlib.aclosing` so the line is written where the generator is used:
+
+```python
+from contextlib import aclosing
+
+async with aclosing(ask_model(client, request)) as chunks:
+    async for chunk in chunks:
+        ...
+```
 
 ### Errors
 
 - The layer where the exception stops writes the one line; a layer that re-raises writes none.
-- A failed timed step is its own `.ended` line with `outcome` `failed` and `error_type`.
+- A failed timed step is its own `.ended` line with `outcome` `failed` and `error_type` (`StepTimer` writes it).
 - A traceback goes only on an exception the code did not expect.
 - A step line is written in `finally`, so a failed or cancelled step still leaves it.
 
@@ -284,9 +346,6 @@ A deviation is a request that names its enduring harm. logline's head reviews it
 it. A ruled deviation is recorded here; none is recorded today.
 
 ### The target picture
-
-The picture is the target. Until logline's next minor release the middleware writes the request line as `request`
-without `outcome`.
 
 One spoken turn across three services. After the first line, `version`, `logger` and the full `trace_id` are
 cut for width only.

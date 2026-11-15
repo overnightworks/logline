@@ -8,13 +8,16 @@ from logline.request import (
     set_route,
     set_sub,
 )
+from logline.step import Outcome, StepTimer
 from logline.trace import outgoing_headers
 
 __version__ = "0.2.1"
 
 __all__ = [
     "REQUEST_EVENT",
+    "Outcome",
     "RequestLineMiddleware",
+    "StepTimer",
     "__version__",
     "configure",
     "outgoing_headers",

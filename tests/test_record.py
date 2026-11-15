@@ -120,6 +120,7 @@ def test_a_library_records_extra_fields_reach_the_line_without_forging_it(
     assert line["event"] == "library with fields"
     assert line["trace_id"] != "forged"
     assert "connection" not in line
+    assert "exception" not in line
 
 
 def test_a_uvicorn_line_carries_no_color_message(capsys: pytest.CaptureFixture[str]) -> None:

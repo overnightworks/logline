@@ -1,5 +1,7 @@
+import asyncio
+import contextlib
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from pathlib import Path
 
 import structlog
@@ -12,6 +14,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from logline import (
     RequestLineMiddleware,
+    StepTimer,
     outgoing_headers,
     set_client_ip,
     set_route,
@@ -23,6 +26,8 @@ HOST_CLIENT_IP = "198.51.100.7"
 HOST_ROUTE = "/host-template"
 SUPERSEDED_ROUTE = "/superseded-template"
 GATED_PATH = "/gated"
+UNAVAILABLE_PATH = "/unavailable"
+CANCELLED_PATH = "/cancelled"
 MOUNTED_APP = "/mounted"
 STATIC_MOUNT = "/static"
 NAMED_STATIC_MOUNT = "/named-static"
@@ -34,6 +39,11 @@ BACKGROUND_LOGGER = "tests.background"
 BACKGROUND_EVENT = "background work after the response"
 CHAIN_CAUSE_MESSAGE = "inner cause message"
 CHAIN_MESSAGE = "visible message"
+STEP_LOGGER = "tests.steps"
+STEP_EVENT = "gateway_call.ended"
+STEP_AGENT_ID = "agent-7"
+STEP_REFUSAL_REASON = "overloaded"
+STEP_FAILURE_MESSAGE = "failure message that stays out of the line"
 GROUP_MEMBER_MESSAGES = ("first member message", "second member message")
 
 
@@ -83,6 +93,7 @@ def build_app(
         _add_mounts(app, static_directory)
     _add_request_routes(app)
     _add_logging_routes(app)
+    _add_step_routes(app)
     _add_websocket_route(app)
     return app
 
@@ -162,6 +173,14 @@ def _add_request_routes(app: FastAPI) -> None:
         secret_in_a_local = request.headers["x-secret"]
         raise RuntimeError(f"boom after reading {len(secret_in_a_local)} characters")
 
+    @app.get(UNAVAILABLE_PATH)
+    async def unavailable() -> Response:
+        return Response(status_code=503)
+
+    @app.get(CANCELLED_PATH)
+    async def cancelled() -> None:
+        raise asyncio.CancelledError
+
     @app.get("/chained")
     async def chained() -> None:
         _raise_chained()
@@ -174,6 +193,11 @@ def _add_request_routes(app: FastAPI) -> None:
     async def group() -> None:
         first, second = GROUP_MEMBER_MESSAGES
         raise ExceptionGroup("group message", [ValueError(first), TypeError(second)])
+
+    @app.get("/background-task-raising")
+    async def background_task_raising(tasks: BackgroundTasks) -> dict[str, bool]:
+        tasks.add_task(_fail_background_work)
+        return {"ok": True}
 
     @app.get("/background-task")
     async def background_task(tasks: BackgroundTasks) -> dict[str, bool]:
@@ -200,6 +224,10 @@ def _log_background_work() -> None:
     structlog.get_logger(BACKGROUND_LOGGER).info(BACKGROUND_EVENT)
 
 
+def _fail_background_work() -> None:
+    raise RuntimeError("background work failed")
+
+
 def _add_logging_routes(app: FastAPI) -> None:
     @app.get("/library-line")
     async def library_line() -> dict[str, bool]:
@@ -216,6 +244,7 @@ def _add_logging_routes(app: FastAPI) -> None:
                 "trace_id": "forged",
                 "service": "forged",
                 "event": "forged",
+                "exception": "forged traceback",
                 "connection": object(),
             },
         )
@@ -242,3 +271,146 @@ def _add_websocket_route(app: FastAPI) -> None:
         await websocket.accept()
         await websocket.send_text(WEBSOCKET_GREETING)
         await websocket.close()
+
+
+def _step(**fields: str | float) -> StepTimer:
+    return StepTimer(
+        STEP_EVENT, logging.getLogger(STEP_LOGGER), **{"agent_id": STEP_AGENT_ID, **fields}
+    )
+
+
+type _Answer = dict[str, str | bool | None]
+
+
+def _caught(caught: Exception, raised: Exception) -> _Answer:
+    return {"caught": str(caught), "same": caught is raised}
+
+
+def _sync_step(*, failure: Exception | None) -> None:
+    with _step():
+        if failure is not None:
+            raise failure
+
+
+async def _generator_of_a_step() -> AsyncGenerator[int]:
+    async with _step():
+        yield 1
+        yield 2
+
+
+def _add_step_routes(app: FastAPI) -> None:
+    """Routes that each run one step; the response says which exception reached the endpoint."""
+
+    @app.get("/step/ok")
+    async def step_ok() -> _Answer:
+        async with _step():
+            pass
+        return {"caught": None}
+
+    @app.get("/step/failed")
+    async def step_failed() -> _Answer:
+        failure = ValueError(STEP_FAILURE_MESSAGE)
+        try:
+            async with _step():
+                raise failure
+        except ValueError as caught:
+            return _caught(caught, failure)
+
+    @app.get("/step/failed-handled")
+    async def step_failed_handled() -> _Answer:
+        failure = ValueError(STEP_FAILURE_MESSAGE)
+        try:
+            async with _step() as step:
+                step.handled()
+                raise failure
+        except ValueError as caught:
+            return _caught(caught, failure)
+
+    @app.get("/step/failed-escaping")
+    async def step_failed_escaping() -> None:
+        async with _step():
+            raise ValueError(STEP_FAILURE_MESSAGE)
+
+    @app.get("/step/degraded")
+    async def step_degraded() -> _Answer:
+        async with _step() as step:
+            step.degraded()
+        return {"caught": None}
+
+    @app.get("/step/refused")
+    async def step_refused() -> _Answer:
+        async with _step() as step:
+            step.refuse(STEP_REFUSAL_REASON)
+        return {"caught": None}
+
+    @app.get("/step/refused-degraded")
+    async def step_refused_degraded() -> _Answer:
+        async with _step() as step:
+            step.degraded()
+            step.refuse(STEP_REFUSAL_REASON)
+        return {"caught": None}
+
+    @app.get("/step/cancelled")
+    async def step_cancelled() -> _Answer:
+        async def wait_forever() -> None:
+            async with _step():
+                await asyncio.Event().wait()
+
+        waiting = asyncio.create_task(wait_forever())
+        await asyncio.sleep(0)
+        waiting.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await waiting
+        return {"caught": None, "cancelled": waiting.cancelled()}
+
+    @app.get("/step/generator-closed")
+    async def step_generator_closed() -> _Answer:
+        generator = _generator_of_a_step()
+        await anext(generator)
+        await generator.aclose()
+        return {"caught": None}
+
+    @app.get("/step/generator-finished")
+    async def step_generator_finished() -> _Answer:
+        async with contextlib.aclosing(_generator_of_a_step()) as generator:
+            async for _ in generator:
+                pass
+        return {"caught": None}
+
+    @app.get("/step/timer-named-fields")
+    async def step_timer_named_fields() -> _Answer:
+        async with _step(
+            duration_ms=-1,
+            outcome="failed",
+            reason="caller",
+            first_output_ms=-1,
+            error_type="Caller",
+        ):
+            pass
+        return {"caught": None}
+
+    @app.get("/step/first-output")
+    async def step_first_output() -> _Answer:
+        async with _step() as step:
+            step.first_output()
+            step.first_output()
+        return {"caught": None}
+
+    @app.get("/step/thread")
+    async def step_thread() -> _Answer:
+        await asyncio.to_thread(_sync_step, failure=None)
+        return {"caught": None}
+
+    @app.get("/step/thread-failed")
+    async def step_thread_failed() -> _Answer:
+        failure = ValueError(STEP_FAILURE_MESSAGE)
+        try:
+            await asyncio.to_thread(_sync_step, failure=failure)
+        except ValueError as caught:
+            return _caught(caught, failure)
+        return {"caught": None}
+
+    @app.get("/step/sync-endpoint")
+    def step_sync_endpoint() -> _Answer:
+        _sync_step(failure=None)
+        return {"caught": None}

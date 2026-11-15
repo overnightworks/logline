@@ -17,4 +17,5 @@ forbidden_modules =
     httpx
     httpx2
     httpcore
+    httpcore2
     websockets

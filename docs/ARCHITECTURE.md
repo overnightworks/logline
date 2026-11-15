@@ -24,16 +24,21 @@ Module owners in `logline`:
 
 - `configuration` owns `configure`: the root JSON handler on stdout, the root level from `LOG_LEVEL`, the
   `logline.request` level pin, the HTTP client loggers' level and the routing of uvicorn's loggers.
-- `record` owns the record shape: the processors that stamp `ts`, `level`, `service`, `version`, `logger` and
-  `trace_id`, and render exceptions as structlog's text traceback.
+- `record` owns the record shape: the processors that copy a standard-library record's scalar `extra=` fields
+  first (never `event`, `exception` or `color_message`), then stamp `ts`, `level`, `service`, `version`,
+  `logger` and `trace_id`, and render exceptions as structlog's text traceback.
 - `request` owns the request line, the per-request record in `scope["state"]` and the functions that set
   `sub`, `ip` and `route`.
+- `step` owns `Outcome`, the one owner of the `outcome` values, the stopwatch behind every `duration_ms`, and
+  `StepTimer`, which writes a step's `.ended` line through the standard-library logger the caller names, so
+  `record` shapes it like any library's line.
 - `testing` owns `configured`, the host tests' way to run `configure` and restore the logging state it
   changed; it is the one module that reads `configuration`'s list of touched loggers.
 - `trace` owns the request's trace: it starts or continues it in OpenTelemetry's context, reads `trace_id`
   from it and hands it on as headers.
 
-`record` and `request` use `trace`; `configuration` uses `record` and names the request logger.
+`record` and `request` use `trace`; `request` uses `step`; `configuration` uses `record` and names the request
+logger.
 `request` imports no web framework; an import contract keeps `logline` free of frameworks, servers and
 HTTP clients.
 
@@ -53,7 +58,7 @@ sequenceDiagram
     A->>M: set_sub / set_client_ip / set_route (same state dict)
     A->>L: any line, trace_id read from the context
     A->>M: last body chunk, or an exception
-    M->>L: the request line (sub, ip, route, status)
+    M->>L: the request line (outcome, sub, ip, route, status)
     M->>T: detach, except on an exception
 ```
 
@@ -85,6 +90,9 @@ tests. The lowest direct dependency floors run the same tests.
 
 ## 6. Constraints and reasons
 
+- `StepTimer` writes through the caller's standard-library logger and never goes through structlog: a library
+  without `configure` still gets a plain record. It carries `error_type` and never the exception's message or
+  a traceback; the layer where the exception stops writes those.
 - The request line is written on its own logger at INFO, whatever `LOG_LEVEL` says: a quiet root must not
   hide the line that audits every request.
 - The trace lives only in OpenTelemetry's context, read through `opentelemetry-api`: a second contextvar
