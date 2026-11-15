@@ -459,8 +459,8 @@ Why this log is the target:
 `logline.testing.configured(service)` is a context manager for a host's in-process tests. It calls
 `configure(service)` and on exit restores the process's logging as it was before: the root logger's handlers
 and level, the handlers, filters, levels and propagation of the uvicorn, HTTP client, `logline.request` and
-capped library (`mcp`, `sqlalchemy.dialects.postgresql`, `piper`) loggers, structlog's configuration and the stdlib logger class its factory installs. The module imports no
-test framework.
+capped library (`mcp`, `sqlalchemy.dialects.postgresql`, `piper`) loggers, structlog's configuration and the
+stdlib logger class its factory installs. The module imports no test framework.
 
 ```python
 import json
