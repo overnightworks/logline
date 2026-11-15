@@ -330,9 +330,9 @@ def test_a_cancelled_step_lets_the_cancellation_propagate(
 
 
 def test_an_exception_that_leaves_the_step_unhandled_fails_the_request_with_one_step_line(
-    capsys: pytest.CaptureFixture[str],
+    capsys: pytest.CaptureFixture[str], path: str
 ) -> None:
-    _, lines = serve_requests(capsys, [get("/step/failed-escaping")])
+    _, lines = serve_requests(capsys, [get(path)])
 
     assert _step_line(lines)["outcome"] == Outcome.FAILED.value
     (request,) = request_lines(lines)
@@ -409,6 +409,7 @@ def test_a_step_given_a_past_start_counts_its_durations_from_it(
 
 
 def test_a_step_given_a_start_in_the_future_raises_and_writes_no_line(
+    assert "started_at" not in line
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _, lines, (answer,) = serve_requests_answered(capsys, [get("/step/started-in-the-future")])
