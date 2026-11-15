@@ -15,10 +15,12 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from logline import (
     RequestLineMiddleware,
     StepTimer,
+    current_traceparent,
     outgoing_headers,
     set_client_ip,
     set_route,
     set_sub,
+    unit_trace,
 )
 
 SUB = "sub-of-the-person"
@@ -95,6 +97,7 @@ def build_app(
     _add_logging_routes(app)
     _add_step_routes(app)
     _add_websocket_route(app)
+    _add_turn_route(app)
     return app
 
 
@@ -271,6 +274,34 @@ def _add_websocket_route(app: FastAPI) -> None:
         await websocket.accept()
         await websocket.send_text(WEBSOCKET_GREETING)
         await websocket.close()
+
+
+def _add_turn_route(app: FastAPI) -> None:
+    """A socket that answers each JSON message `{"traceparent": str | null, "failure": str | null,
+    "logger": str}`.
+
+    Each message is a turn that logs to the named logger and sends one frame from inside its trace
+    and one from after it. A turn with a `failure` raises `RuntimeError(failure)` from inside its
+    trace; the frame from after it says whether the exception the host caught is the one raised.
+    """
+
+    @app.websocket("/turns")
+    async def socket(websocket: WebSocket) -> None:
+        await websocket.accept()
+        async for message in websocket.iter_json():
+            logger = structlog.get_logger(message["logger"])
+            failure = RuntimeError(message["failure"]) if message["failure"] is not None else None
+            answer: dict[str, str | bool | None] = {"raised": None, "same": None}
+            try:
+                with unit_trace(message["traceparent"]):
+                    logger.info("inside the turn")
+                    await websocket.send_json({"traceparent": current_traceparent()})
+                    if failure is not None:
+                        raise failure
+            except RuntimeError as caught:
+                answer = {"raised": str(caught), "same": caught is failure}
+            logger.info("after the turn")
+            await websocket.send_json({"traceparent": current_traceparent(), **answer})
 
 
 def _step(**fields: str | float) -> StepTimer:

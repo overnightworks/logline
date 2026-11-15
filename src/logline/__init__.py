@@ -9,7 +9,7 @@ from logline.request import (
     set_sub,
 )
 from logline.step import Outcome, StepTimer
-from logline.trace import outgoing_headers
+from logline.trace import current_traceparent, outgoing_headers, unit_trace
 
 __version__ = "0.2.1"
 
@@ -20,8 +20,10 @@ __all__ = [
     "StepTimer",
     "__version__",
     "configure",
+    "current_traceparent",
     "outgoing_headers",
     "set_client_ip",
     "set_route",
     "set_sub",
+    "unit_trace",
 ]
