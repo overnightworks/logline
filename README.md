@@ -203,7 +203,7 @@ The rules for what a covered host logs and how. What a line never carries is [Ne
 - Every library whose code runs on a hop of such a process.
 - Not covered: forks of third-party projects and pure command-line tools.
 - New code complies at once; existing repositories adopt now.
-- Machine checks come from quality's rule: a released logline tag, a literal event name of the form below, no
+- The rules a machine checks: a released logline tag, a literal event name of the form below, no
   value formatted into a message, no field from the deny list (`duration`, `elapsed`, `*_seconds`, `error`,
   `user_id`, `subject_id`, `url`, `path`, `query`, `text`, `prompt`, `token`), and no logging setup of the
   host's own. Whether the log points, levels and single errors are right is judged by a scheduled audit.
@@ -218,11 +218,11 @@ The rules for what a covered host logs and how. What a line never carries is [Ne
 | State change of a domain object | info |
 | Refusal, with `reason` | info |
 | Background run, one line per run with its counts | info |
-| Process start, ready and stop; dependency health changed | info; warning when degraded |
+| Process start, ready and stop | info |
 | Error, once, where the exception stops | error |
 
-Not logged: start lines of short steps, lines per item, per frame, per chunk or per token, pure in-process
-computation, a second request line, the same error at each layer, progress narration at info.
+Not logged: start lines of short steps, lines per item, per frame, per chunk or per token, a second request
+line, the same error at each layer.
 
 ### Event names
 
