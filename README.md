@@ -380,8 +380,10 @@ async def ask_model(client, request):
   both `error_type` and `reason`. `fail` wins over `refuse` in either order. A `cancelled` step carries
   neither, whatever `fail` said.
 - `step.end()` writes the line now, as a block that ends normally would, for a step that no `with` block
-  surrounds, such as a wait that spans WebSocket events. The line is written once: a later `end()` or block
-  exit writes nothing more.
+  surrounds, such as a wait that spans WebSocket events. `step.end_cancelled()` writes it now as `cancelled`,
+  at INFO, without `error_type` and `reason`, as a block that a cancellation leaves would: for a step whose
+  task is cancelled before a block surrounds it, ended from the task's done callback. The line is written
+  once: after either, a later `end()`, `end_cancelled()` or block exit writes nothing more.
 - The line is at INFO. `step.degraded()` makes it a warning, such as a `refused` call the unit retried. A
   `failed` step is at ERROR, or at WARNING after `step.handled()` when its unit goes on; a step that is
   degraded and failed unhandled stays at ERROR.

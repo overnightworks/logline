@@ -536,6 +536,59 @@ def _add_step_routes(app: FastAPI) -> None:
         step.end()
         return {"caught": None}
 
+    @app.get("/step/end-cancelled")
+    async def step_end_cancelled() -> _Answer:
+        step = _step()
+        step.add(output_tokens=STEP.count)
+        step.end_cancelled()
+        return {"caught": None}
+
+    @app.get("/step/sync-end-cancelled")
+    def step_sync_end_cancelled() -> _Answer:
+        _step().end_cancelled()
+        return {"caught": None}
+
+    @app.get("/step/fail-then-end-cancelled")
+    async def step_fail_then_end_cancelled() -> _Answer:
+        step = _step()
+        step.fail(STEP.failure_reason)
+        step.end_cancelled()
+        return {"caught": None}
+
+    @app.get("/step/refuse-then-end-cancelled")
+    async def step_refuse_then_end_cancelled() -> _Answer:
+        step = _step()
+        step.refuse(STEP_REFUSAL_REASON)
+        step.end_cancelled()
+        return {"caught": None}
+
+    @app.get("/step/end-cancelled-then-end")
+    async def step_end_cancelled_then_end() -> _Answer:
+        step = _step()
+        step.end_cancelled()
+        step.end()
+        return {"caught": None}
+
+    @app.get("/step/end-then-end-cancelled")
+    async def step_end_then_end_cancelled() -> _Answer:
+        step = _step()
+        step.end()
+        step.end_cancelled()
+        return {"caught": None}
+
+    @app.get("/step/end-cancelled-twice")
+    async def step_end_cancelled_twice() -> _Answer:
+        step = _step()
+        step.end_cancelled()
+        step.end_cancelled()
+        return {"caught": None}
+
+    @app.get("/step/end-cancelled-in-block")
+    async def step_end_cancelled_in_block() -> _Answer:
+        async with _step() as step:
+            step.end_cancelled()
+        return {"caught": None}
+
     @app.get("/step/sync-end")
     def step_sync_end() -> _Answer:
         _step().end()

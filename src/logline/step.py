@@ -65,8 +65,10 @@ class StepTimer:
       when `fail` named one, and propagates unchanged. Any other `BaseException`, a cancellation
       or `GeneratorExit`, makes it `cancelled`, without `error_type` and `reason`; the exception
       propagates too.
-    - `end` writes the line now, as a block that ends normally would. The line is written once:
-      after `end` or the block's exit, a later one writes nothing.
+    - `end` writes the line now, as a block that ends normally would; `end_cancelled` writes it
+      now, as a block that a cancellation leaves would: `cancelled`, without `error_type` and
+      `reason`. The line is written once: after either or the block's exit, a later one writes
+      nothing.
     - The line is at INFO. `degraded` makes it WARNING. A failed step is at ERROR, or WARNING when
       `handled` says its unit goes on; one that is degraded and failed unhandled stays at ERROR.
     """
@@ -107,6 +109,10 @@ class StepTimer:
         """Write the line now, for a step no block surrounds; later calls and exits write none."""
         self._write_line(None)
 
+    def end_cancelled(self) -> None:
+        """Write the line now as `cancelled`, for a step no block surrounds; later ones write none."""
+        self._write_line(None, cancelled=True)
+
     def first_output(self) -> None:
         """Mark the first output of a streaming step; only the first call counts."""
         if self._first_output_ms is None:
@@ -134,11 +140,11 @@ class StepTimer:
     ) -> None:
         self._write_line(exc)
 
-    def _write_line(self, exc: BaseException | None) -> None:
+    def _write_line(self, exc: BaseException | None, *, cancelled: bool = False) -> None:
         if self._written:
             return
         self._written = True
-        outcome = self._outcome(exc)
+        outcome = Outcome.CANCELLED if cancelled else self._outcome(exc)
         fields: dict[str, Scalar] = {
             **self._fields,
             "duration_ms": self._stopwatch.elapsed_ms(),
