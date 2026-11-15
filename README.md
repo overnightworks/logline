@@ -227,7 +227,8 @@ computation, a second request line, the same error at each layer, progress narra
 ### Event names
 
 `event` is a literal `<noun>.<verb_past>`: snake_case, exactly one dot, no service prefix and no values, such as
-`turn.ended`, `hearing.ended` or `sign_in.refused`. The request line is `request.ended`; until logline's next minor release the middleware still writes `request` (`REQUEST_EVENT`).
+`turn.ended`, `hearing.ended` or `sign_in.refused`. The request line is `request.ended` with `outcome`;
+until logline's next minor release the middleware still writes `request` (`REQUEST_EVENT`), without `outcome`.
 
 - `.ended` closes a timed step and always carries `duration_ms` and `outcome`.
 - `.started` is only for a process or for work that runs for minutes.
@@ -279,6 +280,9 @@ A deviation is a request that names its enduring harm. logline's head reviews it
 it. A ruled deviation is recorded here; none is recorded today.
 
 ### The target picture
+
+The picture is the target. Until logline's next minor release the middleware writes the request line as `request`
+without `outcome`.
 
 One spoken turn across three services. After the first line, `version`, `logger` and the full `trace_id` are
 cut for width only.
