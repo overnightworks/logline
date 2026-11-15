@@ -1,8 +1,0 @@
-claim_id = "a8eff160877d432697452fbf4699baff"
-agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
-role = "builder"
-base = "ce06443ab20bd5fa3c153700e940cc8ace40bbcb"
-branch = "claude/issue-32-configure-caps-mcp-and-postgres-dialect"
-scope = ["README.md", "docs/ARCHITECTURE.md", "docs/VISION.md", "src/logline/configuration.py", "src/logline/testing.py", "tests"]
-opened_commit = "e58de167cdd437536b03cbb0b81c14a798ec1c76"
-whole_reason = "One cap change in configure with its real-server proof and one README line."
