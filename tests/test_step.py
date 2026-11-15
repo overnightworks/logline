@@ -122,6 +122,18 @@ def test_an_exception_that_leaves_the_step_unhandled_fails_the_request_with_one_
     assert (request["status"], request["outcome"]) == (500, Outcome.FAILED.value)
 
 
+def test_a_field_named_like_a_key_the_timer_owns_never_reaches_the_line(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, lines = serve_requests(capsys, [get("/step/timer-named-fields")])
+
+    line = _step_line(lines)
+    assert line["outcome"] == Outcome.OK.value
+    assert isinstance(line["duration_ms"], float)
+    assert line["duration_ms"] >= 0
+    assert not {"reason", "first_output_ms", "error_type"} & line.keys()
+
+
 def test_the_first_output_mark_adds_first_output_ms_within_the_duration(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

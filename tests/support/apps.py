@@ -264,8 +264,10 @@ def _add_websocket_route(app: FastAPI) -> None:
         await websocket.close()
 
 
-def _step() -> StepTimer:
-    return StepTimer(STEP_EVENT, logging.getLogger(STEP_LOGGER), agent_id=STEP_AGENT_ID)
+def _step(**fields: str | float) -> StepTimer:
+    return StepTimer(
+        STEP_EVENT, logging.getLogger(STEP_LOGGER), **{"agent_id": STEP_AGENT_ID, **fields}
+    )
 
 
 def _sync_step(*, fail: bool) -> None:
@@ -355,6 +357,14 @@ def _add_step_routes(app: FastAPI) -> None:
         async with contextlib.aclosing(_generator_of_a_step()) as generator:
             async for _ in generator:
                 pass
+        return {"caught": None}
+
+    @app.get("/step/timer-named-fields")
+    async def step_timer_named_fields() -> dict[str, str | None]:
+        async with _step(
+            duration_ms=-1, outcome="failed", reason="caller", first_output_ms=-1, error_type="Caller"
+        ):
+            pass
         return {"caught": None}
 
     @app.get("/step/first-output")

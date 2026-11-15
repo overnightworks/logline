@@ -14,6 +14,8 @@ __all__ = ["Outcome", "StepTimer"]
 
 type Scalar = str | int | float | bool | None
 
+_TIMER_KEYS = frozenset({"duration_ms", "outcome", "reason", "first_output_ms", "error_type"})
+
 
 class Outcome(StrEnum):
     """How a step or request ended: the one owner of the `outcome` values."""
@@ -40,9 +42,9 @@ class StepTimer:
     Works as `with` and as `async with`; the line is written once, in the thread or task the block
     runs in, so it carries that context's `trace_id`. The timer starts when it is constructed.
 
-    - `event` is the literal `<noun>.ended` name and `fields` are the step's id fields; the timer's
-      own keys (`duration_ms`, `outcome`, `reason`, `first_output_ms`, `error_type`) win over a
-      field of the same name.
+    - `event` is the literal `<noun>.ended` name and `fields` are the step's id fields. The timer
+      owns `duration_ms`, `outcome`, `reason`, `first_output_ms` and `error_type`: a field of one of
+      these names is dropped, and the line carries them only as the timer sets them.
     - A block that ends normally is `ok`, or `refused` after `refuse`. An `Exception` makes it
       `failed` with `error_type` (the class name; never the message or a traceback) and propagates
       unchanged. Any other `BaseException`, a cancellation or `GeneratorExit`, makes it `cancelled`,
@@ -54,7 +56,7 @@ class StepTimer:
     def __init__(self, event: str, logger: logging.Logger, /, **fields: Scalar) -> None:
         self._event = event
         self._logger = logger
-        self._fields = fields
+        self._fields = {key: value for key, value in fields.items() if key not in _TIMER_KEYS}
         self._stopwatch = Stopwatch()
         self._degraded = False
         self._handled = False
