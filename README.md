@@ -33,7 +33,7 @@ dependencies = ["overnightworks-logline>=0.3,<0.4"]
 dev = ["overnightworks-logline"]
 
 [tool.uv.sources]
-overnightworks-logline = { git = "https://github.com/overnightworks/logline", tag = "vX.Y.Z" }
+overnightworks-logline = { git = "https://github.com/overnightworks/logline", tag = "vX.Y.Z", group = "dev" }
 ```
 
 The host's `dependencies` stay as above.
