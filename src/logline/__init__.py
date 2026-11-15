@@ -10,7 +10,7 @@ from logline.request import (
 )
 from logline.trace import outgoing_headers
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 __all__ = [
     "REQUEST_EVENT",
