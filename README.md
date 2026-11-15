@@ -20,6 +20,24 @@ dependencies = [
 A host's Dependabot entry for uv ignores `overnightworks-*`, because Dependabot looks the name up on PyPI.
 Tags are never moved; a broken release gets the next patch tag.
 
+A library on a hop declares `overnightworks-logline` as a version range by name and puts its git URL only in
+its dev group; the host pins the git tag, so one logline runs in the process and a tag outside the range is
+refused. A library that pins a tag by git URL forces every host to pin the same tag. quality's fleet package
+standard owns the rule and its check.
+
+```toml
+# the library
+dependencies = ["overnightworks-logline>=0.3,<0.4"]
+
+[dependency-groups]
+dev = ["overnightworks-logline"]
+
+[tool.uv.sources]
+overnightworks-logline = { git = "https://github.com/overnightworks/logline", tag = "vX.Y.Z", group = "dev" }
+```
+
+The host's `dependencies` stay as above.
+
 ## Quick start
 
 ```python
@@ -375,6 +393,18 @@ async with aclosing(ask_model(client, request)) as chunks:
 `trace_id` is the one correlation id. Every outbound call and every message of a unit carries it
 ([Trace context](#trace-context)). The service where a turn begins starts the turn's trace, and every later
 message of the turn carries it, a call back to that service included.
+
+### A library on a hop
+
+- A host owns a process's entry point; a library on a hop is code imported into it; one repository may hold both.
+- Only the host calls `configure` and adds the middleware; a cap on another library's logger lives in `configure`.
+- A library logs through a standard-library logger named under its package: the literal event as the message,
+  fields in `extra=`, timed steps through logline's `StepTimer` on that logger. It never calls `configure` or structlog.
+- The code in the same process that makes a call or runs a wait writes its step line; its caller writes no line
+  for the same step.
+- Whoever takes a unit off a wire or a timer, host or library, writes its unit line and starts its trace through
+  logline's helper.
+- A library's event names are public: renaming one is **Breaking** on its release page.
 
 ### Deviations
 
