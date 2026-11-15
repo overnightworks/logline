@@ -41,8 +41,6 @@ BACKGROUND_LOGGER = "tests.background"
 BACKGROUND_EVENT = "background work after the response"
 CHAIN_CAUSE_MESSAGE = "inner cause message"
 CHAIN_MESSAGE = "visible message"
-TURN_LOGGER = "tests.turns"
-TURN_FAILURE_MESSAGE = "the turn failed"
 STEP_LOGGER = "tests.steps"
 STEP_EVENT = "gateway_call.ended"
 STEP_AGENT_ID = "agent-7"
@@ -279,27 +277,31 @@ def _add_websocket_route(app: FastAPI) -> None:
 
 
 def _add_turn_route(app: FastAPI) -> None:
-    """A socket that answers each JSON message `{"traceparent": str | null, "fail": bool}`.
+    """A socket that answers each JSON message `{"traceparent": str | null, "failure": str | null,
+    "logger": str}`.
 
-    Each message is a turn that sends one frame from inside its trace and one from after it.
+    Each message is a turn that logs to the named logger and sends one frame from inside its trace and
+    one from after it. A turn with a `failure` raises `RuntimeError(failure)` from inside its trace; the
+    frame from after it says whether the exception the host caught is the one raised.
     """
 
     @app.websocket("/turns")
     async def socket(websocket: WebSocket) -> None:
         await websocket.accept()
-        logger = structlog.get_logger(TURN_LOGGER)
         async for message in websocket.iter_json():
-            raised: str | None = None
+            logger = structlog.get_logger(message["logger"])
+            failure = RuntimeError(message["failure"]) if message["failure"] is not None else None
+            answer: dict[str, str | bool | None] = {"raised": None, "same": None}
             try:
                 with unit_trace(message["traceparent"]):
                     logger.info("inside the turn")
                     await websocket.send_json({"traceparent": current_traceparent()})
-                    if message["fail"]:
-                        raise RuntimeError(TURN_FAILURE_MESSAGE)
-            except RuntimeError as failure:
-                raised = str(failure)
+                    if failure is not None:
+                        raise failure
+            except RuntimeError as caught:
+                answer = {"raised": str(caught), "same": caught is failure}
             logger.info("after the turn")
-            await websocket.send_json({"traceparent": current_traceparent(), "raised": raised})
+            await websocket.send_json({"traceparent": current_traceparent(), **answer})
 
 
 def _step(**fields: str | float) -> StepTimer:

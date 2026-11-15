@@ -8,7 +8,7 @@ import uvicorn
 from websockets.asyncio.client import connect
 
 from logline import configure, outgoing_headers
-from tests.support.apps import TURN_FAILURE_MESSAGE, TURN_LOGGER, build_app
+from tests.support.apps import build_app
 from tests.support.lines import Line, json_lines, lines_of, request_lines
 from tests.support.serving import serve
 
@@ -136,30 +136,31 @@ def test_outside_a_request_there_is_no_trace_to_hand_on(
     assert line["trace_id"] is None
 
 
-type _Frame = dict[str, str | None]
+type _Frame = dict[str, str | bool | None]
 
 
 def _play_turns(
-    capsys: pytest.CaptureFixture[str], turns: list[dict[str, str | bool | None]]
+    capsys: pytest.CaptureFixture[str], turns: list[dict[str, str | None]]
 ) -> tuple[list[tuple[_Frame, _Frame]], list[Line]]:
     """Send each turn to the served socket; return its two frames and the socket's own lines."""
     configure("trace-service")
+    logger_name = "tests.turns"
     frames: list[tuple[_Frame, _Frame]] = []
 
     async def exercise(base_url: str) -> None:
         async with connect(base_url.replace("http", "ws") + "/turns") as websocket:
             for turn in turns:
-                await websocket.send(json.dumps(turn))
+                await websocket.send(json.dumps({**turn, "logger": logger_name}))
                 inside = json.loads(await websocket.recv())
                 after = json.loads(await websocket.recv())
                 frames.append((inside, after))
 
     serve(uvicorn.Config(build_app(), log_config=None), exercise)
-    return frames, lines_of(json_lines(capsys.readouterr().out), TURN_LOGGER)
+    return frames, lines_of(json_lines(capsys.readouterr().out), logger_name)
 
 
-def _turn(traceparent: str | None = None, *, fail: bool = False) -> dict[str, str | bool | None]:
-    return {"traceparent": traceparent, "fail": fail}
+def _turn(traceparent: str | None = None, *, failure: str | None = None) -> dict[str, str | None]:
+    return {"traceparent": traceparent, "failure": failure}
 
 
 def test_a_turn_that_raises_leaves_no_trace_id_on_the_sockets_later_lines(
@@ -167,10 +168,10 @@ def test_a_turn_that_raises_leaves_no_trace_id_on_the_sockets_later_lines(
 ) -> None:
     incoming = f"00-{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}-01"
 
-    frames, lines = _play_turns(capsys, [_turn(incoming, fail=True), _turn()])
+    frames, lines = _play_turns(capsys, [_turn(incoming, failure="the turn failed"), _turn()])
 
     (_, failed_after), (_, later_after) = frames
-    assert failed_after == {"traceparent": None, "raised": TURN_FAILURE_MESSAGE}
+    assert failed_after == {"traceparent": None, "raised": "the turn failed", "same": True}
     assert later_after["raised"] is None
     failed_inside, failed_after_line, later_inside, later_after_line = lines
     assert failed_inside["trace_id"] == _INCOMING_TRACE_ID
