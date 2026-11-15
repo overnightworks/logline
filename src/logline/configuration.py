@@ -23,7 +23,7 @@ _LEVELS = {
 _DEFAULT_LEVEL_NAME = "info"
 _UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access", "uvicorn.asgi")
 # Their INFO lines carry the full URL with its query.
-_CLIENT_LOGGERS_WITH_URLS = ("httpx", "httpx2", "httpcore")
+_CLIENT_LOGGERS_WITH_URLS = ("httpx", "httpx2", "httpcore", "httpcore2")
 _ROOT_LOGGER_NAME = ""
 _UVICORN_WEBSOCKET_LINE = '"WebSocket %s"'
 

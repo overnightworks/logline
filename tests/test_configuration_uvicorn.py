@@ -140,7 +140,7 @@ def test_a_websocket_connection_gets_no_request_line(capsys: pytest.CaptureFixtu
     assert lines_of(json_lines(capsys.readouterr().out), "logline.request") == []
 
 
-@pytest.mark.parametrize("logger_name", ["httpx", "httpx2", "httpcore"])
+@pytest.mark.parametrize("logger_name", ["httpx", "httpx2", "httpcore", "httpcore2"])
 @pytest.mark.parametrize("level", [None, "debug"])
 def test_a_http_client_info_line_with_a_url_never_appears(
     monkeypatch: pytest.MonkeyPatch,
