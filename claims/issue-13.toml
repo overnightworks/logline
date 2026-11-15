@@ -1,7 +1,0 @@
-claim_id = "6e9e3bfce6134e4eb98fe68af1d449c8"
-agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
-role = "builder"
-base = "ee98a907f384410ee7ebde4d1a04cd07db720d12"
-branch = "claude/issue-13-fleet-standard-logging-through-logline"
-scope = ["AGENTS.md", "README.md", "docs/VISION.md"]
-opened_commit = "d8b60876b89f77cb344e2e6bc1d8e4f03626bc96"
