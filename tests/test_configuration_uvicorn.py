@@ -140,15 +140,15 @@ def test_a_websocket_connection_gets_no_request_line(capsys: pytest.CaptureFixtu
     assert lines_of(json_lines(capsys.readouterr().out), "logline.request") == []
 
 
-CAPPED_LOGGER_NAMES = [
+WARNING_CAPPED_LOGGER_NAMES = [
     "httpx",
     "httpx2",
     "httpcore",
     "httpcore2",
     "mcp.client.streamable_http",
     "sqlalchemy.dialects.postgresql",
-    "piper.voice",
 ]
+CAPPED_LOGGER_NAMES = [*WARNING_CAPPED_LOGGER_NAMES, "piper.voice"]
 
 
 def _serve_logging(logger_name: str, log: Callable[[logging.Logger], None]) -> None:
@@ -175,7 +175,7 @@ def test_a_capped_library_info_line_with_content_never_appears(
     assert "capped-secret" not in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("logger_name", CAPPED_LOGGER_NAMES[:-1])
+@pytest.mark.parametrize("logger_name", WARNING_CAPPED_LOGGER_NAMES)
 def test_a_capped_library_warning_still_appears(
     capsys: pytest.CaptureFixture[str], logger_name: str
 ) -> None:
