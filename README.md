@@ -372,8 +372,9 @@ async def ask_model(client, request):
 - Any other `BaseException` (`asyncio.CancelledError`, `GeneratorExit`) makes it `cancelled` without
   `error_type`, and propagates.
 - `step.add(**fields)` sets more fields before the line is written, such as a count known only at the end. It
-  follows the construction rules: a name of a `logging.LogRecord` attribute raises `ValueError`, a timer key is
-  dropped, and a later value for the same key, the constructor's included, replaces the earlier one.
+  follows the construction rules: a name of a `logging.LogRecord` attribute raises `ValueError`, which inside a
+  block fails that block like any other `Exception`; a timer key is dropped, and a later value for the same key,
+  the constructor's included, replaces the earlier one.
 - `step.fail(reason)` ends a block that ends normally as `failed` with `reason`, a code from the app's closed
   set, and without `error_type`. When an exception leaves the block after `fail`, the line is `failed` with
   both `error_type` and `reason`. `fail` wins over `refuse` in either order. A `cancelled` step carries
