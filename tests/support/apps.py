@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import logging
+import time
 from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -58,6 +59,7 @@ class StepScenario:
     count: int = 42
     later_agent_id: str = "agent-8"
     reserved_field: str = "module"
+    earlier_start_seconds: int = 5
 
 
 STEP = StepScenario()
@@ -318,9 +320,12 @@ def _add_turn_route(app: FastAPI) -> None:
             await websocket.send_json({"traceparent": current_traceparent(), **answer})
 
 
-def _step(**fields: str | float) -> StepTimer:
+def _step(*, started_at: float | None = None, **fields: str | float) -> StepTimer:
     return StepTimer(
-        STEP_EVENT, logging.getLogger(STEP_LOGGER), **{"agent_id": STEP_AGENT_ID, **fields}
+        STEP_EVENT,
+        logging.getLogger(STEP_LOGGER),
+        started_at=started_at,
+        **{"agent_id": STEP_AGENT_ID, **fields},
     )
 
 
@@ -600,6 +605,21 @@ def _add_step_routes(app: FastAPI) -> None:
         step.first_output()
         async with step:
             pass
+        return {"caught": None}
+
+    @app.get("/step/started-earlier")
+    async def step_started_earlier() -> _Answer:
+        step = _step(started_at=time.perf_counter() - STEP.earlier_start_seconds)
+        step.first_output()
+        step.end()
+        return {"caught": None}
+
+    @app.get("/step/started-in-the-future")
+    async def step_started_in_the_future() -> _Answer:
+        try:
+            _step(started_at=time.perf_counter() + STEP.earlier_start_seconds)
+        except ValueError as caught:
+            return {"caught": str(caught)}
         return {"caught": None}
 
     @app.get("/step/end-twice")

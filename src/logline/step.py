@@ -31,8 +31,11 @@ class Outcome(StrEnum):
 class Stopwatch:
     """The monotonic clock and rounding of every `duration_ms` and `first_output_ms`."""
 
-    def __init__(self) -> None:
-        self._started = time.perf_counter()
+    def __init__(self, started_at: float | None = None) -> None:
+        now = time.perf_counter()
+        if started_at is not None and started_at > now:
+            raise ValueError("started_at is later than time.perf_counter()")
+        self._started = now if started_at is None else started_at
 
     def elapsed_ms(self) -> float:
         return round((time.perf_counter() - self._started) * 1000, 3)
@@ -51,7 +54,8 @@ class StepTimer:
 
     Works as `with` and as `async with`; the line is written once, in the thread or task the block
     runs in, so it carries that context's `trace_id`. The timer starts when it is constructed, not
-    when the block is entered. A step that no block surrounds is ended by `end`.
+    when the block is entered, or at `started_at` when the caller names it. A step that no block
+    surrounds is ended by `end` or `end_cancelled`.
 
     - `event` is the literal `<noun>.ended` name and `fields` are the step's id fields. The timer
       owns `duration_ms`, `outcome`, `reason`, `first_output_ms` and `error_type`: a field of one of
@@ -59,6 +63,9 @@ class StepTimer:
       like an attribute of `logging.LogRecord` (`name`, `module`, `process`, `args`, ...) raises
       `ValueError`, at construction and in `add`, which sets more fields before the line is
       written; a later value for the same key replaces the earlier one.
+    - `started_at` is a keyword-only `time.perf_counter()` value, for a step that began before the
+      timer can be constructed: `duration_ms` and `first_output_ms` count from it. One later than
+      `time.perf_counter()` raises `ValueError` at construction. It is no step field name.
     - A block that ends normally is `ok`, or `refused` after `refuse`, or `failed` with `reason`
       after `fail`, which wins over `refuse` in either order. An `Exception` makes it `failed`
       with `error_type` (the class name; never the message or a traceback), beside the `reason`
@@ -73,11 +80,19 @@ class StepTimer:
       `handled` says its unit goes on; one that is degraded and failed unhandled stays at ERROR.
     """
 
-    def __init__(self, event: str, logger: logging.Logger, /, **fields: Scalar) -> None:
+    def __init__(
+        self,
+        event: str,
+        logger: logging.Logger,
+        /,
+        *,
+        started_at: float | None = None,
+        **fields: Scalar,
+    ) -> None:
         self._event = event
         self._logger = logger
         self._fields = _step_fields(fields)
-        self._stopwatch = Stopwatch()
+        self._stopwatch = Stopwatch(started_at)
         self._degraded = False
         self._handled = False
         self._refusal_reason: str | None = None

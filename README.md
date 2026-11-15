@@ -357,8 +357,10 @@ async def ask_model(client, request):
   `configure` gets an ordinary record under its own logging setup, and one with `configure` gets the JSON
   line with the running request's `trace_id`. A sync `with` on a worker thread (`asyncio.to_thread`, a sync
   endpoint) carries the request's `trace_id` too.
-- The timer starts when it is constructed, not when the block is entered: a wait that began earlier in the
-  same process constructs its timer at that start. The line carries the step's id fields (scalars), `duration_ms`
+- The timer starts when it is constructed, not when the block is entered. A step that began earlier, such as
+  a wait whose start a host keeps as a `time.perf_counter()` value, passes it as the keyword `started_at`,
+  and `duration_ms` and `first_output_ms` count from it; a value later than `time.perf_counter()` raises
+  `ValueError` at construction, and `started_at` is no step field name. The line carries the step's id fields (scalars), `duration_ms`
   on the request line's clock and rounding, and `outcome`; it is written in `finally`, so a failed or
   cancelled step still leaves it.
 - The timer owns the keys `duration_ms`, `outcome`, `reason`, `first_output_ms` and `error_type`: a field of

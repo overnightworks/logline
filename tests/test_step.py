@@ -359,6 +359,25 @@ def test_the_first_output_mark_keeps_the_time_of_the_first_call_only(
     assert line["duration_ms"] > one_tick_ms
 
 
+def test_a_step_given_a_past_start_counts_its_durations_from_it(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, lines = serve_requests(capsys, [get("/step/started-earlier")])
+
+    line = _step_line(lines)
+    earlier_ms = STEP.earlier_start_seconds * 1000
+    assert earlier_ms <= line["first_output_ms"] <= line["duration_ms"]
+
+
+def test_a_step_given_a_start_in_the_future_raises_and_writes_no_line(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, lines, (answer,) = serve_requests_answered(capsys, [get("/step/started-in-the-future")])
+
+    assert "started_at" in str(answer.json()["caught"])
+    assert lines_of(lines, STEP_LOGGER) == []
+
+
 @pytest.mark.parametrize(
     "path",
     [
