@@ -306,9 +306,9 @@ async def ask_model(client, request):
   never carries the message or a traceback: the layer where the exception stops logs it.
 - Any other `BaseException` (`asyncio.CancelledError`, `GeneratorExit`) makes it `cancelled` without
   `error_type`, and propagates.
-- The line is at INFO. `step.degraded()` makes it a warning whatever the outcome, such as a `refused` call
-  the unit retried. A `failed` step is at ERROR, or at WARNING after `step.handled()` when its unit goes on.
-  A step that is both degraded and failed unhandled stays at ERROR.
+- The line is at INFO. `step.degraded()` makes it a warning, such as a `refused` call the unit retried. A
+  `failed` step is at ERROR, or at WARNING after `step.handled()` when its unit goes on; a step that is
+  degraded and failed unhandled stays at ERROR.
 - An async generator that is dropped without `aclose()` runs its `finally` at garbage collection, under
   whatever trace is current then, so its step line can carry another unit's `trace_id`. A host wraps such a
   generator in `contextlib.aclosing` so the line is written where the generator is used:

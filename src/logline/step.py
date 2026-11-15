@@ -49,8 +49,8 @@ class StepTimer:
       `failed` with `error_type` (the class name; never the message or a traceback) and propagates
       unchanged. Any other `BaseException`, a cancellation or `GeneratorExit`, makes it `cancelled`,
       without `error_type`; the exception propagates too.
-    - The line is at INFO. `degraded` makes it WARNING whatever the outcome. A failed step is at
-      ERROR, or WARNING when `handled` says its unit goes on.
+    - The line is at INFO. `degraded` makes it WARNING. A failed step is at ERROR, or WARNING when
+      `handled` says its unit goes on; one that is degraded and failed unhandled stays at ERROR.
     """
 
     def __init__(self, event: str, logger: logging.Logger, /, **fields: Scalar) -> None:
