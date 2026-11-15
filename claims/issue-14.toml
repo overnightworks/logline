@@ -1,0 +1,8 @@
+claim_id = "cee11d108bb64d26adf5577cd5f42972"
+agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
+role = "builder"
+base = "bd762528f47f1b14762df664edf737773eac2c61"
+branch = "claude/issue-14-turn-trace-always-ends"
+scope = ["README.md", "docs/ARCHITECTURE.md", "src/logline/__init__.py", "src/logline/trace.py", "tests"]
+opened_commit = "45c6b11495d5073aecab1ede2155e7d78302f89c"
+whole_reason = "One helper pair in trace with its WebSocket proof and its two documents."
