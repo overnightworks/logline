@@ -64,6 +64,7 @@ def set_route(scope: Scope, template: str) -> None:
     """Report the route template for this request's line; no effect outside an HTTP request.
 
     The template is a literal pattern such as `/static`, never the raw path or a request value.
+    An empty template logs `null` and does not fall back to the framework's route.
     """
     record = _record_of(scope)
     if record is not None:
@@ -77,7 +78,7 @@ def _client_host(scope: Scope) -> str | None:
 
 def _route_template(scope: Scope, record: _RequestRecord) -> str | None:
     if record.route is not None:
-        return record.route
+        return record.route or None
     return getattr(scope.get("route"), "path", None)
 
 
