@@ -24,4 +24,7 @@ The operator and the agents that build and run his apps. No app has adopted it y
 - No tracing backend: no SDK, no exporter, no span store; a trace is an id that travels.
 - No framework of its own: it speaks ASGI and imports no web framework.
 - No options for the record's shape and no switch that turns the request line off.
+- No masking or redaction of lines, and no cap on other libraries' lines below INFO beyond the HTTP client
+  loggers at WARNING and the filters on uvicorn's loggers: `LOG_LEVEL=debug` is the operator's deliberate
+  setting, and a further cap comes only with a case that needs it.
 - No compatibility layers: a change that breaks its callers breaks cleanly and says so.

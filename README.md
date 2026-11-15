@@ -180,15 +180,17 @@ uvicorn's access log silent in every start mode, because the request line replac
 
 ## Never logged
 
-logline writes no credentials, tokens, cookies, header values, contents (bodies, messages, prompts,
-transcripts, audio), raw paths or query strings, and a host adds none through a field: it logs ids and the
-`trace_id`. For this, `configure` also:
+At the default level and above, no line carries credentials, tokens, cookies, header values, contents (bodies,
+messages, prompts, transcripts, audio) or raw paths and query strings: logline writes none of them, and a host
+adds none through a field, so it logs ids and the `trace_id`. At `LOG_LEVEL=debug`, DEBUG records of other
+libraries pass as those libraries write them, and some of those write paths, query strings, header values or
+frames; logline neither masks nor caps them. `configure` also does the following at every `LOG_LEVEL`:
 
 - renders exceptions as text, never as a dict with local variables;
 - sets the `httpx`, `httpx2` and `httpcore` loggers to WARNING, because their INFO lines carry the full URL
   with its query; the callee's request line with the same `trace_id` covers the call;
 - drops uvicorn's WebSocket connection lines, which carry the raw path with its query;
-- drops records below INFO on `uvicorn.error` at every `LOG_LEVEL`, because websockets writes the request path, every
+- drops records below INFO on `uvicorn.error`, because websockets writes the request path, every
   header and every frame there at DEBUG.
 
 ## Testing a host
