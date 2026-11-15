@@ -357,7 +357,8 @@ async def ask_model(client, request):
   `configure` gets an ordinary record under its own logging setup, and one with `configure` gets the JSON
   line with the running request's `trace_id`. A sync `with` on a worker thread (`asyncio.to_thread`, a sync
   endpoint) carries the request's `trace_id` too.
-- The timer starts when it is constructed. The line carries the step's id fields (scalars), `duration_ms`
+- The timer starts when it is constructed, not when the block is entered: a wait that began earlier in the
+  same process constructs its timer at that start. The line carries the step's id fields (scalars), `duration_ms`
   on the request line's clock and rounding, and `outcome`; it is written in `finally`, so a failed or
   cancelled step still leaves it.
 - The timer owns the keys `duration_ms`, `outcome`, `reason`, `first_output_ms` and `error_type`: a field of
@@ -370,6 +371,16 @@ async def ask_model(client, request):
   never carries the message or a traceback: the layer where the exception stops logs it.
 - Any other `BaseException` (`asyncio.CancelledError`, `GeneratorExit`) makes it `cancelled` without
   `error_type`, and propagates.
+- `step.add(**fields)` sets more fields before the line is written, such as a count known only at the end. It
+  follows the construction rules: a name of a `logging.LogRecord` attribute raises `ValueError`, a timer key is
+  dropped, and a later value for the same key, the constructor's included, replaces the earlier one.
+- `step.fail(reason)` ends a block that ends normally as `failed` with `reason`, a code from the app's closed
+  set, and without `error_type`. When an exception leaves the block after `fail`, the line is `failed` with
+  both `error_type` and `reason`. `fail` wins over `refuse` in either order. A `cancelled` step carries
+  neither, whatever `fail` said.
+- `step.end()` writes the line now, as a block that ends normally would, for a step that no `with` block
+  surrounds, such as a wait that spans WebSocket events. The line is written once: a later `end()` or block
+  exit writes nothing more.
 - The line is at INFO. `step.degraded()` makes it a warning, such as a `refused` call the unit retried. A
   `failed` step is at ERROR, or at WARNING after `step.handled()` when its unit goes on; a step that is
   degraded and failed unhandled stays at ERROR.
