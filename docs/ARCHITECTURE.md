@@ -65,7 +65,8 @@ sequenceDiagram
 A unit outside a request, such as a turn on a long-lived WebSocket, runs in `unit_trace(traceparent)` instead:
 the same start or continue, but the trace is detached whenever the block ends, an exception included, so no
 later line of the socket carries it. The request's trace stays attached after an exception because the
-server's error line follows in the same task; a unit has no such line.
+server's error line follows in the same task; a unit has no such line, so a host's handler line for a
+failed turn falls outside the trace unless the host logs it inside the block.
 
 ## 4. Deployment View
 

@@ -185,16 +185,17 @@ async def speak(websocket, text):
 ```
 
 The receiving side runs the turn under the value it received, `None` when the message has none or a
-malformed one, which starts a new trace as a request does. The block's own errors reach the handler, which
-logs them after the block:
+malformed one, which starts a new trace as a request does. The block's own errors leave it with
+the trace ended, so a handler outside the block logs a line with no `trace_id`; a host that needs the failure
+line on its turn logs it inside the block:
 
 ```python
 async for message in websocket.iter_json():
-    try:
-        with unit_trace(message.get("traceparent")):
+    with unit_trace(message.get("traceparent")):
+        try:
             await handle_turn(message)
-    except Exception:
-        logger.exception("turn_failed")
+        except Exception:
+            logger.exception("turn_failed")
 ```
 
 `tracestate` is not carried in a message.
