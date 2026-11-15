@@ -206,7 +206,7 @@ The rules for what a covered host logs and how. What a line never carries is [Ne
 - Not covered: forks of third-party projects and pure command-line tools.
 - New code complies at once; existing repositories adopt now.
 - `service` is one name per deployed process: the app's main process takes the app's name, every other
-  process `<app>-<role>` in snake_case, such as `presentator-worker`.
+  process `<app>-<role>`, such as `presentator-worker`.
 - The rules a machine checks: a released logline tag, a literal event name of the form below, no
   value formatted into a message, no field from the deny list (`duration`, `elapsed`, `*_seconds`, `error`,
   `user_id`, `subject_id`, `url`, `path`, `query`, `text`, `prompt`, `token`), and no logging setup of the
