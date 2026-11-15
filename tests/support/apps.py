@@ -583,6 +583,30 @@ def _add_step_routes(app: FastAPI) -> None:
         step.end_cancelled()
         return {"caught": None}
 
+    @app.get("/step/handled-then-end-cancelled")
+    async def step_handled_then_end_cancelled() -> _Answer:
+        step = _step()
+        step.handled()
+        step.end_cancelled()
+        return {"caught": None}
+
+    @app.get("/step/degraded-then-end-cancelled")
+    async def step_degraded_then_end_cancelled() -> _Answer:
+        step = _step()
+        step.degraded()
+        step.end_cancelled()
+        return {"caught": None}
+
+    @app.get("/step/end-cancelled-then-raise")
+    async def step_end_cancelled_then_raise() -> _Answer:
+        failure = ValueError(STEP_FAILURE_MESSAGE)
+        try:
+            async with _step() as step:
+                step.end_cancelled()
+                raise failure
+        except ValueError as caught:
+            return _caught(caught, failure)
+
     @app.get("/step/end-cancelled-then-end")
     async def step_end_cancelled_then_end() -> _Answer:
         step = _step()

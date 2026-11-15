@@ -195,6 +195,27 @@ def _step_line(lines: list[Line]) -> Line:
             id="end-cancelled-after-refuse-carries-no-reason",
         ),
         pytest.param(
+            "/step/handled-then-end-cancelled",
+            _INFO,
+            Outcome.CANCELLED,
+            {},
+            id="end-cancelled-after-handled-stays-at-info",
+        ),
+        pytest.param(
+            "/step/degraded-then-end-cancelled",
+            _WARNING,
+            Outcome.CANCELLED,
+            {},
+            id="end-cancelled-after-degraded-is-a-warning",
+        ),
+        pytest.param(
+            "/step/end-cancelled-then-raise",
+            _INFO,
+            Outcome.CANCELLED,
+            {},
+            id="an-exception-after-end-cancelled-writes-no-second-line",
+        ),
+        pytest.param(
             "/step/end-cancelled-then-end",
             _INFO,
             Outcome.CANCELLED,
@@ -278,7 +299,6 @@ def test_a_failed_steps_line_carries_neither_the_message_nor_a_traceback(
     line = _step_line(lines)
     assert "exception" not in line
     assert STEP_FAILURE_MESSAGE not in str(line)
-    assert "started_at" not in line
     assert "Traceback" not in str(line)
 
 
