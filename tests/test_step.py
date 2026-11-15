@@ -266,17 +266,21 @@ def test_a_field_added_under_a_log_record_attribute_name_raises_out_of_the_block
     assert STEP.reserved_field in str(answer.json()["caught"])
 
 
-def test_a_step_counts_from_its_construction_not_from_the_block(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
+@pytest.fixture
+def one_tick_ms(monkeypatch: pytest.MonkeyPatch) -> float:
+    """Replace the step's clock with one that advances a second on every read."""
     clock_ticks = itertools.count()
-    one_tick_ms = 1000.0
     monkeypatch.setattr(
         logline.step,
         "time",
         SimpleNamespace(perf_counter=lambda: float(next(clock_ticks))),
     )
+    return 1000.0
 
+
+def test_a_step_counts_from_its_construction_not_from_the_block(
+    capsys: pytest.CaptureFixture[str], one_tick_ms: float
+) -> None:
     _, lines = serve_requests(capsys, [get("/step/constructed-before-the-block")])
 
     line = _step_line(lines)
@@ -287,16 +291,8 @@ def test_a_step_counts_from_its_construction_not_from_the_block(
 
 
 def test_the_first_output_mark_keeps_the_time_of_the_first_call_only(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    capsys: pytest.CaptureFixture[str], one_tick_ms: float
 ) -> None:
-    clock_ticks = itertools.count()
-    one_tick_ms = 1000.0
-    monkeypatch.setattr(
-        logline.step,
-        "time",
-        SimpleNamespace(perf_counter=lambda: float(next(clock_ticks))),
-    )
-
     _, lines = serve_requests(capsys, [get("/step/first-output")])
 
     line = _step_line(lines)
