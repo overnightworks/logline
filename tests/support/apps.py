@@ -44,7 +44,6 @@ STEP_EVENT = "gateway_call.ended"
 STEP_AGENT_ID = "agent-7"
 STEP_REFUSAL_REASON = "overloaded"
 STEP_FAILURE_MESSAGE = "failure message that stays out of the line"
-STEP_SECOND_MARK_DELAY_SECONDS = 0.05
 GROUP_MEMBER_MESSAGES = ("first member message", "second member message")
 
 
@@ -394,7 +393,6 @@ def _add_step_routes(app: FastAPI) -> None:
     async def step_first_output() -> _Answer:
         async with _step() as step:
             step.first_output()
-            await asyncio.sleep(STEP_SECOND_MARK_DELAY_SECONDS)
             step.first_output()
         return {"caught": None}
 

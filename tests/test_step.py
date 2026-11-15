@@ -1,7 +1,10 @@
+import itertools
 import logging
+from types import SimpleNamespace
 
 import pytest
 
+import logline.step
 from logline import Outcome, StepTimer
 from tests.support.apps import (
     STEP_AGENT_ID,
@@ -9,7 +12,6 @@ from tests.support.apps import (
     STEP_FAILURE_MESSAGE,
     STEP_LOGGER,
     STEP_REFUSAL_REASON,
-    STEP_SECOND_MARK_DELAY_SECONDS,
 )
 from tests.support.lines import Line, lines_of, request_lines
 from tests.support.serving import get, serve_requests, serve_requests_answered
@@ -144,17 +146,24 @@ def test_a_field_named_like_a_key_the_timer_owns_never_reaches_the_line(
 
 
 def test_the_first_output_mark_keeps_the_time_of_the_first_call_only(
-    capsys: pytest.CaptureFixture[str],
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    clock_ticks = itertools.count()
+    one_tick_ms = 1000.0
+    monkeypatch.setattr(
+        logline.step,
+        "time",
+        SimpleNamespace(perf_counter=lambda: float(next(clock_ticks))),
+    )
+
     _, lines = serve_requests(capsys, [get("/step/first-output")])
 
     line = _step_line(lines)
-    assert isinstance(line["first_output_ms"], float)
+    # Every clock read advances one tick, so the first call's mark is one tick after the step's
+    # start; a second call that replaced it would read a later tick.
+    assert line["first_output_ms"] == one_tick_ms
     assert isinstance(line["duration_ms"], float)
-    assert 0 <= line["first_output_ms"] <= line["duration_ms"]
-    # A second mark taken after the delay would put first_output_ms at the end of the step.
-    gap_ms = line["duration_ms"] - line["first_output_ms"]
-    assert gap_ms >= STEP_SECOND_MARK_DELAY_SECONDS * 1000 * 0.8
+    assert line["duration_ms"] > one_tick_ms
 
 
 @pytest.mark.parametrize(
