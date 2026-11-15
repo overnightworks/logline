@@ -1,0 +1,7 @@
+claim_id = "063df27e552842e6a2aaca61e8b509ee"
+agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
+role = "builder"
+base = "5e99ca3ee4fca4650c991a325bdbbda59e3d3a9d"
+branch = "claude/issue-20-library-on-a-hop"
+scope = ["README.md"]
+opened_commit = "09f2643396d24e3c9bc8d517b1f1ce1971fbc4f6"
