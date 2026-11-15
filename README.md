@@ -399,7 +399,8 @@ async with aclosing(ask_model(client, request)) as chunks:
 ### Errors
 
 - The layer where the exception stops writes the one line; a layer that re-raises writes none.
-- A failed timed step is its own `.ended` line with `outcome` `failed` and `error_type` (`StepTimer` writes it).
+- A failed timed step is its own `.ended` line with `outcome` `failed` (`StepTimer` writes it), and `error_type`
+  when an exception ended it; `fail(reason)` ends it with `reason` and no `error_type`.
 - A traceback goes only on an exception the code did not expect.
 - A step line is written in `finally`, so a failed or cancelled step still leaves it.
 
