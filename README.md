@@ -300,6 +300,10 @@ async def ask_model(client, request):
 - The timer starts when it is constructed. The line carries the step's id fields (scalars), `duration_ms`
   on the request line's clock and rounding, and `outcome`; it is written in `finally`, so a failed or
   cancelled step still leaves it.
+- The timer owns the keys `duration_ms`, `outcome`, `reason`, `first_output_ms` and `error_type`: a field of
+  one of those names is dropped. A field named like an attribute of `logging.LogRecord` (`name`, `module`,
+  `process`, `thread`, `args`, `message`, ...) raises `ValueError` when the timer is constructed, because the
+  standard library refuses it as an `extra` key.
 - A block that ends normally is `ok`. `step.refuse(reason)` makes it `refused` with `reason`, a code from the
   app's closed set. `step.first_output()` adds `first_output_ms`, from the first call only.
 - An `Exception` makes it `failed` with `error_type`, the class name, and propagates unchanged. The line

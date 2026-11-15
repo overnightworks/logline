@@ -15,6 +15,8 @@ __all__ = ["Outcome", "StepTimer"]
 type Scalar = str | int | float | bool | None
 
 _TIMER_KEYS = frozenset({"duration_ms", "outcome", "reason", "first_output_ms", "error_type"})
+# Logger.makeRecord raises KeyError on an extra key that names one of these record attributes.
+_RECORD_ATTRIBUTES = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
 
 
 class Outcome(StrEnum):
@@ -44,7 +46,9 @@ class StepTimer:
 
     - `event` is the literal `<noun>.ended` name and `fields` are the step's id fields. The timer
       owns `duration_ms`, `outcome`, `reason`, `first_output_ms` and `error_type`: a field of one of
-      these names is dropped, and the line carries them only as the timer sets them.
+      these names is dropped, and the line carries them only as the timer sets them. A field named
+      like an attribute of `logging.LogRecord` (`name`, `module`, `process`, `args`, ...) raises
+      `ValueError` at construction.
     - A block that ends normally is `ok`, or `refused` after `refuse`. An `Exception` makes it
       `failed` with `error_type` (the class name; never the message or a traceback) and propagates
       unchanged. Any other `BaseException`, a cancellation or `GeneratorExit`, makes it `cancelled`,
@@ -56,6 +60,9 @@ class StepTimer:
     def __init__(self, event: str, logger: logging.Logger, /, **fields: Scalar) -> None:
         self._event = event
         self._logger = logger
+        reserved = sorted(fields.keys() & _RECORD_ATTRIBUTES)
+        if reserved:
+            raise ValueError(f"step fields named like logging.LogRecord attributes: {reserved}")
         self._fields = {key: value for key, value in fields.items() if key not in _TIMER_KEYS}
         self._stopwatch = Stopwatch()
         self._degraded = False

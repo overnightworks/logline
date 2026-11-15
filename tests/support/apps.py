@@ -380,7 +380,11 @@ def _add_step_routes(app: FastAPI) -> None:
     @app.get("/step/timer-named-fields")
     async def step_timer_named_fields() -> _Answer:
         async with _step(
-            duration_ms=-1, outcome="failed", reason="caller", first_output_ms=-1, error_type="Caller"
+            duration_ms=-1,
+            outcome="failed",
+            reason="caller",
+            first_output_ms=-1,
+            error_type="Caller",
         ):
             pass
         return {"caught": None}

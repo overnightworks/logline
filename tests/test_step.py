@@ -181,3 +181,11 @@ def test_a_step_line_is_written_through_the_logger_the_caller_names_without_conf
     )
     assert vars(record)["outcome"] == Outcome.OK.value
     assert vars(record)["agent_id"] == STEP_AGENT_ID
+
+
+@pytest.mark.parametrize("field", ["name", "module", "process", "args", "message", "asctime"])
+def test_a_field_named_like_a_log_record_attribute_is_refused_when_the_timer_is_built(
+    field: str,
+) -> None:
+    with pytest.raises(ValueError, match=field):
+        StepTimer(STEP_EVENT, logging.getLogger(STEP_LOGGER), **{field: "value"})
