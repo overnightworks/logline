@@ -1,0 +1,7 @@
+claim_id = "48f8897063e64907bccfba8d3cec4a56"
+agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
+role = "builder"
+base = "f626fa5d02af38b5be8884ea17a4af04f6e6bdcd"
+branch = "claude/issue-4-gaps-named-at-logline-0-1-0"
+scope = ["README.md", "src/logline/request.py", "tests/test_request_line.py"]
+opened_commit = "4a4859c7c13becde100f2783f6f7296813fe490c"
