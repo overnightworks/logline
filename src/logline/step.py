@@ -125,7 +125,7 @@ class StepTimer:
         self._write_line(None)
 
     def end_cancelled(self) -> None:
-        """Write the line now as `cancelled`, for a step no block surrounds; later ones write none."""
+        """Write the line now as `cancelled`, for a step without a block; later ones write none."""
         self._write_line(None, cancelled=True)
 
     def first_output(self) -> None:

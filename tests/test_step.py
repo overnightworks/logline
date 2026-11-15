@@ -381,8 +381,10 @@ def test_a_step_given_a_past_start_counts_its_durations_from_it(
     _, lines = serve_requests(capsys, [get("/step/started-earlier")])
 
     line = _step_line(lines)
-    earlier_ms = STEP.earlier_start_seconds * 1000
-    assert earlier_ms <= line["first_output_ms"] <= line["duration_ms"]
+    first_output_ms, duration_ms = line["first_output_ms"], line["duration_ms"]
+    assert isinstance(first_output_ms, float)
+    assert isinstance(duration_ms, float)
+    assert STEP.earlier_start_seconds * 1000 <= first_output_ms <= duration_ms
 
 
 def test_a_step_given_a_start_in_the_future_raises_and_writes_no_line(
@@ -444,4 +446,4 @@ def test_a_field_named_like_a_log_record_attribute_is_refused_when_the_timer_is_
     field: str,
 ) -> None:
     with pytest.raises(ValueError, match=field):
-        StepTimer(STEP_EVENT, logging.getLogger(STEP_LOGGER), **{field: "value"})
+        StepTimer(STEP_EVENT, logging.getLogger(STEP_LOGGER), **{field: 1})
