@@ -7,15 +7,12 @@ import pytest
 import logline.step
 from logline import Outcome, StepTimer
 from tests.support.apps import (
+    STEP,
     STEP_AGENT_ID,
-    STEP_COUNT,
     STEP_EVENT,
     STEP_FAILURE_MESSAGE,
-    STEP_FAILURE_REASON,
-    STEP_LATER_AGENT_ID,
     STEP_LOGGER,
     STEP_REFUSAL_REASON,
-    STEP_RESERVED_FIELD,
 )
 from tests.support.lines import Line, lines_of, request_lines
 from tests.support.serving import get, serve_requests, serve_requests_answered
@@ -63,35 +60,35 @@ def _step_line(lines: list[Line]) -> Line:
             "/step/fail",
             _ERROR,
             Outcome.FAILED,
-            {"reason": STEP_FAILURE_REASON},
+            {"reason": STEP.failure_reason},
             id="fail-without-an-exception",
         ),
         pytest.param(
             "/step/fail-handled",
             _WARNING,
             Outcome.FAILED,
-            {"reason": STEP_FAILURE_REASON},
+            {"reason": STEP.failure_reason},
             id="fail-without-an-exception-and-its-unit-goes-on",
         ),
         pytest.param(
             "/step/fail-then-refuse",
             _ERROR,
             Outcome.FAILED,
-            {"reason": STEP_FAILURE_REASON},
+            {"reason": STEP.failure_reason},
             id="refuse-after-fail-changes-nothing",
         ),
         pytest.param(
             "/step/refuse-then-fail",
             _ERROR,
             Outcome.FAILED,
-            {"reason": STEP_FAILURE_REASON},
+            {"reason": STEP.failure_reason},
             id="fail-after-refuse-fails-the-step",
         ),
         pytest.param(
             "/step/fail-then-raise",
             _ERROR,
             Outcome.FAILED,
-            {"reason": STEP_FAILURE_REASON, "error_type": "ValueError"},
+            {"reason": STEP.failure_reason, "error_type": "ValueError"},
             id="exception-after-fail-carries-both",
         ),
         pytest.param(
@@ -102,9 +99,9 @@ def _step_line(lines: list[Line]) -> Line:
             _INFO,
             Outcome.OK,
             {
-                "input_tokens": STEP_COUNT,
-                "output_tokens": STEP_COUNT,
-                "agent_id": STEP_LATER_AGENT_ID,
+                "input_tokens": STEP.count,
+                "output_tokens": STEP.count,
+                "agent_id": STEP.later_agent_id,
             },
             id="add-puts-counts-on-the-line-and-a-later-value-wins",
         ),
@@ -112,7 +109,7 @@ def _step_line(lines: list[Line]) -> Line:
             "/step/end",
             _INFO,
             Outcome.OK,
-            {"output_tokens": STEP_COUNT},
+            {"output_tokens": STEP.count},
             id="end-writes-the-line-of-a-step-without-a-block",
         ),
         pytest.param("/step/end-twice", _INFO, Outcome.OK, {}, id="a-second-end-writes-none"),
@@ -237,7 +234,7 @@ def test_a_field_added_under_a_log_record_attribute_name_raises(
 ) -> None:
     _, _, (answer,) = serve_requests_answered(capsys, [get("/step/add-reserved")])
 
-    assert STEP_RESERVED_FIELD in str(answer.json()["caught"])
+    assert STEP.reserved_field in str(answer.json()["caught"])
 
 
 def test_the_first_output_mark_keeps_the_time_of_the_first_call_only(
