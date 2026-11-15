@@ -1,10 +1,8 @@
 import asyncio
 from collections.abc import Awaitable, Callable, MutableMapping
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import httpx
 import pytest
 import uvicorn
 
@@ -36,45 +34,12 @@ from tests.support.apps import (
     UNAVAILABLE_PATH,
     build_app,
 )
-from tests.support.lines import Line, json_lines, lines_of, request_lines
-from tests.support.serving import serve
+from tests.support.lines import json_lines, lines_of, request_lines
+from tests.support.serving import Call, get, serve_requests
 
 # Twelve digits: the timestamps, process ids and trace ids in the output cannot hold them by chance.
 _UNGUESSABLE_ID = "918273645012"
 _LOGGERS_OF_THE_REQUEST = {REQUEST_LOGGER_NAME, BACKGROUND_LOGGER}
-
-
-@dataclass(frozen=True)
-class _Call:
-    path: str
-    method: str = "GET"
-    headers: dict[str, str] = field(default_factory=dict)
-    content: bytes = b""
-
-
-def _get(path: str, **headers: str) -> _Call:
-    return _Call(path, headers=headers)
-
-
-def _serve_requests(
-    capsys: pytest.CaptureFixture[str],
-    calls: list[_Call],
-    *,
-    config: uvicorn.Config | None = None,
-) -> tuple[str, list[Line]]:
-    """Serve the app, make `calls` one after another, return stdout and its parsed lines."""
-    configure("request-service")
-
-    async def exercise(base_url: str) -> None:
-        async with httpx.AsyncClient(base_url=base_url) as client:
-            for call in calls:
-                await client.request(
-                    call.method, call.path, headers=call.headers, content=call.content
-                )
-
-    serve(config or uvicorn.Config(build_app(), log_config=None), exercise)
-    output = capsys.readouterr().out
-    return output, json_lines(output)
 
 
 @pytest.mark.parametrize(
@@ -103,9 +68,9 @@ def test_the_route_of_a_line_is_the_template_the_framework_or_host_left_and_neve
 ) -> None:
     (tmp_path / f"{_UNGUESSABLE_ID}.txt").write_text("static content")
 
-    output, lines = _serve_requests(
+    output, lines = serve_requests(
         capsys,
-        [_get(f"{path}?search=private-query")],
+        [get(f"{path}?search=private-query")],
         config=uvicorn.Config(build_app(static_directory=tmp_path), log_config=None),
     )
 
@@ -128,9 +93,7 @@ def test_a_route_set_in_an_endpoint_reaches_the_line(
 ) -> None:
     app = build_app(below_base_http_middleware=below_base_http_middleware)
 
-    _, lines = _serve_requests(
-        capsys, [_get(endpoint)], config=uvicorn.Config(app, log_config=None)
-    )
+    _, lines = serve_requests(capsys, [get(endpoint)], config=uvicorn.Config(app, log_config=None))
 
     (line,) = request_lines(lines)
     assert line["route"] == HOST_ROUTE
@@ -139,7 +102,7 @@ def test_a_route_set_in_an_endpoint_reaches_the_line(
 def test_a_request_whose_endpoint_raised_logs_500_and_a_traceback_without_its_locals(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    output, lines = _serve_requests(capsys, [_get("/boom", **{"x-secret": "secret-in-a-local"})])
+    output, lines = serve_requests(capsys, [get("/boom", **{"x-secret": "secret-in-a-local"})])
 
     (line,) = request_lines(lines)
     assert line["route"] == "/boom"
@@ -167,7 +130,7 @@ def test_the_request_event_is_the_past_tense_name_the_standard_ruled() -> None:
 def test_the_request_line_names_how_the_request_ended(
     capsys: pytest.CaptureFixture[str], path: str, status: int, outcome: Outcome
 ) -> None:
-    _, lines = _serve_requests(capsys, [_get(path, **{"x-secret": "value"})])
+    _, lines = serve_requests(capsys, [get(path, **{"x-secret": "value"})])
 
     (line,) = request_lines(lines)
     assert (line["status"], line["outcome"]) == (status, outcome.value)
@@ -177,7 +140,7 @@ def test_the_request_line_names_how_the_request_ended(
 def test_an_endpoint_raising_from_a_cause_logs_both_types_and_messages_in_one_text(
     capsys: pytest.CaptureFixture[str], path: str
 ) -> None:
-    _, lines = _serve_requests(capsys, [_get(path)])
+    _, lines = serve_requests(capsys, [get(path)])
 
     (line,) = request_lines(lines)
     assert line["status"] == 500
@@ -191,7 +154,7 @@ def test_an_endpoint_raising_from_a_cause_logs_both_types_and_messages_in_one_te
 def test_an_endpoint_raising_an_exception_group_logs_every_member(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _, lines = _serve_requests(capsys, [_get("/group")])
+    _, lines = serve_requests(capsys, [get("/group")])
 
     (failure,) = [line for line in lines_of(lines, "uvicorn.error") if line["level"] == "error"]
     text = str(failure["exception"])
@@ -203,7 +166,7 @@ def test_an_endpoint_raising_an_exception_group_logs_every_member(
 def test_the_request_line_is_written_when_the_response_ends_not_after_background_work(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _, lines = _serve_requests(capsys, [_get("/background-task")])
+    _, lines = serve_requests(capsys, [get("/background-task")])
 
     written = [line["logger"] for line in lines if line["logger"] in _LOGGERS_OF_THE_REQUEST]
     assert written == [REQUEST_LOGGER_NAME, BACKGROUND_LOGGER]
@@ -212,7 +175,7 @@ def test_the_request_line_is_written_when_the_response_ends_not_after_background
 def test_a_streamed_response_gets_one_line_when_its_last_chunk_is_sent(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _, lines = _serve_requests(capsys, [_get("/stream")])
+    _, lines = serve_requests(capsys, [get("/stream")])
 
     (line,) = request_lines(lines)
     assert line["route"] == "/stream"
@@ -220,8 +183,8 @@ def test_a_streamed_response_gets_one_line_when_its_last_chunk_is_sent(
 
 
 def test_each_request_gets_exactly_one_line(capsys: pytest.CaptureFixture[str]) -> None:
-    _, lines = _serve_requests(
-        capsys, [_get("/items/1"), _get("/items/2"), _get("/missing"), _get("/async-sub")]
+    _, lines = serve_requests(
+        capsys, [get("/items/1"), get("/items/2"), get("/missing"), get("/async-sub")]
     )
 
     assert [line["status"] for line in request_lines(lines)] == [200, 200, 404, 200]
@@ -234,9 +197,7 @@ def test_a_sub_set_in_an_endpoint_reaches_the_line(
 ) -> None:
     app = build_app(below_base_http_middleware=below_base_http_middleware)
 
-    _, lines = _serve_requests(
-        capsys, [_get(endpoint)], config=uvicorn.Config(app, log_config=None)
-    )
+    _, lines = serve_requests(capsys, [get(endpoint)], config=uvicorn.Config(app, log_config=None))
 
     (line,) = request_lines(lines)
     assert line["sub"] == SUB
@@ -245,7 +206,7 @@ def test_a_sub_set_in_an_endpoint_reaches_the_line(
 def test_a_request_without_a_known_person_logs_a_null_sub(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _, lines = _serve_requests(capsys, [_get("/items/1")])
+    _, lines = serve_requests(capsys, [get("/items/1")])
 
     (line,) = request_lines(lines)
     assert line["sub"] is None
@@ -254,7 +215,7 @@ def test_a_request_without_a_known_person_logs_a_null_sub(
 def test_the_ip_is_the_asgi_client_until_the_host_sets_it(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _, lines = _serve_requests(capsys, [_get("/items/1"), _get("/host-client-ip")])
+    _, lines = serve_requests(capsys, [get("/items/1"), get("/host-client-ip")])
 
     default, set_by_host = request_lines(lines)
     assert default["ip"] == "127.0.0.1"
@@ -268,8 +229,8 @@ def test_behind_a_trusted_proxy_the_ip_is_the_forwarded_client(
         build_app(), log_config=None, proxy_headers=True, forwarded_allow_ips="127.0.0.1"
     )
 
-    _, lines = _serve_requests(
-        capsys, [_get("/items/1", **{"x-forwarded-for": "203.0.113.9"})], config=config
+    _, lines = serve_requests(
+        capsys, [get("/items/1", **{"x-forwarded-for": "203.0.113.9"})], config=config
     )
 
     (line,) = request_lines(lines)
@@ -279,14 +240,14 @@ def test_behind_a_trusted_proxy_the_ip_is_the_forwarded_client(
 def test_no_credential_header_query_or_body_reaches_any_line(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    call = _Call(
+    call = Call(
         "/body?api_key=secret-query",
         method="POST",
         headers={"authorization": "Bearer secret-token", "cookie": "session=secret-cookie"},
         content=b"secret-body",
     )
 
-    output, lines = _serve_requests(capsys, [call])
+    output, lines = serve_requests(capsys, [call])
 
     (line,) = request_lines(lines)
     assert line["route"] == "/body"

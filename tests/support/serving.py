@@ -1,8 +1,15 @@
 import asyncio
 import socket
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 
+import httpx
+import pytest
 import uvicorn
+
+from logline import configure
+from tests.support.apps import build_app
+from tests.support.lines import Line, json_lines
 
 
 def serve(config: uvicorn.Config, exercise: Callable[[str], Awaitable[None]]) -> None:
@@ -27,3 +34,50 @@ def serve(config: uvicorn.Config, exercise: Callable[[str], Awaitable[None]]) ->
             listener.close()
 
     asyncio.run(run())
+
+
+@dataclass(frozen=True)
+class Call:
+    path: str
+    method: str = "GET"
+    headers: dict[str, str] = field(default_factory=dict)
+    content: bytes = b""
+
+
+def get(path: str, **headers: str) -> Call:
+    return Call(path, headers=headers)
+
+
+def serve_requests_answered(
+    capsys: pytest.CaptureFixture[str],
+    calls: list[Call],
+    *,
+    config: uvicorn.Config | None = None,
+) -> tuple[str, list[Line], list[httpx.Response]]:
+    """Serve the app, make `calls` one after another, return stdout, its lines and the answers."""
+    configure("request-service")
+    answers: list[httpx.Response] = []
+
+    async def exercise(base_url: str) -> None:
+        async with httpx.AsyncClient(base_url=base_url) as client:
+            for call in calls:
+                answers.append(
+                    await client.request(
+                        call.method, call.path, headers=call.headers, content=call.content
+                    )
+                )
+
+    serve(config or uvicorn.Config(build_app(), log_config=None), exercise)
+    output = capsys.readouterr().out
+    return output, json_lines(output), answers
+
+
+def serve_requests(
+    capsys: pytest.CaptureFixture[str],
+    calls: list[Call],
+    *,
+    config: uvicorn.Config | None = None,
+) -> tuple[str, list[Line]]:
+    """Serve the app, make `calls` one after another, return stdout and its parsed lines."""
+    output, lines, _ = serve_requests_answered(capsys, calls, config=config)
+    return output, lines
