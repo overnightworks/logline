@@ -205,6 +205,8 @@ The rules for what a covered host logs and how. What a line never carries is [Ne
 - Every library whose code runs on a hop of such a process.
 - Not covered: forks of third-party projects and pure command-line tools.
 - New code complies at once; existing repositories adopt now.
+- `service` is one name per deployed process: the app's main process takes the app's name, every other
+  process `<app>-<role>` in snake_case, such as `presentator-worker`.
 - The rules a machine checks: a released logline tag, a literal event name of the form below, no
   value formatted into a message, no field from the deny list (`duration`, `elapsed`, `*_seconds`, `error`,
   `user_id`, `subject_id`, `url`, `path`, `query`, `text`, `prompt`, `token`), and no logging setup of the
@@ -219,7 +221,7 @@ The rules for what a covered host logs and how. What a line never carries is [Ne
 | Step inside a unit (each outbound call to another process, each wait or compute stage the caller waits on), one line at its end | info; warning when it failed and the unit went on; error when the unit failed with it |
 | State change of a domain object | info |
 | Refusal, with `reason` | info |
-| Background run, one line per run with its counts | info |
+| Background run | info; a run that found no work writes no line, a run with work writes one line with its counts, a failing repeating run writes its first failure (warning) and its recovery (info) with `failed_run_count` |
 | Process start, ready and stop | info |
 | Error, once, where the exception stops | error |
 
