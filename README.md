@@ -363,8 +363,8 @@ async def ask_model(client, request):
   `ValueError` at construction. `started_at` is no step field name: `add` drops it. The line carries the
   step's id fields (scalars), `duration_ms` on the request line's clock and rounding, and `outcome`; it is
   written in `finally`, so a failed or cancelled step still leaves it.
-- The timer owns the keys `duration_ms`, `outcome`, `reason`, `first_output_ms`, `error_type` and `started_at`: a field of
-  one of those names is dropped. A field named like an attribute of `logging.LogRecord` (`name`, `module`,
+- The timer owns the keys `duration_ms`, `outcome`, `reason`, `first_output_ms`, `error_type` and
+  `started_at`: a field of one of those names is dropped. A field named like an attribute of `logging.LogRecord` (`name`, `module`,
   `process`, `thread`, `args`, `message`, ...) raises `ValueError` when the timer is constructed, because the
   standard library refuses it as an `extra` key.
 - A block that ends normally is `ok`. `step.refuse(reason)` makes it `refused` with `reason`, a code from the
