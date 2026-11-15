@@ -235,6 +235,7 @@ def _add_logging_routes(app: FastAPI) -> None:
                 "trace_id": "forged",
                 "service": "forged",
                 "event": "forged",
+                "exception": "forged traceback",
                 "connection": object(),
             },
         )

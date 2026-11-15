@@ -13,8 +13,9 @@ __all__ = ["record_shape"]
 
 _EXTRA_FIELDS = ExtraAdder()
 _SCALAR_TYPES = (str, int, float, bool, type(None))
-# uvicorn's coloured copy of the message.
-_UNCOPIED_EXTRA_FIELDS = frozenset({"event", "color_message"})
+# `color_message` is uvicorn's coloured copy of the message; `exception` is the key `format_exc_info`
+# writes, so a library's own field of that name must not pose as a traceback.
+_UNCOPIED_EXTRA_FIELDS = frozenset({"event", "color_message", "exception"})
 
 
 def _copy_extra_fields(logger: Logger, method_name: str, event_dict: EventDict) -> EventDict:
@@ -51,7 +52,7 @@ def record_shape(service: str, version: str | None) -> list[Processor]:
     """The processors that stamp `ts`, `level`, `service`, `version`, `logger` and `trace_id`.
 
     A standard-library record's scalar `extra=` fields are copied first, so each stamp overwrites a
-    caller's key of the same name; `event` and uvicorn's `color_message` are not copied. An
+    caller's key of the same name; `event`, `exception` and uvicorn's `color_message` are not copied. An
     exception renders as Python's text traceback in `exception`: frames, messages and the whole
     chain, never local variables.
     """
