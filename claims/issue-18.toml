@@ -1,0 +1,7 @@
+claim_id = "c3df7fa8e38e4205b7082e928425b677"
+agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
+role = "builder"
+base = "808d4c8953118f3fecd73bc00b3980c6687e9e14"
+branch = "claude/issue-18-service-name-and-background-run-lines"
+scope = ["README.md"]
+opened_commit = "f69f6d04684ec8230876e17821bafef55473fe13"
