@@ -196,6 +196,7 @@ async for message in websocket.iter_json():
             await handle_turn(message)
         except Exception:
             logger.exception("turn_failed")
+            raise
 ```
 
 `tracestate` is not carried in a message.
