@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import logging
+import time
 from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -58,6 +59,7 @@ class StepScenario:
     count: int = 42
     later_agent_id: str = "agent-8"
     reserved_field: str = "module"
+    earlier_start_seconds: int = 5
 
 
 STEP = StepScenario()
@@ -318,9 +320,12 @@ def _add_turn_route(app: FastAPI) -> None:
             await websocket.send_json({"traceparent": current_traceparent(), **answer})
 
 
-def _step(**fields: str | float) -> StepTimer:
+def _step(*, started_at: float | None = None, **fields: str | float) -> StepTimer:
     return StepTimer(
-        STEP_EVENT, logging.getLogger(STEP_LOGGER), **{"agent_id": STEP_AGENT_ID, **fields}
+        STEP_EVENT,
+        logging.getLogger(STEP_LOGGER),
+        started_at=started_at,
+        **{"agent_id": STEP_AGENT_ID, **fields},
     )
 
 
@@ -446,6 +451,7 @@ def _add_step_routes(app: FastAPI) -> None:
         async with _step() as step:
             step.add(input_tokens=1, output_tokens=STEP.count, duration_ms=-1, reason="caller")
             step.add(input_tokens=STEP.count, agent_id=STEP.later_agent_id, error_type="Caller")
+            step.add(started_at=STEP.earlier_start_seconds)
         return {"caught": None}
 
     @app.get("/step/add-reserved")
@@ -456,6 +462,21 @@ def _add_step_routes(app: FastAPI) -> None:
         except ValueError as caught:
             return {"caught": str(caught)}
         return {"caught": None}
+
+    @app.get("/step/add-reserved-escaping")
+    async def step_add_reserved_escaping() -> None:
+        async with _step() as step:
+            step.add(**{STEP.reserved_field: "value"})
+
+    @app.get("/step/refuse-then-raise")
+    async def step_refuse_then_raise() -> _Answer:
+        failure = ValueError(STEP_FAILURE_MESSAGE)
+        try:
+            async with _step() as step:
+                step.refuse(STEP_REFUSAL_REASON)
+                raise failure
+        except ValueError as caught:
+            return _caught(caught, failure)
 
     @app.get("/step/fail")
     async def step_fail() -> _Answer:
@@ -536,6 +557,83 @@ def _add_step_routes(app: FastAPI) -> None:
         step.end()
         return {"caught": None}
 
+    @app.get("/step/end-cancelled")
+    async def step_end_cancelled() -> _Answer:
+        step = _step()
+        step.add(output_tokens=STEP.count)
+        step.end_cancelled()
+        return {"caught": None}
+
+    @app.get("/step/sync-end-cancelled")
+    def step_sync_end_cancelled() -> _Answer:
+        _step().end_cancelled()
+        return {"caught": None}
+
+    @app.get("/step/fail-then-end-cancelled")
+    async def step_fail_then_end_cancelled() -> _Answer:
+        step = _step()
+        step.fail(STEP.failure_reason)
+        step.end_cancelled()
+        return {"caught": None}
+
+    @app.get("/step/refuse-then-end-cancelled")
+    async def step_refuse_then_end_cancelled() -> _Answer:
+        step = _step()
+        step.refuse(STEP_REFUSAL_REASON)
+        step.end_cancelled()
+        return {"caught": None}
+
+    @app.get("/step/handled-then-end-cancelled")
+    async def step_handled_then_end_cancelled() -> _Answer:
+        step = _step()
+        step.handled()
+        step.end_cancelled()
+        return {"caught": None}
+
+    @app.get("/step/degraded-then-end-cancelled")
+    async def step_degraded_then_end_cancelled() -> _Answer:
+        step = _step()
+        step.degraded()
+        step.end_cancelled()
+        return {"caught": None}
+
+    @app.get("/step/end-cancelled-then-raise")
+    async def step_end_cancelled_then_raise() -> _Answer:
+        failure = ValueError(STEP_FAILURE_MESSAGE)
+        try:
+            async with _step() as step:
+                step.end_cancelled()
+                raise failure
+        except ValueError as caught:
+            return _caught(caught, failure)
+
+    @app.get("/step/end-cancelled-then-end")
+    async def step_end_cancelled_then_end() -> _Answer:
+        step = _step()
+        step.end_cancelled()
+        step.end()
+        return {"caught": None}
+
+    @app.get("/step/end-then-end-cancelled")
+    async def step_end_then_end_cancelled() -> _Answer:
+        step = _step()
+        step.end()
+        step.end_cancelled()
+        return {"caught": None}
+
+    @app.get("/step/end-cancelled-twice")
+    async def step_end_cancelled_twice() -> _Answer:
+        step = _step()
+        step.end_cancelled()
+        step.end_cancelled()
+        return {"caught": None}
+
+    @app.get("/step/end-cancelled-in-block")
+    async def step_end_cancelled_in_block() -> _Answer:
+        async with _step() as step:
+            step.end_cancelled()
+        return {"caught": None}
+
     @app.get("/step/sync-end")
     def step_sync_end() -> _Answer:
         _step().end()
@@ -547,6 +645,21 @@ def _add_step_routes(app: FastAPI) -> None:
         step.first_output()
         async with step:
             pass
+        return {"caught": None}
+
+    @app.get("/step/started-earlier")
+    async def step_started_earlier() -> _Answer:
+        step = _step(started_at=time.perf_counter() - STEP.earlier_start_seconds)
+        step.first_output()
+        step.end()
+        return {"caught": None}
+
+    @app.get("/step/started-in-the-future")
+    async def step_started_in_the_future() -> _Answer:
+        try:
+            _step(started_at=time.perf_counter() + STEP.earlier_start_seconds)
+        except ValueError as caught:
+            return {"caught": str(caught)}
         return {"caught": None}
 
     @app.get("/step/end-twice")

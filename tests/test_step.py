@@ -99,6 +99,20 @@ def _step_line(lines: list[Line]) -> Line:
             id="a-record-attribute-name-in-add-fails-the-block",
         ),
         pytest.param(
+            "/step/add-reserved-escaping",
+            _ERROR,
+            Outcome.FAILED,
+            {"error_type": "ValueError"},
+            id="a-record-attribute-name-in-add-fails-the-block-it-escapes",
+        ),
+        pytest.param(
+            "/step/refuse-then-raise",
+            _ERROR,
+            Outcome.FAILED,
+            {"error_type": "ValueError"},
+            id="exception-after-refuse-fails-without-the-refusal-reason",
+        ),
+        pytest.param(
             "/step/fail-then-raise",
             _ERROR,
             Outcome.FAILED,
@@ -152,6 +166,83 @@ def _step_line(lines: list[Line]) -> Line:
             {},
             id="an-exception-after-end-writes-no-second-line",
         ),
+        pytest.param(
+            "/step/end-cancelled",
+            _INFO,
+            Outcome.CANCELLED,
+            {"output_tokens": STEP.count},
+            id="end-cancelled-writes-the-line-of-a-step-without-a-block",
+        ),
+        pytest.param(
+            "/step/sync-end-cancelled",
+            _INFO,
+            Outcome.CANCELLED,
+            {},
+            id="end-cancelled-in-a-sync-endpoint",
+        ),
+        pytest.param(
+            "/step/fail-then-end-cancelled",
+            _INFO,
+            Outcome.CANCELLED,
+            {},
+            id="end-cancelled-after-fail-carries-no-reason",
+        ),
+        pytest.param(
+            "/step/refuse-then-end-cancelled",
+            _INFO,
+            Outcome.CANCELLED,
+            {},
+            id="end-cancelled-after-refuse-carries-no-reason",
+        ),
+        pytest.param(
+            "/step/handled-then-end-cancelled",
+            _INFO,
+            Outcome.CANCELLED,
+            {},
+            id="end-cancelled-after-handled-stays-at-info",
+        ),
+        pytest.param(
+            "/step/degraded-then-end-cancelled",
+            _WARNING,
+            Outcome.CANCELLED,
+            {},
+            id="end-cancelled-after-degraded-is-a-warning",
+        ),
+        pytest.param(
+            "/step/end-cancelled-then-raise",
+            _INFO,
+            Outcome.CANCELLED,
+            {},
+            id="an-exception-after-end-cancelled-writes-no-second-line",
+        ),
+        pytest.param(
+            "/step/end-cancelled-then-end",
+            _INFO,
+            Outcome.CANCELLED,
+            {},
+            id="end-after-end-cancelled-writes-none",
+        ),
+        pytest.param(
+            "/step/end-then-end-cancelled",
+            _INFO,
+            Outcome.OK,
+            {},
+            id="end-cancelled-after-end-writes-none",
+        ),
+        pytest.param(
+            "/step/end-cancelled-twice",
+            _INFO,
+            Outcome.CANCELLED,
+            {},
+            id="a-second-end-cancelled-writes-none",
+        ),
+        pytest.param(
+            "/step/end-cancelled-in-block",
+            _INFO,
+            Outcome.CANCELLED,
+            {},
+            id="the-exit-after-end-cancelled-writes-none",
+        ),
         pytest.param("/step/cancelled", _INFO, Outcome.CANCELLED, {}, id="cancelled"),
         pytest.param("/step/generator-closed", _INFO, Outcome.CANCELLED, {}, id="generator-closed"),
         pytest.param("/step/generator-finished", _INFO, Outcome.OK, {}, id="generator-finished"),
@@ -187,6 +278,7 @@ def test_a_step_writes_exactly_one_line_with_its_outcome_and_level(
     assert "first_output_ms" not in line
     assert ("error_type" in line) == ("error_type" in extra)
     assert ("reason" in line) == ("reason" in extra)
+    assert "started_at" not in line
 
 
 @pytest.mark.parametrize(
@@ -197,6 +289,7 @@ def test_a_step_writes_exactly_one_line_with_its_outcome_and_level(
         "/step/failed-escaping",
         "/step/thread-failed",
         "/step/fail-then-raise",
+        "/step/refuse-then-raise",
     ],
 )
 def test_a_failed_steps_line_carries_neither_the_message_nor_a_traceback(
@@ -217,7 +310,9 @@ def test_a_failed_steps_line_carries_neither_the_message_nor_a_traceback(
         "/step/failed-handled",
         "/step/thread-failed",
         "/step/fail-then-raise",
+        "/step/refuse-then-raise",
         "/step/end-then-raise",
+        "/step/end-cancelled-then-raise",
     ],
 )
 def test_a_failed_steps_exception_reaches_the_caller_as_the_same_object(
@@ -236,10 +331,11 @@ def test_a_cancelled_step_lets_the_cancellation_propagate(
     assert answer.json()["cancelled"] is True
 
 
+@pytest.mark.parametrize("path", ["/step/failed-escaping", "/step/add-reserved-escaping"])
 def test_an_exception_that_leaves_the_step_unhandled_fails_the_request_with_one_step_line(
-    capsys: pytest.CaptureFixture[str],
+    capsys: pytest.CaptureFixture[str], path: str
 ) -> None:
-    _, lines = serve_requests(capsys, [get("/step/failed-escaping")])
+    _, lines = serve_requests(capsys, [get(path)])
 
     assert _step_line(lines)["outcome"] == Outcome.FAILED.value
     (request,) = request_lines(lines)
@@ -303,6 +399,28 @@ def test_the_first_output_mark_keeps_the_time_of_the_first_call_only(
     assert line["duration_ms"] > one_tick_ms
 
 
+def test_a_step_given_a_past_start_counts_its_durations_from_it(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, lines = serve_requests(capsys, [get("/step/started-earlier")])
+
+    line = _step_line(lines)
+    first_output_ms, duration_ms = line["first_output_ms"], line["duration_ms"]
+    assert isinstance(first_output_ms, float)
+    assert isinstance(duration_ms, float)
+    assert STEP.earlier_start_seconds * 1000 <= first_output_ms <= duration_ms
+    assert "started_at" not in line
+
+
+def test_a_step_given_a_start_in_the_future_raises_and_writes_no_line(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, lines, (answer,) = serve_requests_answered(capsys, [get("/step/started-in-the-future")])
+
+    assert "started_at" in str(answer.json()["caught"])
+    assert lines_of(lines, STEP_LOGGER) == []
+
+
 @pytest.mark.parametrize(
     "path",
     [
@@ -312,6 +430,8 @@ def test_the_first_output_mark_keeps_the_time_of_the_first_call_only(
         "/step/sync-endpoint",
         "/step/end",
         "/step/sync-end",
+        "/step/end-cancelled",
+        "/step/sync-end-cancelled",
     ],
 )
 def test_a_step_line_carries_the_trace_of_the_request_it_ran_in(
@@ -351,4 +471,4 @@ def test_a_field_named_like_a_log_record_attribute_is_refused_when_the_timer_is_
     field: str,
 ) -> None:
     with pytest.raises(ValueError, match=field):
-        StepTimer(STEP_EVENT, logging.getLogger(STEP_LOGGER), **{field: "value"})
+        StepTimer(STEP_EVENT, logging.getLogger(STEP_LOGGER), **{field: 1})

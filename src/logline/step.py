@@ -14,7 +14,9 @@ __all__ = ["Outcome", "StepTimer"]
 
 type Scalar = str | int | float | bool | None
 
-_TIMER_KEYS = frozenset({"duration_ms", "outcome", "reason", "first_output_ms", "error_type"})
+_TIMER_KEYS = frozenset(
+    {"duration_ms", "outcome", "reason", "first_output_ms", "error_type", "started_at"}
+)
 # Logger.makeRecord raises KeyError on an extra key that names one of these record attributes.
 _RECORD_ATTRIBUTES = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
 
@@ -31,8 +33,11 @@ class Outcome(StrEnum):
 class Stopwatch:
     """The monotonic clock and rounding of every `duration_ms` and `first_output_ms`."""
 
-    def __init__(self) -> None:
-        self._started = time.perf_counter()
+    def __init__(self, started_at: float | None = None) -> None:
+        now = time.perf_counter()
+        if started_at is not None and started_at > now:
+            raise ValueError("started_at is later than time.perf_counter()")
+        self._started = now if started_at is None else started_at
 
     def elapsed_ms(self) -> float:
         return round((time.perf_counter() - self._started) * 1000, 3)
@@ -51,7 +56,8 @@ class StepTimer:
 
     Works as `with` and as `async with`; the line is written once, in the thread or task the block
     runs in, so it carries that context's `trace_id`. The timer starts when it is constructed, not
-    when the block is entered. A step that no block surrounds is ended by `end`.
+    when the block is entered, or at `started_at` when the caller names it. A step that no block
+    surrounds is ended by `end` or `end_cancelled`.
 
     - `event` is the literal `<noun>.ended` name and `fields` are the step's id fields. The timer
       owns `duration_ms`, `outcome`, `reason`, `first_output_ms` and `error_type`: a field of one of
@@ -59,23 +65,37 @@ class StepTimer:
       like an attribute of `logging.LogRecord` (`name`, `module`, `process`, `args`, ...) raises
       `ValueError`, at construction and in `add`, which sets more fields before the line is
       written; a later value for the same key replaces the earlier one.
+    - `started_at` is a keyword-only `time.perf_counter()` value, for a step that began before the
+      timer can be constructed: `duration_ms` and `first_output_ms` count from it. One later than
+      `time.perf_counter()` raises `ValueError` at construction. It is no step field name: `add`
+      drops a field of that name, and the line never carries it.
     - A block that ends normally is `ok`, or `refused` after `refuse`, or `failed` with `reason`
       after `fail`, which wins over `refuse` in either order. An `Exception` makes it `failed`
       with `error_type` (the class name; never the message or a traceback), beside the `reason`
       when `fail` named one, and propagates unchanged. Any other `BaseException`, a cancellation
       or `GeneratorExit`, makes it `cancelled`, without `error_type` and `reason`; the exception
       propagates too.
-    - `end` writes the line now, as a block that ends normally would. The line is written once:
-      after `end` or the block's exit, a later one writes nothing.
+    - `end` writes the line now, as a block that ends normally would; `end_cancelled` writes it
+      now, as a block that a cancellation leaves would: `cancelled`, without `error_type` and
+      `reason`. The line is written once: after either or the block's exit, a later one writes
+      nothing.
     - The line is at INFO. `degraded` makes it WARNING. A failed step is at ERROR, or WARNING when
       `handled` says its unit goes on; one that is degraded and failed unhandled stays at ERROR.
     """
 
-    def __init__(self, event: str, logger: logging.Logger, /, **fields: Scalar) -> None:
+    def __init__(
+        self,
+        event: str,
+        logger: logging.Logger,
+        /,
+        *,
+        started_at: float | None = None,
+        **fields: Scalar,
+    ) -> None:
         self._event = event
         self._logger = logger
         self._fields = _step_fields(fields)
-        self._stopwatch = Stopwatch()
+        self._stopwatch = Stopwatch(started_at)
         self._degraded = False
         self._handled = False
         self._refusal_reason: str | None = None
@@ -107,6 +127,10 @@ class StepTimer:
         """Write the line now, for a step no block surrounds; later calls and exits write none."""
         self._write_line(None)
 
+    def end_cancelled(self) -> None:
+        """Write the line now as `cancelled`, for a step without a block; later ones write none."""
+        self._write_line(None, cancelled=True)
+
     def first_output(self) -> None:
         """Mark the first output of a streaming step; only the first call counts."""
         if self._first_output_ms is None:
@@ -134,11 +158,11 @@ class StepTimer:
     ) -> None:
         self._write_line(exc)
 
-    def _write_line(self, exc: BaseException | None) -> None:
+    def _write_line(self, exc: BaseException | None, *, cancelled: bool = False) -> None:
         if self._written:
             return
         self._written = True
-        outcome = self._outcome(exc)
+        outcome = self._outcome(exc, cancelled)
         fields: dict[str, Scalar] = {
             **self._fields,
             "duration_ms": self._stopwatch.elapsed_ms(),
@@ -160,7 +184,9 @@ class StepTimer:
             fields["reason"] = self._failure_reason
         return fields
 
-    def _outcome(self, exc: BaseException | None) -> Outcome:
+    def _outcome(self, exc: BaseException | None, cancelled: bool) -> Outcome:
+        if cancelled:
+            return Outcome.CANCELLED
         if exc is None:
             return self._outcome_of_a_normal_end()
         return Outcome.FAILED if isinstance(exc, Exception) else Outcome.CANCELLED

@@ -357,18 +357,22 @@ async def ask_model(client, request):
   `configure` gets an ordinary record under its own logging setup, and one with `configure` gets the JSON
   line with the running request's `trace_id`. A sync `with` on a worker thread (`asyncio.to_thread`, a sync
   endpoint) carries the request's `trace_id` too.
-- The timer starts when it is constructed, not when the block is entered: a wait that began earlier in the
-  same process constructs its timer at that start. The line carries the step's id fields (scalars), `duration_ms`
-  on the request line's clock and rounding, and `outcome`; it is written in `finally`, so a failed or
-  cancelled step still leaves it.
-- The timer owns the keys `duration_ms`, `outcome`, `reason`, `first_output_ms` and `error_type`: a field of
-  one of those names is dropped. A field named like an attribute of `logging.LogRecord` (`name`, `module`,
+- The timer starts when it is constructed, not when the block is entered. A step that began earlier, such as
+  a wait whose start a host keeps as a `time.perf_counter()` value, passes it as the keyword `started_at`,
+  and `duration_ms` and `first_output_ms` count from it; a value later than `time.perf_counter()` raises
+  `ValueError` at construction. `started_at` is no step field name: `add` drops it. The line carries the
+  step's id fields (scalars), `duration_ms` on the request line's clock and rounding, and `outcome`; it is
+  written in `finally`, so a failed or cancelled step still leaves it.
+- The timer owns the keys `duration_ms`, `outcome`, `reason`, `first_output_ms`, `error_type` and
+  `started_at`: a field of one of those names is dropped. A field named like an attribute of `logging.LogRecord` (`name`, `module`,
   `process`, `thread`, `args`, `message`, ...) raises `ValueError` when the timer is constructed, because the
   standard library refuses it as an `extra` key.
 - A block that ends normally is `ok`. `step.refuse(reason)` makes it `refused` with `reason`, a code from the
   app's closed set. `step.first_output()` adds `first_output_ms`, from the first call only.
 - An `Exception` makes it `failed` with `error_type`, the class name, and propagates unchanged. The line
-  never carries the message or a traceback: the layer where the exception stops logs it.
+  never carries the message or a traceback: the layer where the exception stops logs it. After
+  `step.refuse(reason)`, an exception that leaves the block makes it `failed` with `error_type` and without
+  the refusal's `reason`.
 - Any other `BaseException` (`asyncio.CancelledError`, `GeneratorExit`) makes it `cancelled` without
   `error_type`, and propagates.
 - `step.add(**fields)` sets more fields before the line is written, such as a count known only at the end. It
@@ -380,8 +384,10 @@ async def ask_model(client, request):
   both `error_type` and `reason`. `fail` wins over `refuse` in either order. A `cancelled` step carries
   neither, whatever `fail` said.
 - `step.end()` writes the line now, as a block that ends normally would, for a step that no `with` block
-  surrounds, such as a wait that spans WebSocket events. The line is written once: a later `end()` or block
-  exit writes nothing more.
+  surrounds, such as a wait that spans WebSocket events. `step.end_cancelled()` writes it now as `cancelled`,
+  at INFO, without `error_type` and `reason`, as a block that a cancellation leaves would: for a step whose
+  task is cancelled before a block surrounds it, ended from the task's done callback. The line is written
+  once: after either, a later `end()`, `end_cancelled()` or block exit writes nothing more.
 - The line is at INFO. `step.degraded()` makes it a warning, such as a `refused` call the unit retried. A
   `failed` step is at ERROR, or at WARNING after `step.handled()` when its unit goes on; a step that is
   degraded and failed unhandled stays at ERROR.
