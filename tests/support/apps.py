@@ -462,6 +462,21 @@ def _add_step_routes(app: FastAPI) -> None:
             return {"caught": str(caught)}
         return {"caught": None}
 
+    @app.get("/step/add-reserved-escaping")
+    async def step_add_reserved_escaping() -> None:
+        async with _step() as step:
+            step.add(**{STEP.reserved_field: "value"})
+
+    @app.get("/step/refuse-then-raise")
+    async def step_refuse_then_raise() -> _Answer:
+        failure = ValueError(STEP_FAILURE_MESSAGE)
+        try:
+            async with _step() as step:
+                step.refuse(STEP_REFUSAL_REASON)
+                raise failure
+        except ValueError as caught:
+            return _caught(caught, failure)
+
     @app.get("/step/fail")
     async def step_fail() -> _Answer:
         async with _step() as step:

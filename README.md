@@ -370,7 +370,9 @@ async def ask_model(client, request):
 - A block that ends normally is `ok`. `step.refuse(reason)` makes it `refused` with `reason`, a code from the
   app's closed set. `step.first_output()` adds `first_output_ms`, from the first call only.
 - An `Exception` makes it `failed` with `error_type`, the class name, and propagates unchanged. The line
-  never carries the message or a traceback: the layer where the exception stops logs it.
+  never carries the message or a traceback: the layer where the exception stops logs it. After
+  `step.refuse(reason)`, an exception that leaves the block makes it `failed` with `error_type` and without
+  the refusal's `reason`.
 - Any other `BaseException` (`asyncio.CancelledError`, `GeneratorExit`) makes it `cancelled` without
   `error_type`, and propagates.
 - `step.add(**fields)` sets more fields before the line is written, such as a count known only at the end. It

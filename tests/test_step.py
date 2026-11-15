@@ -99,6 +99,20 @@ def _step_line(lines: list[Line]) -> Line:
             id="a-record-attribute-name-in-add-fails-the-block",
         ),
         pytest.param(
+            "/step/add-reserved-escaping",
+            _ERROR,
+            Outcome.FAILED,
+            {"error_type": "ValueError"},
+            id="a-record-attribute-name-in-add-fails-the-block-it-escapes",
+        ),
+        pytest.param(
+            "/step/refuse-then-raise",
+            _ERROR,
+            Outcome.FAILED,
+            {"error_type": "ValueError"},
+            id="exception-after-refuse-fails-without-the-refusal-reason",
+        ),
+        pytest.param(
             "/step/fail-then-raise",
             _ERROR,
             Outcome.FAILED,
@@ -253,6 +267,7 @@ def test_a_step_writes_exactly_one_line_with_its_outcome_and_level(
         "/step/failed-escaping",
         "/step/thread-failed",
         "/step/fail-then-raise",
+        "/step/refuse-then-raise",
     ],
 )
 def test_a_failed_steps_line_carries_neither_the_message_nor_a_traceback(
@@ -273,6 +288,7 @@ def test_a_failed_steps_line_carries_neither_the_message_nor_a_traceback(
         "/step/failed-handled",
         "/step/thread-failed",
         "/step/fail-then-raise",
+        "/step/refuse-then-raise",
         "/step/end-then-raise",
     ],
 )
