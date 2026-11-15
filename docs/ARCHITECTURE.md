@@ -23,7 +23,7 @@ which receive the request's trace through `outgoing_headers()`; and the platform
 Module owners in `logline`:
 
 - `configuration` owns `configure`: the root JSON handler on stdout, the root level from `LOG_LEVEL`, the
-  `logline.request` level pin, the HTTP client loggers' level and the routing of uvicorn's loggers.
+  `logline.request` level pin, the capped library loggers' level (HTTP clients, `mcp`, `sqlalchemy.dialects.postgresql`) and the routing of uvicorn's loggers.
 - `record` owns the record shape: the processors that copy a standard-library record's scalar `extra=` fields
   first (never `event`, `exception` or `color_message`), then stamp `ts`, `level`, `service`, `version`,
   `logger` and `trace_id`, and render exceptions as structlog's text traceback.
@@ -86,7 +86,7 @@ what it is told.
 paths and query strings stay out of every line logline writes or routes. At `LOG_LEVEL=debug`, other libraries'
 DEBUG records pass as those libraries write them; some carry paths, query strings, header values or frames,
 and logline neither masks nor caps them (see the [vision](VISION.md)). The mechanisms are the route template
-instead of the path, text tracebacks without local variables, the HTTP client loggers at WARNING and the filter
+instead of the path, text tracebacks without local variables, the HTTP client, `mcp` and `sqlalchemy.dialects.postgresql` loggers at WARNING and the filter
 on uvicorn's WebSocket lines and DEBUG records, which carry websockets' request headers and frames. An exception
 message is logged as written: the log shows what happened, and a secret in a message is the app's defect.
 
