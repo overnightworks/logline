@@ -3,13 +3,13 @@
 This module imports no web framework: it speaks ASGI.
 """
 
-import time
 from collections.abc import Awaitable, Callable, MutableMapping
 from dataclasses import dataclass
 from typing import Any
 
 import structlog
 
+from logline.step import Outcome, Stopwatch
 from logline.trace import request_trace
 
 __all__ = [
@@ -28,9 +28,10 @@ type Send = Callable[[Message], Awaitable[None]]
 type ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
 
 REQUEST_LOGGER_NAME = "logline.request"
-REQUEST_EVENT = "request"
+REQUEST_EVENT = "request.ended"
 _STATE_KEY = "logline.request"
 _STATUS_WHEN_NONE_SENT = 500
+_FIRST_SERVER_ERROR_STATUS = 500
 
 _request_logger = structlog.get_logger(REQUEST_LOGGER_NAME)
 
@@ -82,6 +83,10 @@ def _route_template(scope: Scope, record: _RequestRecord) -> str | None:
     return getattr(scope.get("route"), "path", None)
 
 
+def _outcome_of_status(status: int) -> Outcome:
+    return Outcome.FAILED if status >= _FIRST_SERVER_ERROR_STATUS else Outcome.OK
+
+
 class RequestLineMiddleware:
     """ASGI middleware: writes one `logline.request` line per `http` scope and joins its trace."""
 
@@ -95,18 +100,21 @@ class RequestLineMiddleware:
         record = _RequestRecord(sub=None, ip=_client_host(scope), route=None)
         scope.setdefault("state", {})[_STATE_KEY] = record
         sent_status: int | None = None
+        raised_outcome: Outcome | None = None
         written = False
-        started = time.perf_counter()
+        stopwatch = Stopwatch()
 
         def write_line() -> None:
             nonlocal written
             written = True
+            status = sent_status or _STATUS_WHEN_NONE_SENT
             _request_logger.info(
                 REQUEST_EVENT,
+                outcome=raised_outcome or _outcome_of_status(status),
                 method=scope["method"],
                 route=_route_template(scope, record),
-                status=sent_status or _STATUS_WHEN_NONE_SENT,
-                duration_ms=round((time.perf_counter() - started) * 1000, 3),
+                status=status,
+                duration_ms=stopwatch.elapsed_ms(),
                 sub=record.sub,
                 ip=record.ip,
             )
@@ -122,6 +130,12 @@ class RequestLineMiddleware:
         with request_trace(scope["headers"]):
             try:
                 await self._app(scope, receive, send_noting_status)
+            except Exception:
+                raised_outcome = Outcome.FAILED
+                raise
+            except BaseException:
+                raised_outcome = Outcome.CANCELLED
+                raise
             finally:
                 if not written:
                     write_line()

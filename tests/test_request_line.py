@@ -10,6 +10,7 @@ import uvicorn
 
 from logline import (
     REQUEST_EVENT,
+    Outcome,
     RequestLineMiddleware,
     configure,
     set_client_ip,
@@ -18,6 +19,7 @@ from logline import (
 from logline.request import REQUEST_LOGGER_NAME
 from tests.support.apps import (
     BACKGROUND_LOGGER,
+    CANCELLED_PATH,
     CHAIN_CAUSE_MESSAGE,
     CHAIN_MESSAGE,
     EMPTY_ROUTE_PATH,
@@ -31,6 +33,7 @@ from tests.support.apps import (
     PLAIN_ROUTE,
     STATIC_MOUNT,
     SUB,
+    UNAVAILABLE_PATH,
     build_app,
 )
 from tests.support.lines import Line, json_lines, lines_of, request_lines
@@ -144,6 +147,30 @@ def test_a_request_whose_endpoint_raised_logs_500_and_a_traceback_without_its_lo
     (failure,) = [line for line in lines_of(lines, "uvicorn.error") if line["level"] == "error"]
     assert "RuntimeError: boom after reading 17 characters" in str(failure["exception"])
     assert "secret-in-a-local" not in output
+
+
+def test_the_request_event_is_the_past_tense_name_the_standard_ruled() -> None:
+    assert REQUEST_EVENT == "request.ended"
+
+
+@pytest.mark.parametrize(
+    ("path", "status", "outcome"),
+    [
+        pytest.param("/items/1", 200, Outcome.OK, id="success"),
+        pytest.param("/missing", 404, Outcome.OK, id="client-error-status"),
+        pytest.param(GATED_PATH, 401, Outcome.OK, id="gate-refusal-status"),
+        pytest.param(UNAVAILABLE_PATH, 503, Outcome.FAILED, id="server-error-status"),
+        pytest.param("/boom", 500, Outcome.FAILED, id="app-raised-an-exception"),
+        pytest.param(CANCELLED_PATH, 500, Outcome.CANCELLED, id="app-raised-a-cancellation"),
+    ],
+)
+def test_the_request_line_names_how_the_request_ended(
+    capsys: pytest.CaptureFixture[str], path: str, status: int, outcome: Outcome
+) -> None:
+    _, lines = _serve_requests(capsys, [_get(path, **{"x-secret": "value"})])
+
+    (line,) = request_lines(lines)
+    assert (line["status"], line["outcome"]) == (status, outcome.value)
 
 
 @pytest.mark.parametrize("path", ["/chained", "/chained-sync"])

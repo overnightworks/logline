@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -23,6 +24,8 @@ HOST_CLIENT_IP = "198.51.100.7"
 HOST_ROUTE = "/host-template"
 SUPERSEDED_ROUTE = "/superseded-template"
 GATED_PATH = "/gated"
+UNAVAILABLE_PATH = "/unavailable"
+CANCELLED_PATH = "/cancelled"
 MOUNTED_APP = "/mounted"
 STATIC_MOUNT = "/static"
 NAMED_STATIC_MOUNT = "/named-static"
@@ -161,6 +164,14 @@ def _add_request_routes(app: FastAPI) -> None:
     async def boom(request: Request) -> None:
         secret_in_a_local = request.headers["x-secret"]
         raise RuntimeError(f"boom after reading {len(secret_in_a_local)} characters")
+
+    @app.get(UNAVAILABLE_PATH)
+    async def unavailable() -> Response:
+        return Response(status_code=503)
+
+    @app.get(CANCELLED_PATH)
+    async def cancelled() -> None:
+        raise asyncio.CancelledError
 
     @app.get("/chained")
     async def chained() -> None:
