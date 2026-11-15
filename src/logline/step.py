@@ -162,7 +162,7 @@ class StepTimer:
         if self._written:
             return
         self._written = True
-        outcome = Outcome.CANCELLED if cancelled else self._outcome(exc)
+        outcome = self._outcome(exc, cancelled)
         fields: dict[str, Scalar] = {
             **self._fields,
             "duration_ms": self._stopwatch.elapsed_ms(),
@@ -184,7 +184,9 @@ class StepTimer:
             fields["reason"] = self._failure_reason
         return fields
 
-    def _outcome(self, exc: BaseException | None) -> Outcome:
+    def _outcome(self, exc: BaseException | None, cancelled: bool) -> Outcome:
+        if cancelled:
+            return Outcome.CANCELLED
         if exc is None:
             return self._outcome_of_a_normal_end()
         return Outcome.FAILED if isinstance(exc, Exception) else Outcome.CANCELLED

@@ -278,6 +278,7 @@ def test_a_step_writes_exactly_one_line_with_its_outcome_and_level(
     assert "first_output_ms" not in line
     assert ("error_type" in line) == ("error_type" in extra)
     assert ("reason" in line) == ("reason" in extra)
+    assert "started_at" not in line
 
 
 @pytest.mark.parametrize(
@@ -311,6 +312,7 @@ def test_a_failed_steps_line_carries_neither_the_message_nor_a_traceback(
         "/step/fail-then-raise",
         "/step/refuse-then-raise",
         "/step/end-then-raise",
+        "/step/end-cancelled-then-raise",
     ],
 )
 def test_a_failed_steps_exception_reaches_the_caller_as_the_same_object(
@@ -329,6 +331,7 @@ def test_a_cancelled_step_lets_the_cancellation_propagate(
     assert answer.json()["cancelled"] is True
 
 
+@pytest.mark.parametrize("path", ["/step/failed-escaping", "/step/add-reserved-escaping"])
 def test_an_exception_that_leaves_the_step_unhandled_fails_the_request_with_one_step_line(
     capsys: pytest.CaptureFixture[str], path: str
 ) -> None:
@@ -406,10 +409,10 @@ def test_a_step_given_a_past_start_counts_its_durations_from_it(
     assert isinstance(first_output_ms, float)
     assert isinstance(duration_ms, float)
     assert STEP.earlier_start_seconds * 1000 <= first_output_ms <= duration_ms
+    assert "started_at" not in line
 
 
 def test_a_step_given_a_start_in_the_future_raises_and_writes_no_line(
-    assert "started_at" not in line
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _, lines, (answer,) = serve_requests_answered(capsys, [get("/step/started-in-the-future")])
