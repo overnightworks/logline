@@ -11,12 +11,14 @@ across every service it touches, so the lines of one request can be found togeth
 It records references and never contents: ids and the trace id, not bodies, messages, prompts, tokens, cookies
 or paths. A fix to what the fleet logs is made once, and every app gets it by taking the next release.
 
+logline also holds the fleet's logging standard: where every server and app logs, how events are named and which fields a line carries, so that one trace's lines show what happened, where the time went and what failed.
+
 It is made by and for agents: every rule a machine can check is in the checks, and the documents say what an
 agent cannot derive from the code.
 
 ## Who uses it today
 
-The operator and the agents that build and run his apps. No app has adopted it yet.
+The operator and the agents that build and run his apps; the fleet's repositories adopt it one at a time.
 
 ## Deliberate non-goals
 
