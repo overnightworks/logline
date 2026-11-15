@@ -1,0 +1,8 @@
+claim_id = "48fa739c510e40f89369602995474095"
+agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
+role = "builder"
+base = "701316f03ec9da711677e4b655f80d16851a3023"
+branch = "claude/issue-15-step-timer-outcome-values-and-request-en"
+scope = [".importlinter", "README.md", "docs/ARCHITECTURE.md", "src/logline", "tests"]
+opened_commit = "4d83938636b1f60aa880d85898891503be27a8a6"
+whole_reason = "One public-contract change, the standard's helpers with the renamed request event, its tests and its two documents."
