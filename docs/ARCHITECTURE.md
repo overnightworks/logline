@@ -24,10 +24,11 @@ Module owners in `logline`:
 
 - `configuration` owns `configure`: the root JSON handler on stdout, the root level from `LOG_LEVEL`, the
   `logline.request` level pin, the capped library loggers' levels (HTTP clients, `mcp` and
-  `sqlalchemy.dialects.postgresql` at WARNING, `piper` at ERROR), the routing of uvicorn's loggers and the filter
-  on `uvicorn.error` that names uvicorn's failure records as `server_bind.failed`, `http_request.refused`,
-  `asgi_app.failed`, `app_startup.failed` and `app_shutdown.failed`, with a `reason` or `error_type`. Those
-  names and codes are public (README, "Starting uvicorn").
+  `sqlalchemy.dialects.postgresql` at WARNING, `piper` at ERROR) and the routing of uvicorn's loggers.
+- `uvicorn_records` owns the filter `configure` puts on `uvicorn.error`: which uvicorn and websockets records it
+  drops and which it names as `server_bind.failed`, `http_request.refused`, `asgi_app.failed`, `app_startup.failed`
+  and `app_shutdown.failed`, with a `reason` or `error_type`. Those names and codes are public (README,
+  "Starting uvicorn").
 - `record` owns the record shape: the processors that copy a standard-library record's scalar `extra=` fields
   first (never `event`, `exception` or `color_message`), then stamp `ts`, `level`, `service`, `version`,
   `logger` and `trace_id`, and render exceptions as structlog's text traceback.
@@ -41,7 +42,7 @@ Module owners in `logline`:
 - `trace` owns the request's and the unit's trace: it starts or continues it in OpenTelemetry's context,
   reads `trace_id` from it and hands it on as headers or, for a message, as a `traceparent` value.
 
-`record` and `request` use `trace`; `request` uses `step`; `configuration` uses `record` and names the request
+`record` and `request` use `trace`; `request` uses `step`; `configuration` uses `record` and `uvicorn_records` and names the request
 logger.
 `request` imports no web framework; an import contract keeps `logline` free of frameworks, servers and
 HTTP clients.
