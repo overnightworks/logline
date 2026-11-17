@@ -43,6 +43,23 @@ _LOGGERS_OF_THE_REQUEST = {REQUEST_LOGGER_NAME, BACKGROUND_LOGGER}
 
 
 @pytest.mark.parametrize(
+    ("sent", "logged"),
+    [
+        ("GET", "GET"),
+        ("DELETE", "DELETE"),
+        ("BREW", "_OTHER"),
+        ("PROPFIND", "_OTHER"),
+    ],
+)
+def test_the_method_of_a_line_is_a_standard_method_or_other(
+    capsys: pytest.CaptureFixture[str], sent: str, logged: str
+) -> None:
+    _, lines = serve_requests(capsys, [Call(PLAIN_ROUTE, method=sent)])
+
+    assert request_lines(lines)[0]["method"] == logged
+
+
+@pytest.mark.parametrize(
     ("path", "route", "status"),
     [
         pytest.param(f"/items/{_UNGUESSABLE_ID}", "/items/{item_id}", 200, id="api-route"),

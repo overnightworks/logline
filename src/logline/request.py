@@ -5,6 +5,7 @@ This module imports no web framework: it speaks ASGI.
 
 from collections.abc import Awaitable, Callable, MutableMapping
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any
 
 import structlog
@@ -34,6 +35,29 @@ _STATUS_WHEN_NONE_SENT = 500
 _FIRST_SERVER_ERROR_STATUS = 500
 
 _request_logger = structlog.get_logger(REQUEST_LOGGER_NAME)
+
+
+class _Method(StrEnum):
+    """The standard HTTP methods; any other token is `_OTHER`, which bounds the field's values."""
+
+    CONNECT = "CONNECT"
+    DELETE = "DELETE"
+    GET = "GET"
+    HEAD = "HEAD"
+    OPTIONS = "OPTIONS"
+    PATCH = "PATCH"
+    POST = "POST"
+    PUT = "PUT"
+    TRACE = "TRACE"
+    OTHER = "_OTHER"
+
+
+_STANDARD_METHODS = frozenset(_Method) - {_Method.OTHER}
+
+
+def _method_code(scope: Scope) -> str:
+    method = scope["method"]
+    return method if method in _STANDARD_METHODS else _Method.OTHER
 
 
 @dataclass(slots=True)
@@ -111,7 +135,7 @@ class RequestLineMiddleware:
             _request_logger.info(
                 REQUEST_EVENT,
                 outcome=raised_outcome or _outcome_of_status(status),
-                method=scope["method"],
+                method=_method_code(scope),
                 route=_route_template(scope, record),
                 status=status,
                 duration_ms=stopwatch.elapsed_ms(),

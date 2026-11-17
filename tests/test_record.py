@@ -126,6 +126,42 @@ def test_a_library_records_extra_fields_reach_the_line_without_forging_it(
     assert "exception" not in line
 
 
+def test_a_structlog_line_keeps_only_scalar_fields_and_never_a_forged_traceback(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure("honest")
+
+    async def exercise(base_url: str) -> None:
+        async with httpx.AsyncClient(base_url=base_url) as client:
+            await client.get("/hostile-fields")
+
+    serve(uvicorn.Config(build_app(), log_config=None), exercise)
+
+    (line,) = [line for line in _logged_lines(capsys) if line["logger"] == "tests.structlog"]
+    assert line["order_id"] == "o-17"
+    assert not {"connection", "nested", "exception"} & line.keys()
+
+
+def test_a_non_finite_float_is_null_on_both_write_paths(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure("honest")
+
+    async def exercise(base_url: str) -> None:
+        async with httpx.AsyncClient(base_url=base_url) as client:
+            await client.get("/hostile-fields")
+
+    serve(uvicorn.Config(build_app(), log_config=None), exercise)
+
+    output = capsys.readouterr().out
+    assert not {"NaN", "Infinity"} & set(output.replace('"', " ").replace(",", " ").split())
+    by_logger = {line["logger"]: line for line in json_lines(output)}
+    assert by_logger["tests.structlog"]["ratio"] is None
+    assert by_logger["tests.structlog"]["ceiling"] is None
+    assert by_logger["tests.stdlib"]["ratio"] is None
+    assert by_logger["tests.stdlib"]["floor"] is None
+
+
 def test_a_uvicorn_line_carries_no_color_message(capsys: pytest.CaptureFixture[str]) -> None:
     configure("honest")
 
