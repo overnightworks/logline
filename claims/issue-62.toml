@@ -1,8 +1,0 @@
-claim_id = "5987341aba3741b684e8924214605c4c"
-agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
-role = "builder"
-base = "81656b63246fb88f2b4578fbd9bbd4ba0e439ded"
-branch = "claude/issue-62-standard-as-data"
-scope = ["README.md", "docs/ARCHITECTURE.md", "pyproject.toml", "src/logline", "tests"]
-opened_commit = "d20c1c009afad9270cfa72d07f31ee494aeab8ea"
-whole_reason = "One data file of the standard's machine rules with its proof and the README's pointer."
