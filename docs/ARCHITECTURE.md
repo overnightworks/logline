@@ -134,8 +134,9 @@ tests. The lowest direct dependency floors run the same tests.
   keeps the exception it was handling under the `LifespanOn` object (`self`). uvicorn then logs its own coded
   template from the same object, and the exception moves onto that line. The recognition is coupled to that
   module name, the function name `send` and the local `self`; uvicorn renaming the module or the function makes
-  the failure message pass unchanged, and renaming `self` raises a `KeyError` from the filter. A record it does
-  not know passes unchanged.
+  the failure message pass unchanged. Any exception inside the filter's lookup or mapping, a renamed `self`
+  included, passes the record unchanged, or drops it when it carries content, instead of raising into uvicorn, so a
+  changed uvicorn costs a line that is not named, never a crash or a leak. A record it does not know passes unchanged.
 - A refused WebSocket upgrade and uvicorn's "returned without completing handshake" line come from one task, the one
   uvicorn's websockets-sansio protocol creates for the connection: the filter sets a context variable when it sees
   websockets' refusal template and drops the handshake line when it is set, so the link needs no pid, socket or
@@ -143,6 +144,7 @@ tests. The lowest direct dependency floors run the same tests.
   handshake line, and `wsproto` writes no refusal line, so neither needs the link; a protocol that wrote the pair
   from different tasks would not be linked. The refusal is INFO, so `configure` opens `uvicorn.error` to INFO
   under a higher root level and the filter drops what the root level would drop after it has seen the refusal.
+  `uvicorn.error` stays at INFO under `LOG_LEVEL=debug` too, so websockets' DEBUG frames never reach the filter.
 - uvicorn's lifecycle records are named by their templates with the process id and address left out; the listening
   line has several templates (URL, IPv6 URL, unix socket, descriptor) and is known by its prefix. `.ended` is not
   used for them, because the standard reserves it for a timed step.

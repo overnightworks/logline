@@ -555,3 +555,49 @@ def test_a_second_configure_leaves_the_uvicorn_lines_as_they_were(
         ("info", "app_shutdown.completed"),
         ("info", "server_process.finished"),
     ]
+
+
+def test_a_record_from_a_lifespan_frame_without_self_passes_the_filter(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure("uvicorn-service")
+    namespace = {"__name__": "uvicorn.lifespan.on", "logging": logging}
+    exec(  # noqa: S102 - builds a frame that claims uvicorn's lifespan module and has no `self`
+        "def startup():\n"
+        "    logging.getLogger('uvicorn.error').info('Application startup complete.')\n",
+        namespace,
+    )
+
+    namespace["startup"]()
+
+    events = [line["event"] for line in _uvicorn_lines(capsys.readouterr().out)]
+    assert events == ["Application startup complete."]
+
+
+def test_a_content_record_from_a_lifespan_frame_without_self_is_dropped_and_the_server_stays_up(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure("uvicorn-service")
+    namespace = {"__name__": "uvicorn.lifespan.on", "logging": logging}
+    exec(  # noqa: S102 - builds a frame that claims uvicorn's lifespan module and has no `self`
+        "def startup(path):\n"
+        "    logger = logging.getLogger('uvicorn.error')\n"
+        "    logger.info('%s - \"WebSocket %s\" [accepted]', '', path)\n",
+        namespace,
+    )
+
+    namespace["startup"](f"/ws?token={_REQUEST_SECRET}")
+
+    assert _REQUEST_SECRET not in capsys.readouterr().out
+
+
+def test_a_websocket_under_the_debug_level_never_enables_uvicorn_debug_records(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LOG_LEVEL", "debug")
+    configure("uvicorn-service")
+
+    _refuse_upgrades([WEBSOCKET_DENIED_PATH], "websockets-sansio")
+
+    assert not logging.getLogger("uvicorn.error").isEnabledFor(logging.DEBUG)
+    assert _the_one_line(capsys.readouterr().out, _REFUSED)["level"] == "info"
