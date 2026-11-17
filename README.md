@@ -602,6 +602,12 @@ What the check does not see, so a clean result is not a proof:
 
 - A logger handed in without an annotation, and one bound in another file.
 - An `extra=` given as a variable, and any `**fields`; the record still drops a denied field at runtime.
+- A logging function imported by name, such as `from logging import warning`.
+- An event passed as a keyword (`event=`, `msg=`); only the positional event is read.
+- An annotated or augmented assignment to `sys.excepthook`; only a plain assignment is own setup.
+- A parameter reassigned before it is logged; the check judges the literal each caller passes.
+- A `@staticmethod` whose event parameter is called through `self`, which reads as `event_not_literal`, a false
+  positive.
 - The uvicorn command line's `--log-level` in a Dockerfile or Compose file.
 
 ## Versioning
