@@ -32,7 +32,6 @@ The operator and the agents that build and run his apps; the fleet's repositorie
 - No metrics client and no second emission channel.
 - No framework of its own: it speaks ASGI and imports no web framework.
 - No options for the record's shape and no switch that turns the request line off.
-- No masking or redaction of lines, and no cap on other libraries' lines below INFO beyond the few the README
-  names: `LOG_LEVEL=debug` is the operator's deliberate setting, and a further cap comes only with a case that
-  needs it.
+- No masking or redaction of lines, and no cap on other libraries' lines below INFO beyond a short list that
+  grows only with a case that needs it, because the operator's level is deliberate.
 - No compatibility layers: a change that breaks its callers breaks cleanly and says so.
