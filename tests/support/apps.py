@@ -39,6 +39,7 @@ MCP_ROUTE = "/mcp"
 PLAIN_ROUTE = "/plain"
 EMPTY_ROUTE_PATH = "/empty-route"
 WEBSOCKET_GREETING = "greeting-frame-content"
+WEBSOCKET_FAILURE_MESSAGE = "websocket failure message"
 BACKGROUND_LOGGER = "tests.background"
 BACKGROUND_EVENT = "background work after the response"
 CHAIN_CAUSE_MESSAGE = "inner cause message"
@@ -290,6 +291,11 @@ def _add_websocket_route(app: FastAPI) -> None:
         await websocket.accept()
         await websocket.send_text(WEBSOCKET_GREETING)
         await websocket.close()
+
+    @app.websocket("/ws-boom")
+    async def failing_socket(websocket: WebSocket) -> None:
+        await websocket.accept()
+        raise RuntimeError(WEBSOCKET_FAILURE_MESSAGE)
 
 
 def _add_turn_route(app: FastAPI) -> None:
