@@ -14,5 +14,15 @@
     "token"
   ],
   "denied_field_suffixes": ["_seconds"],
-  "event_name_pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*\\.[a-z][a-z0-9]*(_[a-z0-9]+)*$"
+  "event_name_pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*\\.[a-z][a-z0-9]*(_[a-z0-9]+)*$",
+  "own_setup_calls": [
+    "logging.basicConfig",
+    "logging.config.dictConfig",
+    "logging.config.fileConfig",
+    "logging.config.listen",
+    "logging.captureWarnings",
+    "structlog.configure",
+    "structlog.configure_once"
+  ],
+  "own_setup_assignments": ["sys.excepthook", "threading.excepthook"]
 }
