@@ -99,7 +99,7 @@ def test_leaving_the_block_restores_the_hooks_the_host_had() -> None:
     with configured("restoring"):
         assert (sys.excepthook, threading.excepthook, warnings.showwarning) != before
 
-    assert (sys.excepthook, threading.excepthook, warnings.showwarning) == before
+    assert before == (sys.excepthook, threading.excepthook, warnings.showwarning)
 
 
 def test_a_thread_that_raises_writes_a_critical_line_in_process(
