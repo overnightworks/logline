@@ -244,6 +244,20 @@ or `uvicorn.Config(app, log_config=None)`. Under the uvicorn command line, call 
 module is imported or in the app factory. `configure` routes uvicorn's loggers to the JSON handler and keeps
 uvicorn's access log silent in every start mode, because the request line replaces it.
 
+`configure` also rewrites uvicorn's own failure records on `uvicorn.error` into literal events. Each keeps its
+level and carries no message text, host, port or path. These events and their `reason` and `error_type` values
+are public: renaming one is a breaking change.
+
+| Event | When | `reason` | `error_type` |
+| --- | --- | --- | --- |
+| `server_bind.failed` | the server cannot bind its address | `port_taken` (address in use) or `os_error` | the `OSError` class |
+| `http_request.refused` | uvicorn refuses a request | `invalid_request` (not valid HTTP) or `unsupported_upgrade` | none |
+| `asgi_app.failed` | the app raises in an HTTP request or a WebSocket, with the traceback in `exception` | none | the exception class |
+| `app_startup.failed`, `app_shutdown.failed` | the app's lifespan fails | none | none |
+
+Any other uvicorn record passes as uvicorn writes it. That includes the app's own failure message, which uvicorn
+logs before `app_startup.failed` or `app_shutdown.failed`; Starlette and FastAPI send their traceback there.
+
 ## Never logged
 
 At the default level and above, no line carries credentials, tokens, cookies, header values, contents (bodies,

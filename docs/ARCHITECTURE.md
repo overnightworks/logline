@@ -24,7 +24,10 @@ Module owners in `logline`:
 
 - `configuration` owns `configure`: the root JSON handler on stdout, the root level from `LOG_LEVEL`, the
   `logline.request` level pin, the capped library loggers' levels (HTTP clients, `mcp` and
-  `sqlalchemy.dialects.postgresql` at WARNING, `piper` at ERROR) and the routing of uvicorn's loggers.
+  `sqlalchemy.dialects.postgresql` at WARNING, `piper` at ERROR), the routing of uvicorn's loggers and the filter
+  on `uvicorn.error` that names uvicorn's failure records as `server_bind.failed`, `http_request.refused`,
+  `asgi_app.failed`, `app_startup.failed` and `app_shutdown.failed`, with a `reason` or `error_type`. Those
+  names and codes are public (README, "Starting uvicorn").
 - `record` owns the record shape: the processors that copy a standard-library record's scalar `extra=` fields
   first (never `event`, `exception` or `color_message`), then stamp `ts`, `level`, `service`, `version`,
   `logger` and `trace_id`, and render exceptions as structlog's text traceback.
@@ -111,6 +114,9 @@ tests. The lowest direct dependency floors run the same tests.
   `OTEL_PROPAGATORS` switch cannot change what the fleet propagates.
 - `configure` puts a drop-all filter on `uvicorn.access`: a later `dictConfig` removes handlers but never
   filters, so the access log, which carries the raw path, stays silent in every start mode.
+- The `uvicorn.error` filter knows a record by uvicorn's message template or by the `OSError` it logs for a bind
+  failure, never by its formatted text, which carries host, port or the app's message. A record it does not
+  know passes unchanged; the app's lifespan failure message, a traceback text Starlette sends, is one of them.
 - `configure` takes over the root's handlers: one foreign stream handler would break "every line is one
   JSON object on stdout".
 
