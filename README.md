@@ -319,9 +319,10 @@ The rules for what a covered host logs and how. What a line never carries is [Ne
   process `<app>-<role>`, such as `presentator-worker`.
 - The rules a machine checks: a released logline tag, a literal event name of the form below, no
   value formatted into a message, no field from the deny list, and no logging setup of the
-  host's own. The deny list, the event-name pattern and the record's base keys are the data file
-  `src/logline/standard.json` in the logline package (`logline.standard` reads it), which owns them;
-  the record drops a field on the deny list. Whether the log points, levels and single errors are right is judged by a scheduled audit.
+  host's own. The record drops a field on the deny list.
+- The deny list, the event-name pattern and the record's base keys are the data file
+  `src/logline/standard.json` in the logline package, which owns them; `logline.standard` reads it.
+- Whether the log points, levels and single errors are right is judged by a scheduled audit.
 
 ### Where to log
 
