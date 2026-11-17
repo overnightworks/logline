@@ -40,7 +40,9 @@ forbidden_modules =
 [importlinter:contract:no-runtime-module-imports-logline-check]
 name = no runtime module imports logline.check
 type = forbidden
+as_packages = False
 source_modules =
+    logline
     logline.configuration
     logline.process_failures
     logline.record
