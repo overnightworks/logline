@@ -1,7 +1,10 @@
-from pathlib import PurePath
+import ast
+import sys
+from pathlib import Path, PurePath
 
 import pytest
 
+import logline.check as check_module
 from logline.check import Finding, Rule, check
 
 _STDLIB = "import logging\nlogger = logging.getLogger(__name__)\n"
@@ -431,3 +434,27 @@ def test_a_source_that_does_not_parse_raises_a_syntax_error() -> None:
 
 def test_a_rule_code_is_its_text() -> None:
     assert str(Rule.OWN_SETUP) == "own_setup"
+
+
+def test_column_counts_characters_not_bytes() -> None:
+    source = 'x = "\u00e9"; log.info("Bad")\n'
+    findings = check(
+        "import structlog\nlog = structlog.get_logger()\n" + source, PurePath("host.py")
+    )
+    assert [finding.column for finding in findings] == [19]
+
+
+def test_check_imports_only_the_standard_library_and_logline_standard() -> None:
+    module = Path(check_module.__file__).read_text(encoding="utf-8")
+    imported = {
+        node.module if isinstance(node, ast.ImportFrom) else alias.name
+        for node in ast.walk(ast.parse(module))
+        if isinstance(node, (ast.Import, ast.ImportFrom))
+        for alias in (node.names if isinstance(node, ast.Import) else [None])
+    }
+    foreign = {
+        name
+        for name in imported
+        if name.split(".")[0] not in sys.stdlib_module_names and name != "logline.standard"
+    }
+    assert foreign == set()

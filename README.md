@@ -572,7 +572,7 @@ def test_the_app_logs_its_request(capsys):
 ## Checking a host's source
 
 `logline.check.check(source, path)` returns the rows one Python source breaks, as a tuple of
-`Finding(path, line, column, rule)`, in source order; `line` and `column` count from 1. It is a pure function
+`Finding(path, line, column, rule)`, in source order; `line` and `column` count from 1, the column in characters. It is a pure function
 over text: it never imports or runs the checked code, and a source that does not parse raises `SyntaxError`.
 `path` only labels the rows. The fleet's quality gate runs it over every host, with the rules of the logline
 tag the gate pins, not the tag the host pins. Importing it runs `logline/__init__.py`, so `structlog` and

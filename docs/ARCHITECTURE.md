@@ -40,7 +40,7 @@ Module owners in `logline`:
   assignments that are a host's own logging setup. No other module holds a copy of them.
 - `check` owns the checker of those rules over one Python source: `check`, `Finding` and `Rule`. It parses text
   and never imports the checked code. It uses only the standard library and `standard`, no runtime module
-  imports it, and an import contract holds both. Hosts never import it; the fleet's quality gate does.
+  imports it, and an import contract and a test over its import statements hold both. Hosts never import it; the fleet's quality gate does.
 - `record` owns the record shape: the processors that copy a standard-library record's scalar `extra=` fields
   first (never `event`, `exception` or `color_message`), keep only the scalar fields of a structlog event,
   render a non-finite float as `null`, then stamp `ts`, `level`, `service`, `version`,

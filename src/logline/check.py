@@ -6,6 +6,7 @@ file) is not judged, and neither is a field given through `**fields` or an `extr
 """
 
 import ast
+import re
 from collections import defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -72,10 +73,17 @@ def check(source: str, path: PurePath) -> tuple[Finding, ...]:
     """
     tree = ast.parse(source, filename=str(path))
     judge = _Judge(tree)
+    lines = re.split(r"\r\n|\r|\n", source)
     findings = {
-        Finding(path, node.lineno, node.col_offset + 1, rule) for node, rule in judge.rows()
+        Finding(path, node.lineno, _character_column(lines[node.lineno - 1], node), rule)
+        for node, rule in judge.rows()
     }
     return tuple(sorted(findings, key=lambda finding: (finding.line, finding.column, finding.rule)))
+
+
+def _character_column(line: str, node: ast.expr | ast.keyword | ast.stmt) -> int:
+    # `col_offset` counts UTF-8 bytes, the record's column counts characters.
+    return len(line.encode()[: node.col_offset].decode()) + 1
 
 
 def _dotted(node: ast.expr) -> str | None:
