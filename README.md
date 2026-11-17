@@ -239,7 +239,7 @@ logline shows what the app logs; the app keeps its logs meaningful and safe:
 - No `logging.config.dictConfig` after `configure`: it replaces the handlers `configure` installed.
 - uvicorn runs with `log_config=None` (see below).
 
-No check enforces these duties yet; quality#889 owns the host check.
+`logline.check` judges them in a host's source (see [Checking a host's source](#checking-a-hosts-source)).
 
 ## Starting uvicorn
 
@@ -323,10 +323,11 @@ The rules for what a covered host logs and how. What a line never carries is [Ne
   process `<app>-<role>`, such as `presentator-worker`.
 - The rules a machine can check: a released logline tag, a literal event name of the form below, no
   value formatted into a message, no field from the deny list, and no logging setup of the
-  host's own. No check enforces them yet; quality#889 owns the host check and, once it lands, this
-  sentence. The record drops a field on the deny list.
-- The deny list, the event-name pattern and the record's base keys are the data file
-  `src/logline/standard.json` in the logline package, which owns them; `logline.standard` reads it.
+  host's own. `logline.check` judges them (see [Checking a host's source](#checking-a-hosts-source)). The
+  record drops a field on the deny list.
+- The deny list, the event-name pattern, the calls and assignments that are a host's own logging setup and
+  the record's base keys are the data file `src/logline/standard.json` in the logline package, which owns
+  them; `logline.standard` reads it.
 - Whether the log points, levels and single errors are right is judged by a scheduled audit.
 
 ### Where to log
@@ -567,6 +568,47 @@ def test_the_app_logs_its_request(capsys):
     (request,) = [line for line in lines if line["event"] == REQUEST_EVENT]
     assert request["route"] == "/notes/{note_id}"
 ```
+
+## Checking a host's source
+
+`logline.check.check(source, path)` returns the rows one Python source breaks, as a tuple of
+`Finding(path, line, column, rule)`, in source order; `line` and `column` count from 1, the column in characters. It is a pure function
+over text: it never imports or runs the checked code, and a source that does not parse raises `SyntaxError`.
+`path` only labels the rows. The fleet's quality gate runs it over every host, with the rules of the logline
+tag the gate pins, not the tag the host pins. Importing it runs `logline/__init__.py`, so `structlog` and
+`opentelemetry-api` must be installed. `Finding`, `Rule` and `check` are public, and renaming a `Rule` code is
+a breaking change.
+
+| `Rule` | Broken when |
+| --- | --- |
+| `event_not_literal` | the event of a logging call or of `StepTimer(...)` is no string literal, an f-string or a formatted text included |
+| `event_name_shape` | the event is a literal that does not match the event-name pattern |
+| `message_args` | a standard-library logging call passes positional arguments after the event |
+| `denied_field` | a field on the deny list is a keyword of a structlog call, of `.bind(...)`, of `bind_contextvars(...)`, of `StepTimer(...)` or `step.add(...)`, or a literal key of an `extra=` dict |
+| `own_setup` | the source calls one of `own_setup_calls` in `standard.json` (`logging.basicConfig`, `structlog.configure`, ...) or assigns `sys.excepthook` or `threading.excepthook` |
+| `uvicorn_log_config` | `uvicorn.run` or `uvicorn.Config` is called without `log_config=None` |
+| `uvicorn_log_level` | `uvicorn.run` or `uvicorn.Config` is called with a `log_level` |
+| `uvicorn_options_hidden` | `uvicorn.run` or `uvicorn.Config` is called with a `**` argument, which hides its options |
+
+A logging call is `debug`, `info`, `warning`, `error`, `exception`, `critical` or `log` (the event is its
+second argument) on a logger the same file binds from `logging.getLogger`, `structlog.get_logger`,
+`structlog.stdlib.get_logger` or `.bind(...)`, on the `logging` module, or on a parameter or attribute annotated
+`logging.Logger` or structlog's `BoundLogger`; imports are resolved, aliases included. A call gets at most one
+event row. An event may be a parameter of a function in the same file when every call of that function in the
+file passes a matching literal; the check follows one hop and never crosses a file. Setup on a named library
+logger, such as `logging.getLogger("httpx").addFilter(...)` or `setLevel`, is not own setup.
+
+What the check does not see, so a clean result is not a proof:
+
+- A logger handed in without an annotation, and one bound in another file.
+- An `extra=` given as a variable, and any `**fields`; the record still drops a denied field at runtime.
+- A logging function imported by name, such as `from logging import warning`.
+- An event passed as a keyword (`event=`, `msg=`); only the positional event is read.
+- An annotated or augmented assignment to `sys.excepthook`; only a plain assignment is own setup.
+- A parameter reassigned before it is logged; the check judges the literal each caller passes.
+- A `@staticmethod` whose event parameter is called through `self`, which reads as `event_not_literal`, a false
+  positive.
+- The uvicorn command line's `--log-level` in a Dockerfile or Compose file.
 
 ## Versioning
 

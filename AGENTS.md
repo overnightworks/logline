@@ -14,7 +14,7 @@
 - A tag is never moved or re-created; a broken release gets the next patch tag. A gate refusal leaves no tag, so the release is dispatched again once its cause is gone; after a failed `tag` job, re-run the failed jobs, never all jobs.
 - A new field on a line is an id, a number whose name carries its unit, or a code from a closed set; never content, a credential, a header value, a raw path or a query string.
 - FastAPI, uvicorn, httpx and websockets are test dependencies only; `.importlinter` keeps them out of `logline`.
-- Tests drive a real FastAPI app through the middleware under a real `uvicorn.Server` and read stdout; only the clock and randomness may be faked. Branch coverage stays 100 %.
+- Runtime behaviour is proven by driving a real FastAPI app through the middleware under a real `uvicorn.Server` and reading stdout, with only the clock and randomness faked; pure logic, such as `logline.check`, by unit tests. Branch coverage stays 100 %.
 - The trace id has one owner, OpenTelemetry's context through `logline.trace`; no module keeps a second copy.
 - A name is public when its module's `__all__` lists it. A pull request that changes a public name states its **Breaking** line and the hosts' migration or "No migration".
 

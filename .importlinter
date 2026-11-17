@@ -1,5 +1,5 @@
 # logline speaks ASGI and nothing else: it imports no web framework, server or HTTP client, so
-# every host can take it. quality's CI gate checks the contract over the real import graph.
+# every host can take it. quality's CI gate checks the contracts over the real import graph.
 [importlinter]
 include_external_packages = True
 root_packages =
@@ -19,3 +19,38 @@ forbidden_modules =
     httpcore
     httpcore2
     websockets
+
+[importlinter:contract:logline-check-imports-only-the-standard-library-and-standard]
+name = logline.check imports only the standard library and logline.standard
+type = forbidden
+source_modules =
+    logline.check
+forbidden_modules =
+    structlog
+    opentelemetry
+    logline.configuration
+    logline.process_failures
+    logline.record
+    logline.request
+    logline.step
+    logline.testing
+    logline.trace
+    logline.uvicorn_records
+
+[importlinter:contract:no-runtime-module-imports-logline-check]
+name = no runtime module imports logline.check
+type = forbidden
+as_packages = False
+source_modules =
+    logline
+    logline.configuration
+    logline.process_failures
+    logline.record
+    logline.request
+    logline.standard
+    logline.step
+    logline.testing
+    logline.trace
+    logline.uvicorn_records
+forbidden_modules =
+    logline.check

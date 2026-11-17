@@ -36,8 +36,11 @@ Module owners in `logline`:
   `app_shutdown.completed` and `server_process.finished`, with a `reason`, `status` or `error_type`. Those names
   and codes are public (README, "Starting uvicorn").
 - `standard` owns the machine rules of the logging standard, read from the package's `standard.json`: the base
-  keys, the deny list of field names and suffixes (`is_denied_field`) and the event-name pattern. No other module
-  holds a copy of them.
+  keys, the deny list of field names and suffixes (`is_denied_field`), the event-name pattern and the calls and
+  assignments that are a host's own logging setup. No other module holds a copy of them.
+- `check` owns the checker of those rules over one Python source: `check`, `Finding` and `Rule`. It parses text
+  and never imports the checked code. It uses only the standard library and `standard`, no runtime module
+  imports it, and an import contract and a test over its import statements hold both. Hosts never import it; the fleet's quality gate does.
 - `record` owns the record shape: the processors that copy a standard-library record's scalar `extra=` fields
   first (never `event`, `exception` or `color_message`), keep only the scalar fields of a structlog event,
   render a non-finite float as `null`, then stamp `ts`, `level`, `service`, `version`,
@@ -108,9 +111,10 @@ instead of the path, text tracebacks without local variables, the HTTP client, `
 filter on uvicorn's WebSocket lines and DEBUG records, which carry websockets' request headers and frames. An exception
 message is logged as written: the log shows what happened, and a secret in a message is the app's defect.
 
-**Proof strategy.** The tests drive a real FastAPI app through the middleware under a real `uvicorn.Server`
-and read stdout; only the clock and randomness may be faked. Branch coverage is 100 %, measured over all
-tests. The lowest direct dependency floors run the same tests.
+**Proof strategy.** Runtime behaviour is proven through a real FastAPI app driven through the middleware
+under a real `uvicorn.Server`, reading stdout; only the clock and randomness may be faked. Pure logic, such as
+`check`, is proven by unit tests over source strings. Branch coverage is 100 %, measured over all tests. The
+lowest direct dependency floors run the same tests.
 
 ## 6. Constraints and reasons
 
