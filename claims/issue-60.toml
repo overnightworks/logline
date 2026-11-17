@@ -1,0 +1,8 @@
+claim_id = "b250861a5ed745e198102a6d72e9bb49"
+agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
+role = "builder"
+base = "7ff6b1062fcabb54713cacf375b052673ad54ce6"
+branch = "claude/issue-60-uvicorn-filter-fail-soft"
+scope = ["docs/ARCHITECTURE.md", "src/logline/configuration.py", "src/logline/uvicorn_records.py", "tests"]
+opened_commit = "3fe192e5013beae62a9bc6bb68ca8e816b288575"
+whole_reason = "One hardening of the uvicorn mapping, its proof and its architecture lines."
