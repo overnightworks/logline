@@ -114,9 +114,14 @@ tests. The lowest direct dependency floors run the same tests.
   `OTEL_PROPAGATORS` switch cannot change what the fleet propagates.
 - `configure` puts a drop-all filter on `uvicorn.access`: a later `dictConfig` removes handlers but never
   filters, so the access log, which carries the raw path, stays silent in every start mode.
-- The `uvicorn.error` filter knows a record by uvicorn's message template or by the `OSError` it logs for a bind
-  failure, never by its formatted text, which carries host, port or the app's message. A record it does not
-  know passes unchanged; the app's lifespan failure message, a traceback text Starlette sends, is one of them.
+- The `uvicorn.error` filter knows a record by uvicorn's message template, by the `OSError` it logs for a bind
+  failure, or by the uvicorn frame that logs it, never by its formatted text, which carries host, port or the
+  app's message. The failure message an app sends with its lifespan failure (under Starlette the traceback text)
+  is known by its frame: the filter walks the stack to `send` in `uvicorn.lifespan.on`, drops the record, and
+  keeps the exception it was handling under the `LifespanOn` object (`self`). uvicorn then logs its own coded
+  template from the same object, and the exception moves onto that line. The recognition is coupled to that
+  module name, the function name `send` and the local `self`; uvicorn renaming one makes the failure message
+  pass unchanged. A record it does not know passes unchanged.
 - `configure` takes over the root's handlers: one foreign stream handler would break "every line is one
   JSON object on stdout".
 
