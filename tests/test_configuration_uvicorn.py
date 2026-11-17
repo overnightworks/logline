@@ -35,7 +35,7 @@ def test_uvicorn_and_library_lines_are_the_same_json(capsys: pytest.CaptureFixtu
     startup = [
         line
         for line in lines_of(lines, "uvicorn.error")
-        if "startup complete" in str(line["event"])
+        if line["event"] == "app_startup.completed"
     ]
     library = lines_of(lines, "some_library")
     assert startup

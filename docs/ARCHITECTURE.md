@@ -24,10 +24,13 @@ Module owners in `logline`:
 
 - `configuration` owns `configure`: the root JSON handler on stdout, the root level from `LOG_LEVEL`, the
   `logline.request` level pin, the capped library loggers' levels (HTTP clients, `mcp` and
-  `sqlalchemy.dialects.postgresql` at WARNING, `piper` at ERROR), the routing of uvicorn's loggers and the filter
-  on `uvicorn.error` that names uvicorn's failure records as `server_bind.failed`, `http_request.refused`,
-  `asgi_app.failed`, `app_startup.failed` and `app_shutdown.failed`, with a `reason` or `error_type`. Those
-  names and codes are public (README, "Starting uvicorn").
+  `sqlalchemy.dialects.postgresql` at WARNING, `piper` at ERROR) and the routing of uvicorn's loggers.
+- `uvicorn_records` owns the filter `configure` puts on `uvicorn.error`: which uvicorn and websockets records it
+  drops and which it names as `server_bind.failed`, `http_request.refused`, `asgi_app.failed`, `app_startup.failed`,
+  `app_shutdown.failed`, `websocket_upgrade.refused`, `websocket_handshake.failed` and the lifecycle events
+  `server_process.started`, `app_startup.completed`, `server_listen.started`, `server_shutdown.started`,
+  `app_shutdown.completed` and `server_process.finished`, with a `reason`, `status` or `error_type`. Those names
+  and codes are public (README, "Starting uvicorn").
 - `record` owns the record shape: the processors that copy a standard-library record's scalar `extra=` fields
   first (never `event`, `exception` or `color_message`), then stamp `ts`, `level`, `service`, `version`,
   `logger` and `trace_id`, and render exceptions as structlog's text traceback.
@@ -41,8 +44,8 @@ Module owners in `logline`:
 - `trace` owns the request's and the unit's trace: it starts or continues it in OpenTelemetry's context,
   reads `trace_id` from it and hands it on as headers or, for a message, as a `traceparent` value.
 
-`record` and `request` use `trace`; `request` uses `step`; `configuration` uses `record` and names the request
-logger.
+`record` and `request` use `trace`; `request` uses `step`; `configuration` uses `record` and `uvicorn_records` and names
+the request logger.
 `request` imports no web framework; an import contract keeps `logline` free of frameworks, servers and
 HTTP clients.
 
@@ -123,6 +126,16 @@ tests. The lowest direct dependency floors run the same tests.
   module name, the function name `send` and the local `self`; uvicorn renaming the module or the function makes
   the failure message pass unchanged, and renaming `self` raises a `KeyError` from the filter. A record it does
   not know passes unchanged.
+- A refused WebSocket upgrade and uvicorn's "returned without completing handshake" line come from one task, the one
+  uvicorn's websockets-sansio protocol creates for the connection: the filter sets a context variable when it sees
+  websockets' refusal template and drops the handshake line when it is set, so the link needs no pid, socket or
+  timing. uvicorn's `websockets` implementation writes the refusal but a different
+  handshake line, and `wsproto` writes no refusal line, so neither needs the link; a protocol that wrote the pair
+  from different tasks would not be linked. The refusal is INFO, so `configure` opens `uvicorn.error` to INFO
+  under a higher root level and the filter drops what the root level would drop after it has seen the refusal.
+- uvicorn's lifecycle records are named by their templates with the process id and address left out; the listening
+  line has several templates (URL, IPv6 URL, unix socket, descriptor) and is known by its prefix. `.ended` is not
+  used for them, because the standard reserves it for a timed step.
 - `configure` takes over the root's handlers: one foreign stream handler would break "every line is one
   JSON object on stdout".
 

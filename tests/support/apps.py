@@ -40,6 +40,10 @@ PLAIN_ROUTE = "/plain"
 EMPTY_ROUTE_PATH = "/empty-route"
 WEBSOCKET_GREETING = "greeting-frame-content"
 WEBSOCKET_FAILURE_MESSAGE = "websocket failure message"
+WEBSOCKET_DENIED_PATH = "/ws-denied"
+WEBSOCKET_DENIED_STATUS = 401
+WEBSOCKET_CLOSED_PATH = "/ws-closed-before-accept"
+WEBSOCKET_SILENT_PATH = "/ws-silent"
 BACKGROUND_LOGGER = "tests.background"
 BACKGROUND_EVENT = "background work after the response"
 CHAIN_CAUSE_MESSAGE = "inner cause message"
@@ -291,6 +295,18 @@ def _add_websocket_route(app: FastAPI) -> None:
         await websocket.accept()
         await websocket.send_text(WEBSOCKET_GREETING)
         await websocket.close()
+
+    @app.websocket(WEBSOCKET_DENIED_PATH)
+    async def denied_socket(websocket: WebSocket) -> None:
+        await websocket.send_denial_response(Response(status_code=WEBSOCKET_DENIED_STATUS))
+
+    @app.websocket(WEBSOCKET_CLOSED_PATH)
+    async def closed_socket(websocket: WebSocket) -> None:
+        await websocket.close()
+
+    @app.websocket(WEBSOCKET_SILENT_PATH)
+    async def silent_socket(_websocket: WebSocket) -> None:
+        return
 
     @app.websocket("/ws-boom")
     async def failing_socket(websocket: WebSocket) -> None:

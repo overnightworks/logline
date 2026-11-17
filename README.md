@@ -244,21 +244,39 @@ or `uvicorn.Config(app, log_config=None)`. Under the uvicorn command line, call 
 module is imported or in the app factory. `configure` routes uvicorn's loggers to the JSON handler and keeps
 uvicorn's access log silent in every start mode, because the request line replaces it.
 
-`configure` also rewrites uvicorn's own failure records on `uvicorn.error` into literal events. Each keeps its
-level and carries no message text, host, port or path. These events and their `reason` and `error_type` values
-are public: renaming one is a breaking change.
+`configure` also rewrites uvicorn's own records on `uvicorn.error`, and the refusal line websockets writes there,
+into literal events. Each keeps its level and carries no message text, process id, host, port or path. These events
+and their `reason`, `status` and `error_type` values are public: renaming one is a breaking change.
 
-| Event | When | `reason` | `error_type` |
-| --- | --- | --- | --- |
-| `server_bind.failed` | the server cannot bind its address | `port_taken` (address in use) or `os_error` | the `OSError` class |
-| `http_request.refused` | uvicorn refuses a request | `invalid_request` (not valid HTTP) or `unsupported_upgrade` | none |
-| `asgi_app.failed` | the app raises in an HTTP request or a WebSocket, with the traceback in `exception` | none | the exception class |
-| `app_startup.failed`, `app_shutdown.failed` | the app's lifespan fails, with the traceback in `exception` | none | the exception class |
+| Event | Level | When | `reason` | Other field |
+| --- | --- | --- | --- | --- |
+| `server_bind.failed` | error | the server cannot bind its address | `port_taken` (address in use) or `os_error` | `error_type`: the `OSError` class |
+| `http_request.refused` | warning | uvicorn refuses a request | `invalid_request` (not valid HTTP) or `unsupported_upgrade` | none |
+| `asgi_app.failed` | error | the app raises in an HTTP request or a WebSocket, with the traceback in `exception` | none | `error_type`: the exception class |
+| `app_startup.failed`, `app_shutdown.failed` | error | the app's lifespan fails, with the traceback in `exception` | none | `error_type`: the exception class |
+| `websocket_upgrade.refused` | info | websockets answers a WebSocket upgrade with an HTTP status other than 101 | none | `status`: the HTTP status |
+| `websocket_handshake.failed` | error | the app returned without answering the WebSocket upgrade | `handshake_incomplete` | none |
+| `server_process.started`, `server_process.finished` | info | the server process starts and ends | none | none |
+| `app_startup.completed`, `app_shutdown.completed` | info | the app's lifespan finished | none | none |
+| `server_listen.started` | info | the server listens, whatever the address form | none | none |
+| `server_shutdown.started` | info | the server begins to stop | none | none |
 
 A lifespan failure the app reports through its failure message, as Starlette and FastAPI do, is one line. uvicorn
 first logs that message, which under Starlette and FastAPI is the traceback text; `configure` drops it and puts the
 exception on the coded line. An app that reports its failure without an exception gets the coded line with neither
 `error_type` nor `exception`.
+
+A refused upgrade is one `websocket_upgrade.refused` line and no error line: uvicorn's websockets-sansio protocol
+also reports an upgrade the app answered with a denial response as an app that returned without completing the
+handshake, and `configure` drops that line when the same connection already logged the refusal. An app that
+returns without answering the upgrade gets `websocket_handshake.failed`, and then `websocket_upgrade.refused` with
+status 500, the answer uvicorn sends in its place. The two lines are linked only when they come from one task of
+one connection, which holds for uvicorn's default WebSocket protocol; the refusal line is read at any `LOG_LEVEL`,
+so a root level above INFO drops both. uvicorn's "Waiting for application startup" and "Waiting for application
+shutdown" lines are dropped, because the next line says the same.
+
+Under `ws="wsproto"` uvicorn writes no refusal record: a denial response, a close before accept and an unanswered
+upgrade produce no `websocket_upgrade.refused` line, and `websocket_handshake.failed` is still written.
 
 Any other uvicorn record passes as uvicorn writes it, including the `Exception in 'lifespan' protocol` record of an
 app that raises from its lifespan without reporting a failure.
@@ -340,7 +358,7 @@ from a closed set.
 | `outcome` | `ok`, `refused`, `failed` or `cancelled` | on every `.ended` line |
 | `reason` | code from a closed set in the app | why it was refused, failed or ended |
 | `error_type` | string | the exception's class name |
-| `status` | integer | the HTTP status of an outbound call |
+| `status` | integer | the HTTP status of an outbound call, or the status an app answered a WebSocket upgrade with |
 | `sub` | string | the person; never `subject_id` or `user_id` |
 | `<entity>_id` | string | a durable id |
 | `<noun>_count`, `_bytes`, `_tokens`, `_ms` | number | the unit is in the name |
