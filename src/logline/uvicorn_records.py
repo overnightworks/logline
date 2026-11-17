@@ -150,7 +150,7 @@ def _is_redundant(record: logging.LogRecord) -> bool:
     """A record whose message another record of uvicorn or websockets already carries."""
     if record.msg == _UVICORN_INCOMPLETE_HANDSHAKE_TEMPLATE:
         return _UPGRADE_REFUSED_IN_TASK.get()
-    return record.msg in _DROPPED_TEMPLATES
+    return isinstance(record.msg, str) and record.msg in _DROPPED_TEMPLATES
 
 
 class _UvicornErrorRecords(logging.Filter):

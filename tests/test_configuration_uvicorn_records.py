@@ -307,6 +307,7 @@ def test_a_uvicorn_failure_logs_one_literal_event_with_its_code(
             "Something else happened: %s", ("detail",), "Something else happened: detail", id="text"
         ),
         pytest.param(ValueError("detail"), (), "detail", id="object"),
+        pytest.param({"detail": "value"}, (), "{'detail': 'value'}", id="unhashable object"),
     ],
 )
 def test_an_unknown_uvicorn_record_passes_unchanged(
