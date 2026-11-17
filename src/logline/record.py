@@ -47,7 +47,7 @@ def _keep_scalar_fields(logger: Logger, method_name: str, event_dict: EventDict)
             if key in _EXCEPTION_REQUEST_KEYS or (key != "exception" and _is_line_value(value))
         }
         if "event" in event_dict:
-            # Every line carries its `event`; a caller's non-text event renders as text.
+            # A line keeps its `event`; a caller's non-text event renders as text.
             event = event_dict["event"]
             kept["event"] = event if isinstance(event, str) else str(event)
         return kept
