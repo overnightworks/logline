@@ -1,7 +1,0 @@
-claim_id = "cb31f003c88246d9bed92e977ab2a913"
-agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
-role = "builder"
-base = "23d4a3150293173fbd49da9ce77313c4187a5805"
-branch = "fix/logline-0-6-0"
-scope = ["src/logline/__init__.py"]
-opened_commit = "f5c3134d7c5b3535abfaccbb20071ac2fdcf20ae"
