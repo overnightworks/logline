@@ -574,6 +574,23 @@ def test_a_record_from_a_lifespan_frame_without_self_passes_the_filter(
     assert events == ["Application startup complete."]
 
 
+def test_a_content_record_from_a_lifespan_frame_without_self_is_dropped_and_the_server_stays_up(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure("uvicorn-service")
+    namespace = {"__name__": "uvicorn.lifespan.on", "logging": logging}
+    exec(  # noqa: S102 - builds a frame that claims uvicorn's lifespan module and has no `self`
+        "def startup(path):\n"
+        "    logger = logging.getLogger('uvicorn.error')\n"
+        "    logger.info('%s - \"WebSocket %s\" [accepted]', '', path)\n",
+        namespace,
+    )
+
+    namespace["startup"](f"/ws?token={_REQUEST_SECRET}")
+
+    assert _REQUEST_SECRET not in capsys.readouterr().out
+
+
 def test_a_websocket_under_the_debug_level_never_enables_uvicorn_debug_records(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

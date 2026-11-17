@@ -135,8 +135,8 @@ tests. The lowest direct dependency floors run the same tests.
   template from the same object, and the exception moves onto that line. The recognition is coupled to that
   module name, the function name `send` and the local `self`; uvicorn renaming the module or the function makes
   the failure message pass unchanged. Any exception inside the filter's lookup or mapping, a renamed `self`
-  included, passes the record unchanged instead of raising into uvicorn, so a changed uvicorn costs a line that
-  is not named, never a crash. A record it does not know passes unchanged.
+  included, passes the record unchanged, or drops it when it carries content, instead of raising into uvicorn, so a
+  changed uvicorn costs a line that is not named, never a crash or a leak. A record it does not know passes unchanged.
 - A refused WebSocket upgrade and uvicorn's "returned without completing handshake" line come from one task, the one
   uvicorn's websockets-sansio protocol creates for the connection: the filter sets a context variable when it sees
   websockets' refusal template and drops the handshake line when it is set, so the link needs no pid, socket or

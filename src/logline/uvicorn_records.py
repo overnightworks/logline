@@ -170,8 +170,16 @@ class _UvicornErrorRecords(logging.Filter):
         except Exception:  # noqa: BLE001 - see below
             # The mapping reads uvicorn's frames, locals and templates, and logline declares no
             # uvicorn bound; a filter that raises propagates into uvicorn's own code, which
-            # would turn a changed uvicorn into a crash. The record passes as written instead.
-            return True
+            # would turn a changed uvicorn into a crash. The record passes as written unless it
+            # carries content, which is dropped whenever the filter cannot tell it is safe.
+            return self._passes_without_the_mapping(record)
+
+    @staticmethod
+    def _passes_without_the_mapping(record: logging.LogRecord) -> bool:
+        try:
+            return not _carries_content(record)
+        except Exception:  # noqa: BLE001 - a record that cannot be judged is dropped
+            return False
 
     def _keeps(self, record: logging.LogRecord) -> bool:
         call = _lifespan_call()
