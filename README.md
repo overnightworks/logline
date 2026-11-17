@@ -341,7 +341,7 @@ line, the same error at each layer.
 
 ### Event names
 
-`event` is a literal `<noun>.<verb_past>` (the pattern is `event_name_pattern` in `standard.json`): snake_case, exactly one dot, no service prefix and no values, such as
+`event` is a literal `<noun>.<verb_past>` (the pattern is `event_name_pattern` in `standard.json`), with no service prefix and no values, such as
 `turn.ended`, `hearing.ended` or `sign_in.refused`. The request line is `request.ended` with `outcome`
 (`REQUEST_EVENT`).
 
