@@ -24,8 +24,6 @@ _LOCAL_HOST = "127.0.0.1"
 # TEST-NET-1 (RFC 5737): no local interface owns it, so binding fails without any network.
 _UNOWNED_HOST = "203.0.113.1"
 _FAILURE_MESSAGE = "lifespan failure message"
-# The text of uvicorn's WebSocket request line, which the content filter drops from a record.
-_WEBSOCKET_LINE_TEXT = '"WebSocket %s"'
 _REQUEST_SECRET = "request-secret"
 
 
@@ -163,7 +161,8 @@ def _startup_failure() -> tuple[str, ...]:
 
 
 def _startup_failure_quoting_a_websocket_line() -> tuple[str, ...]:
-    app = _lifespan_app(fail_at_startup=True, message=f"failed on {_WEBSOCKET_LINE_TEXT}")
+    # The text of uvicorn's WebSocket request line, which the content filter drops from a record.
+    app = _lifespan_app(fail_at_startup=True, message='failed on "WebSocket %s"')
     with contextlib.suppress(SystemExit):
         _serve_without_requests(app)
     return ()
