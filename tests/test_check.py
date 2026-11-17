@@ -145,6 +145,13 @@ _BINDING_CASES = [
 
 _HOP_CASES = [
     _case(
+        "parameter logged twice with a bad caller",
+        _STDLIB
+        + 'def note(event):\n    logger.info(event)\n    logger.warning(event)\n\nnote("Bad")\n',
+        Rule.EVENT_NOT_LITERAL,
+        Rule.EVENT_NOT_LITERAL,
+    ),
+    _case(
         "parameter with literal callers",
         _STDLIB
         + 'def note(event):\n    logger.info(event)\n\nnote("turn.ended")\nnote("turn.failed")\n',

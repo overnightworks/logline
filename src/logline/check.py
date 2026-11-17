@@ -117,6 +117,7 @@ class _Judge:
         self._loggers: dict[str, _Kind] = {}
         self._timers: set[str] = set()
         self._calls_by_name: defaultdict[str, list[ast.Call]] = defaultdict(list)
+        self._literal_parameters: dict[tuple[ast.AST, str], bool] = {}
         for parent in ast.walk(tree):
             for child in ast.iter_child_nodes(parent):
                 self._parents[child] = parent
@@ -285,11 +286,14 @@ class _Judge:
         keyword_only = [argument.arg for argument in parameters.kwonlyargs]
         if event.id not in (*positional, *keyword_only):
             return False
-        calls = self._calls_by_name.get(function.name, [])
-        return bool(calls) and all(
-            _is_matching_literal(self._passed(call, event.id, positional, function))
-            for call in calls
-        )
+        key = (function, event.id)
+        if key not in self._literal_parameters:
+            calls = self._calls_by_name.get(function.name, [])
+            self._literal_parameters[key] = bool(calls) and all(
+                _is_matching_literal(self._passed(call, event.id, positional, function))
+                for call in calls
+            )
+        return self._literal_parameters[key]
 
     def _passed(
         self,
