@@ -432,8 +432,21 @@ def test_a_source_that_does_not_parse_raises_a_syntax_error() -> None:
         check("def broken(:\n", PurePath("broken.py"))
 
 
-def test_a_rule_code_is_its_text() -> None:
-    assert str(Rule.OWN_SETUP) == "own_setup"
+@pytest.mark.parametrize(
+    ("rule", "code"),
+    [
+        (Rule.EVENT_NOT_LITERAL, "event_not_literal"),
+        (Rule.EVENT_NAME_SHAPE, "event_name_shape"),
+        (Rule.MESSAGE_ARGS, "message_args"),
+        (Rule.DENIED_FIELD, "denied_field"),
+        (Rule.OWN_SETUP, "own_setup"),
+        (Rule.UVICORN_LOG_CONFIG, "uvicorn_log_config"),
+        (Rule.UVICORN_LOG_LEVEL, "uvicorn_log_level"),
+        (Rule.UVICORN_OPTIONS_HIDDEN, "uvicorn_options_hidden"),
+    ],
+)
+def test_a_rule_code_is_its_text(rule: Rule, code: str) -> None:
+    assert str(rule) == code
 
 
 def test_column_counts_characters_not_bytes() -> None:
