@@ -1,8 +1,0 @@
-claim_id = "a5003816f1de40d29c734f7b0637a2ac"
-agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
-role = "builder"
-base = "b7745e736a211f55d7b3c82b3d42e98d57127743"
-branch = "claude/issue-57-record-shape-holes"
-scope = ["README.md", "docs/ARCHITECTURE.md", "src/logline", "tests"]
-opened_commit = "5ac92682374acda1fa0b3a6f25b0957df9a96770"
-whole_reason = "One tightening of the record shape across its two write paths and the request line, with proof and README lines."
