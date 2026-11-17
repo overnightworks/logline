@@ -285,7 +285,8 @@ The rules for what a covered host logs and how. What a line never carries is [Ne
 
 - Every fleet repository whose code runs as a deployed process: a server, a worker or an app.
 - Every library whose code runs on a hop of such a process.
-- Not covered: forks of third-party projects and pure command-line tools.
+- Not covered: forks of third-party projects, pure command-line tools, and code that runs in a person's browser,
+  which is no deployed process; the server end of the connection it opens logs that hop.
 - New code complies at once; existing repositories adopt now.
 - `service` is one name per deployed process: the app's main process takes the app's name, every other
   process `<app>-<role>`, such as `presentator-worker`.
