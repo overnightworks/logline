@@ -4,11 +4,9 @@ import sys
 import threading
 import warnings
 from pathlib import Path
-from typing import TextIO
 
 import pytest
 
-from logline import process_failures
 from logline.testing import configured
 from tests.support.failing_process import SECRET
 from tests.support.lines import BASE_KEYS, Line, json_lines
@@ -120,22 +118,8 @@ def test_a_thread_that_raises_writes_a_critical_line_in_process(
 
 
 def test_a_warning_sent_to_a_named_stream_stays_text_in_that_stream(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # pytest records every warning, whatever stream it names, so the standard display is replaced
-    # by one that writes the stream's text as the standard library does.
-    def write_to_stream(  # noqa: PLR0913
-        message: Warning | str,
-        category: type[Warning],
-        filename: str,
-        lineno: int,
-        file: TextIO | None = None,
-        line: str | None = None,
-    ) -> None:
-        assert file is not None
-        file.write(warnings.formatwarning(message, category, filename, lineno, line))
-
-    monkeypatch.setattr(process_failures, "_STANDARD_SHOWWARNING", write_to_stream)
     stream = io.StringIO()
 
     with configured("warnings"):
