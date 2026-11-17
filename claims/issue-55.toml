@@ -1,8 +1,0 @@
-claim_id = "b4987b19fa76457faba4063a35c802ec"
-agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
-role = "builder"
-base = "6b5365d471aa3fd915e003e751f5ad9006577afb"
-branch = "claude/issue-55-logger-cap-loosens-log-level"
-scope = ["README.md", "src/logline/configuration.py", "tests"]
-opened_commit = "0c195347d1c3eeb19539d1d9f4785d3d4accd352"
-whole_reason = "One level rule in configure with its proof in the level tests and its README line."
