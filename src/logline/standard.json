@@ -1,0 +1,18 @@
+{
+  "base_keys": ["ts", "level", "service", "version", "logger", "event", "trace_id"],
+  "denied_field_names": [
+    "duration",
+    "elapsed",
+    "error",
+    "user_id",
+    "subject_id",
+    "url",
+    "path",
+    "query",
+    "text",
+    "prompt",
+    "token"
+  ],
+  "denied_field_suffixes": ["_seconds"],
+  "event_name_pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*\\.[a-z][a-z0-9]*(_[a-z0-9]+)*$"
+}

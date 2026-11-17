@@ -7,9 +7,10 @@ from pathlib import Path
 
 import pytest
 
+from logline.standard import BASE_KEYS
 from logline.testing import configured
 from tests.support.failing_process import SECRET
-from tests.support.lines import BASE_KEYS, Line, json_lines
+from tests.support.lines import Line, json_lines
 
 _REPOSITORY = Path(__file__).parents[1]
 

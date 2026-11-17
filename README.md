@@ -87,7 +87,7 @@ object with these keys, plus the key-value fields the caller adds:
 | `event` | the message |
 | `trace_id` | the running request's trace id as 32 hex digits, `null` outside a request |
 
-A caller's own field named `ts`, `level`, `service`, `version`, `logger` or `trace_id` is overwritten. The
+A caller's own field named like one of these keys (`base_keys` in `src/logline/standard.json`) is overwritten. The
 scalar `extra=` fields (text, numbers, booleans, `null`) of a standard-library record reach the line, and cannot
 override these keys or `event`; an object is not copied, and neither are `exception` (the key the traceback
 renders into) and uvicorn's `color_message`. An
@@ -318,9 +318,10 @@ The rules for what a covered host logs and how. What a line never carries is [Ne
 - `service` is one name per deployed process: the app's main process takes the app's name, every other
   process `<app>-<role>`, such as `presentator-worker`.
 - The rules a machine checks: a released logline tag, a literal event name of the form below, no
-  value formatted into a message, no field from the deny list (`duration`, `elapsed`, `*_seconds`, `error`,
-  `user_id`, `subject_id`, `url`, `path`, `query`, `text`, `prompt`, `token`), and no logging setup of the
-  host's own. Whether the log points, levels and single errors are right is judged by a scheduled audit.
+  value formatted into a message, no field from the deny list, and no logging setup of the
+  host's own. The deny list, the event-name pattern and the record's base keys are the data file
+  `src/logline/standard.json` in the logline package (`logline.standard` reads it), which owns them;
+  the record drops a field on the deny list. Whether the log points, levels and single errors are right is judged by a scheduled audit.
 
 ### Where to log
 
@@ -340,7 +341,7 @@ line, the same error at each layer.
 
 ### Event names
 
-`event` is a literal `<noun>.<verb_past>`: snake_case, exactly one dot, no service prefix and no values, such as
+`event` is a literal `<noun>.<verb_past>` (the pattern is `event_name_pattern` in `standard.json`): snake_case, exactly one dot, no service prefix and no values, such as
 `turn.ended`, `hearing.ended` or `sign_in.refused`. The request line is `request.ended` with `outcome`
 (`REQUEST_EVENT`).
 

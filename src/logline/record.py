@@ -6,6 +6,7 @@ from structlog.processors import TimeStamper, format_exc_info
 from structlog.stdlib import ExtraAdder, add_log_level, add_logger_name
 from structlog.typing import EventDict, Processor, WrappedLogger
 
+from logline.standard import BASE_KEYS, is_denied_field
 from logline.trace import current_trace_id
 
 __all__ = ["record_shape"]
@@ -15,7 +16,7 @@ _EXTRA_FIELDS = ExtraAdder()
 _SCALAR_TYPES = (str, int, float, bool, type(None))
 # `color_message` is uvicorn's coloured copy of the message; `exception` is the key
 # `format_exc_info` writes, so a library's own field of that name must not pose as a traceback.
-_UNCOPIED_EXTRA_FIELDS = frozenset({"event", "color_message", "exception"})
+_UNCOPIED_EXTRA_FIELDS = BASE_KEYS | {"color_message", "exception"}
 
 
 def _copy_extra_fields(logger: Logger, method_name: str, event_dict: EventDict) -> EventDict:
@@ -32,6 +33,13 @@ def _copy_extra_fields(logger: Logger, method_name: str, event_dict: EventDict) 
         ):
             event_dict[key] = value
     return event_dict
+
+
+def _drop_denied_fields(
+    _logger: WrappedLogger, _method_name: str, event_dict: EventDict
+) -> EventDict:
+    """Remove every field the standard's deny list names."""
+    return {key: value for key, value in event_dict.items() if not is_denied_field(key)}
 
 
 def _add_trace_id(_logger: WrappedLogger, _method_name: str, event_dict: EventDict) -> EventDict:
@@ -54,7 +62,7 @@ def record_shape(service: str, version: str | None) -> list[Processor]:
     A standard-library record's scalar `extra=` fields are copied first, so each stamp overwrites a
     caller's key of the same name; `event`, `exception` and uvicorn's `color_message` are not
     copied. An exception renders as Python's text traceback in `exception`: frames, messages and the
-    whole chain, never local variables.
+    whole chain, never local variables. A field on the standard's deny list is dropped.
     """
     return [
         _copy_extra_fields,
@@ -64,4 +72,5 @@ def record_shape(service: str, version: str | None) -> list[Processor]:
         _identity_processor(service, version),
         _add_trace_id,
         format_exc_info,
+        _drop_denied_fields,
     ]

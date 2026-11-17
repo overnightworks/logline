@@ -7,9 +7,16 @@ import pytest
 import structlog
 import uvicorn
 
-from logline import configure
+from logline import REQUEST_EVENT, configure
+from logline.process_failures import PROCESS_CRASHED, THREAD_CRASHED
+from logline.standard import (
+    BASE_KEYS,
+    DENIED_FIELD_NAMES,
+    DENIED_FIELD_SUFFIXES,
+    EVENT_NAME_PATTERN,
+)
 from tests.support.apps import build_app
-from tests.support.lines import BASE_KEYS, Line, json_lines
+from tests.support.lines import Line, json_lines
 from tests.support.serving import serve
 
 _LOCAL_SECRET = "local-secret-value"
@@ -291,3 +298,48 @@ def test_a_chained_exception_renders_every_type_and_message_in_order(
     positions = [text.index(part) for part in rendered_in_order]
     assert positions == sorted(positions)
     assert ("KeyError" in text) == any("KeyError" in part for part in rendered_in_order)
+
+
+def _denied_field_names() -> list[str]:
+    return [*sorted(DENIED_FIELD_NAMES), *(f"wait{suffix}" for suffix in DENIED_FIELD_SUFFIXES)]
+
+
+@pytest.mark.parametrize("field_name", _denied_field_names())
+def test_a_field_on_the_deny_list_never_reaches_a_line(
+    capsys: pytest.CaptureFixture[str], field_name: str
+) -> None:
+    configure("denying")
+
+    async def exercise(base_url: str) -> None:
+        async with httpx.AsyncClient(base_url=base_url) as client:
+            await client.get("/denied-fields", params={"name": field_name})
+
+    serve(uvicorn.Config(build_app(), log_config=None), exercise)
+
+    (line,) = [line for line in _logged_lines(capsys) if line["logger"] == "tests.denied"]
+    assert line["order_id"] == "o-17"
+    assert field_name not in line.keys()
+
+
+@pytest.mark.parametrize("field_name", sorted(DENIED_FIELD_NAMES))
+def test_a_library_records_denied_extra_field_never_reaches_a_line(
+    capsys: pytest.CaptureFixture[str], field_name: str
+) -> None:
+    configure("denying")
+
+    logging.getLogger("some_library").warning("library line", extra={field_name: "value"})
+
+    (line,) = _logged_lines(capsys)
+    assert field_name not in line.keys()
+
+
+@pytest.mark.parametrize("event", [REQUEST_EVENT, PROCESS_CRASHED, THREAD_CRASHED, "turn.ended"])
+def test_the_event_pattern_accepts_a_literal_noun_and_past_verb(event: str) -> None:
+    assert EVENT_NAME_PATTERN.fullmatch(event)
+
+
+@pytest.mark.parametrize(
+    "event", ["order placed", "turn", "a.b.c", "Turn.ended", "turn.ended.", "app.turn.ended"]
+)
+def test_the_event_pattern_refuses_a_message_a_prefix_and_a_missing_verb(event: str) -> None:
+    assert not EVENT_NAME_PATTERN.fullmatch(event)

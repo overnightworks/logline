@@ -8,8 +8,9 @@ import uvicorn
 from websockets.asyncio.client import connect
 
 from logline import configure
+from logline.standard import BASE_KEYS
 from tests.support.apps import WEBSOCKET_GREETING, build_app
-from tests.support.lines import BASE_KEYS, Line, json_lines, lines_of
+from tests.support.lines import Line, json_lines, lines_of
 from tests.support.serving import serve
 
 _WEBSOCKET_QUERY_SECRET = "websocket-query-secret"

@@ -274,6 +274,11 @@ def _add_logging_routes(app: FastAPI) -> None:
         )
         return {"ok": True}
 
+    @app.get("/denied-fields")
+    async def denied_fields(name: str) -> dict[str, bool]:
+        structlog.get_logger("tests.denied").info("a line", order_id="o-17", **{name: "value"})
+        return {"ok": True}
+
     @app.get("/trace")
     async def trace() -> dict[str, dict[str, str]]:
         structlog.get_logger("tests.app").info("inside the request")
