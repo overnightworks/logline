@@ -8,6 +8,7 @@ import uvicorn
 from websockets.asyncio.client import connect
 
 from logline import configure
+from logline.lifespan import LIFESPAN_LOGGER_NAME
 from logline.standard import BASE_KEYS
 from tests.support.apps import WEBSOCKET_GREETING, build_app
 from tests.support.lines import Line, json_lines, lines_of
@@ -35,7 +36,7 @@ def test_uvicorn_and_library_lines_are_the_same_json(capsys: pytest.CaptureFixtu
     lines = json_lines(capsys.readouterr().out)
     startup = [
         line
-        for line in lines_of(lines, "uvicorn.error")
+        for line in lines_of(lines, LIFESPAN_LOGGER_NAME)
         if line["event"] == "app_startup.completed"
     ]
     library = lines_of(lines, "some_library")

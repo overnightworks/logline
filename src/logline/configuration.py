@@ -8,6 +8,7 @@ import structlog
 from structlog.processors import JSONRenderer
 from structlog.stdlib import BoundLogger, LoggerFactory, ProcessorFormatter, filter_by_level
 
+from logline.lifespan import LIFESPAN_LOGGER_NAME
 from logline.process_failures import install_process_failure_hooks
 from logline.record import record_shape
 from logline.request import REQUEST_LOGGER_NAME
@@ -42,6 +43,7 @@ _ROOT_LOGGER_NAME = ""
 TOUCHED_LOGGER_NAMES = (
     _ROOT_LOGGER_NAME,
     REQUEST_LOGGER_NAME,
+    LIFESPAN_LOGGER_NAME,
     *_UVICORN_LOGGERS,
     *_CAPPED_LOGGER_LEVELS,
 )
@@ -110,7 +112,8 @@ def configure(service: str) -> None:
     root.handlers.clear()
     root.addHandler(_json_stdout_handler(processors))
     root.setLevel(root_level)
-    logging.getLogger(REQUEST_LOGGER_NAME).setLevel(logging.INFO)
+    for name in (REQUEST_LOGGER_NAME, LIFESPAN_LOGGER_NAME):
+        logging.getLogger(name).setLevel(logging.INFO)
     for name, level in _CAPPED_LOGGER_LEVELS.items():
         logging.getLogger(name).setLevel(max(level, root_level))
     _route_uvicorn_through_root()

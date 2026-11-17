@@ -1,23 +1,20 @@
 import asyncio
-import contextlib
 import json
 import logging
 import os
 import socket
 from collections import Counter
-from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from collections.abc import Callable
 from pathlib import Path
 
 import httpx
 import pytest
 import uvicorn
-from fastapi import FastAPI
-from starlette.types import Receive, Scope, Send
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, InvalidHandshake
 
 from logline import configure
+from logline.lifespan import LIFESPAN_LOGGER_NAME
 from logline.standard import BASE_KEYS
 from tests.support.apps import (
     WEBSOCKET_CLOSED_PATH,
@@ -33,7 +30,6 @@ _UVICORN_LOGGER = "uvicorn.error"
 _LOCAL_HOST = "127.0.0.1"
 # TEST-NET-1 (RFC 5737): no local interface owns it, so binding fails without any network.
 _UNOWNED_HOST = "203.0.113.1"
-_FAILURE_MESSAGE = "lifespan failure message"
 _REQUEST_SECRET = "request-secret"
 
 
@@ -58,25 +54,6 @@ def _the_one_line(output: str, event: str) -> Line:
 def _content_of(line: Line) -> str:
     """The line without its timestamp and traceback, which no host, port or path should reach."""
     return json.dumps({key: value for key, value in line.items() if key not in {"ts", "exception"}})
-
-
-def _lifespan_app(*, fail_at_startup: bool, message: str = _FAILURE_MESSAGE) -> FastAPI:
-    @asynccontextmanager
-    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        if fail_at_startup:
-            raise RuntimeError(message)
-        yield
-        raise RuntimeError(message)
-
-    return FastAPI(lifespan=lifespan)
-
-
-async def _nothing(_base_url: str) -> None:
-    return None
-
-
-def _serve_without_requests(app: FastAPI) -> None:
-    serve(uvicorn.Config(app, log_config=None), _nothing)
 
 
 def _serve_bind_failure(host: str, port: int) -> None:
@@ -145,44 +122,6 @@ def _websocket_app_exception(implementation: str) -> Callable[[], tuple[str, ...
     return drive
 
 
-async def _app_that_reports_its_failure_outside_an_exception(
-    scope: Scope, receive: Receive, send: Send
-) -> None:
-    assert scope["type"] == "lifespan"
-    await receive()
-    await send({"type": "lifespan.startup.failed", "message": _FAILURE_MESSAGE})
-
-
-def _startup_failure_without_exception() -> tuple[str, ...]:
-    config = uvicorn.Config(
-        _app_that_reports_its_failure_outside_an_exception, log_config=None, lifespan="on"
-    )
-    with contextlib.suppress(SystemExit):
-        serve(config, _nothing)
-    return ()
-
-
-def _startup_failure() -> tuple[str, ...]:
-    app = _lifespan_app(fail_at_startup=True)
-    # Recent uvicorn exits the process on a failed startup; older releases return from `serve`.
-    with contextlib.suppress(SystemExit):
-        _serve_without_requests(app)
-    return ()
-
-
-def _startup_failure_quoting_a_websocket_line() -> tuple[str, ...]:
-    # The text of uvicorn's WebSocket request line, which the content filter drops from a record.
-    app = _lifespan_app(fail_at_startup=True, message='failed on "WebSocket %s"')
-    with contextlib.suppress(SystemExit):
-        _serve_without_requests(app)
-    return ()
-
-
-def _shutdown_failure() -> tuple[str, ...]:
-    _serve_without_requests(_lifespan_app(fail_at_startup=False))
-    return ()
-
-
 @pytest.mark.parametrize(
     ("drive", "level", "expected", "has_traceback"),
     [
@@ -235,34 +174,6 @@ def _shutdown_failure() -> tuple[str, ...]:
             True,
             id="websocket app exception, websockets-sansio",
         ),
-        pytest.param(
-            _startup_failure,
-            "error",
-            {"event": "app_startup.failed", "error_type": "RuntimeError"},
-            True,
-            id="startup",
-        ),
-        pytest.param(
-            _startup_failure_quoting_a_websocket_line,
-            "error",
-            {"event": "app_startup.failed", "error_type": "RuntimeError"},
-            True,
-            id="startup whose message quotes a websocket line",
-        ),
-        pytest.param(
-            _shutdown_failure,
-            "error",
-            {"event": "app_shutdown.failed", "error_type": "RuntimeError"},
-            True,
-            id="shutdown",
-        ),
-        pytest.param(
-            _startup_failure_without_exception,
-            "error",
-            {"event": "app_startup.failed"},
-            False,
-            id="startup reported outside an exception",
-        ),
     ],
 )
 def test_a_uvicorn_failure_logs_one_literal_event_with_its_code(
@@ -298,7 +209,6 @@ def test_a_uvicorn_failure_logs_one_literal_event_with_its_code(
         "Application",
         "Exception in",
         _REQUEST_SECRET,
-        _FAILURE_MESSAGE,
     ):
         assert forbidden not in content
 
@@ -504,7 +414,12 @@ _LIFECYCLE_EVENTS_WITHOUT_THE_LIFESPAN = [
 
 
 def _uvicorn_lines(output: str) -> list[Line]:
-    return lines_of(json_lines(output), _UVICORN_LOGGER)
+    """The lines of uvicorn and of the lifespan, in the order written."""
+    return [
+        line
+        for line in json_lines(output)
+        if line["logger"] in {_UVICORN_LOGGER, LIFESPAN_LOGGER_NAME}
+    ]
 
 
 @pytest.mark.parametrize(
@@ -557,38 +472,20 @@ def test_a_second_configure_leaves_the_uvicorn_lines_as_they_were(
     ]
 
 
-def test_a_record_from_a_lifespan_frame_without_self_passes_the_filter(
+def test_a_record_without_exc_info_and_with_odd_args_passes_the_filter(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     configure("uvicorn-service")
-    namespace = {"__name__": "uvicorn.lifespan.on", "logging": logging}
-    exec(  # noqa: S102 - builds a frame that claims uvicorn's lifespan module and has no `self`
-        "def startup():\n"
-        "    logging.getLogger('uvicorn.error').info('Application startup complete.')\n",
-        namespace,
-    )
+    uvicorn_logger = logging.getLogger(_UVICORN_LOGGER)
 
-    namespace["startup"]()
+    for template in ("Exception in ASGI application\n", "connection rejected (%d %s)"):
+        uvicorn_logger.handle(
+            logging.LogRecord(_UVICORN_LOGGER, logging.ERROR, __file__, 0, template, (), None)
+        )
 
-    events = [line["event"] for line in _uvicorn_lines(capsys.readouterr().out)]
-    assert events == ["Application startup complete."]
-
-
-def test_a_content_record_from_a_lifespan_frame_without_self_is_dropped_and_the_server_stays_up(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    configure("uvicorn-service")
-    namespace = {"__name__": "uvicorn.lifespan.on", "logging": logging}
-    exec(  # noqa: S102 - builds a frame that claims uvicorn's lifespan module and has no `self`
-        "def startup(path):\n"
-        "    logger = logging.getLogger('uvicorn.error')\n"
-        "    logger.info('%s - \"WebSocket %s\" [accepted]', '', path)\n",
-        namespace,
-    )
-
-    namespace["startup"](f"/ws?token={_REQUEST_SECRET}")
-
-    assert _REQUEST_SECRET not in capsys.readouterr().out
+    lines = lines_of(json_lines(capsys.readouterr().out), _UVICORN_LOGGER)
+    assert [line["event"] for line in lines] == ["asgi_app.failed", "websocket_upgrade.refused"]
+    assert not {"error_type", "status"} & {key for line in lines for key in line}
 
 
 def test_a_websocket_under_the_debug_level_never_enables_uvicorn_debug_records(
