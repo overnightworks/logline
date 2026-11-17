@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
 import socket
 from collections import Counter
 from collections.abc import AsyncIterator, Callable
@@ -461,7 +462,12 @@ def _start_and_stop(config: uvicorn.Config) -> None:
     server = uvicorn.Server(config)
     # A server told to exit before it serves still starts up and shuts down.
     server.should_exit = True
-    asyncio.run(server.serve())
+    try:
+        asyncio.run(server.serve())
+    finally:
+        if config.fd is not None:
+            # uvicorn duplicates the descriptor it is given, so the original stays open.
+            os.close(config.fd)
 
 
 def _listening_on_a_port(_directory: Path) -> uvicorn.Config:
