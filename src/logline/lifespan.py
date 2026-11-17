@@ -71,11 +71,11 @@ async def run_lifespan(app: ASGIApp, scope: Scope, receive: Receive, send: Send)
         nonlocal unanswered
         if phase := _PHASE_OF_COMPLETED.get(message["type"]):
             _logger.info(_COMPLETED_EVENT[phase])
-        else:
-            phase = _PHASE_OF_FAILED[message["type"]]
+            unanswered = None
+        elif phase := _PHASE_OF_FAILED.get(message["type"]):
             _write_failed(phase, sys.exception())
             message = {key: value for key, value in message.items() if key != "message"}
-        unanswered = None
+            unanswered = None
         await send(message)
 
     try:

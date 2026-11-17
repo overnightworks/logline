@@ -293,6 +293,9 @@ middleware forwards the answer without its free-text `message`, so the server wr
 server receives: hypercorn shows no message in its own error. An exception raised before the app received
 `lifespan.startup` is the ASGI spec's "lifespan unsupported" and writes no line.
 
+The completed lines follow `LOG_LEVEL`, as uvicorn's did: at `warning` or above they are not written. The failed
+lines are at error.
+
 A host without the middleware, or an app that has no lifespan, gets no `app_*` lines. Behind uvicorn the middleware
 owns them: `configure` drops uvicorn's own startup and shutdown lines, so a host that does not wrap its app loses
 them.

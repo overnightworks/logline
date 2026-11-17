@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -148,6 +149,17 @@ def test_an_exception_before_startup_was_received_writes_no_lifespan_line(
     assert lines_of(json_lines(capsys.readouterr().out), LIFESPAN_LOGGER_NAME) == []
 
 
+def test_the_completed_lines_follow_the_root_level(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LOG_LEVEL", "warning")
+    configure("lifespan-service")
+
+    _serve_lifespan(build_app(), "on")
+
+    assert lines_of(json_lines(capsys.readouterr().out), LIFESPAN_LOGGER_NAME) == []
+
+
 def test_a_completed_lifespan_is_one_info_line_for_each_phase(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -172,3 +184,26 @@ def test_an_app_without_the_middleware_writes_no_lifespan_line(
 
     lines = json_lines(capsys.readouterr().out)
     assert not [line for line in lines if str(line["event"]).startswith("app_")]
+
+
+async def _sends_an_unknown_lifespan_message(scope: Scope, receive: Receive, send: Send) -> None:
+    await receive()
+    await send({"type": "lifespan.startup.unknown"})
+
+
+def test_a_lifespan_message_of_another_type_reaches_the_server_untouched() -> None:
+    sent: list[dict[str, object]] = []
+
+    async def receive() -> dict[str, object]:
+        return {"type": "lifespan.startup"}
+
+    async def send(message: dict[str, object]) -> None:
+        sent.append(message)
+
+    asyncio.run(
+        _behind_the_middleware(_sends_an_unknown_lifespan_message)(
+            {"type": "lifespan"}, receive, send
+        )
+    )
+
+    assert sent == [{"type": "lifespan.startup.unknown"}]

@@ -23,7 +23,7 @@ which receive the request's trace through `outgoing_headers()`; and the platform
 Module owners in `logline`:
 
 - `configuration` owns `configure`: the root JSON handler on stdout, the root level from `LOG_LEVEL`, the
-  `logline.request` and `logline.lifespan` level pins, the capped library loggers' levels (HTTP clients, `mcp` and
+  `logline.request` level pin, the capped library loggers' levels (HTTP clients, `mcp` and
   `sqlalchemy.dialects.postgresql` at WARNING, `piper` at ERROR), the routing of uvicorn's loggers and the
   installing of the `process_failures` hooks.
 - `process_failures` owns the three hooks `configure` installs, `sys.excepthook`, `threading.excepthook` and
@@ -61,7 +61,7 @@ Module owners in `logline`:
   reads `trace_id` from it and hands it on as headers or, for a message, as a `traceparent` value.
 
 `record` uses `standard` and `trace`; `request` uses `step`, `lifespan` and `asgi`; `configuration` uses `record`, `uvicorn_records` and
-`process_failures` and names the request and lifespan loggers; `testing` uses `configuration`.
+`process_failures` and names the request logger; `testing` uses `configuration`.
 `request` imports no web framework; an import contract keeps `logline` free of frameworks, servers and
 HTTP clients.
 
