@@ -117,7 +117,7 @@ class _Judge:
         self._loggers: dict[str, _Kind] = {}
         self._timers: set[str] = set()
         self._calls_by_name: defaultdict[str, list[ast.Call]] = defaultdict(list)
-        self._literal_parameters: dict[tuple[ast.AST, str], bool] = {}
+        self._literal_parameters: dict[tuple[str, str, tuple[str, ...], bool], bool] = {}
         for parent in ast.walk(tree):
             for child in ast.iter_child_nodes(parent):
                 self._parents[child] = parent
@@ -286,11 +286,12 @@ class _Judge:
         keyword_only = [argument.arg for argument in parameters.kwonlyargs]
         if event.id not in (*positional, *keyword_only):
             return False
-        key = (function, event.id)
+        is_method = isinstance(self._parents.get(function), ast.ClassDef)
+        key = (function.name, event.id, tuple(positional), is_method)
         if key not in self._literal_parameters:
             calls = self._calls_by_name.get(function.name, [])
             self._literal_parameters[key] = bool(calls) and all(
-                _is_matching_literal(self._passed(call, event.id, positional, function))
+                _is_matching_literal(self._passed(call, event.id, positional, is_method))
                 for call in calls
             )
         return self._literal_parameters[key]
@@ -300,16 +301,14 @@ class _Judge:
         call: ast.Call,
         parameter: str,
         positional: list[str],
-        function: ast.FunctionDef | ast.AsyncFunctionDef,
+        is_method: bool,
     ) -> ast.expr | None:
         for keyword in call.keywords:
             if keyword.arg == parameter:
                 return keyword.value
         if parameter not in positional:
             return None
-        is_bound_method = isinstance(call.func, ast.Attribute) and isinstance(
-            self._parents.get(function), ast.ClassDef
-        )
+        is_bound_method = is_method and isinstance(call.func, ast.Attribute)
         index = positional.index(parameter) - (1 if is_bound_method else 0)
         leading = call.args[: index + 1]
         if index < 0 or len(leading) <= index or any(isinstance(a, ast.Starred) for a in leading):

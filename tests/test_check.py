@@ -1,5 +1,6 @@
 import ast
 import sys
+import time
 from pathlib import Path, PurePath
 
 import pytest
@@ -434,6 +435,26 @@ _UVICORN_CASES = [
 )
 def test_a_source_breaks_exactly_the_rows_its_rule_names(source: str, expected: list[Rule]) -> None:
     assert _rules(source) == expected
+
+
+@pytest.mark.parametrize(
+    "definition",
+    [
+        "def note(event):\n    logger.info(event)\n",
+        "def note(event):\n    logger.info(event)\n    logger.warning(event)\n",
+    ],
+    ids=["one function logged once", "one function logged twice"],
+)
+def test_a_crafted_file_of_repeated_functions_is_checked_in_linear_time(definition: str) -> None:
+    repeats = 4000
+    source = _STDLIB + (definition + 'note("job.done")\n') * repeats
+
+    started = time.perf_counter()
+    findings = check(source, PurePath("host.py"))
+    elapsed = time.perf_counter() - started
+
+    assert not findings
+    assert elapsed < 3.0  # quadratic scanning took 15 s here; linear takes well under 1 s
 
 
 def test_a_finding_names_its_path_and_the_place_of_the_node() -> None:
