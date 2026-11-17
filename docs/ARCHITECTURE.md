@@ -44,12 +44,13 @@ Module owners in `logline`:
   `StepTimer`, which writes a step's `.ended` line through the standard-library logger the caller names, so
   `record` shapes it like any library's line.
 - `testing` owns `configured`, the host tests' way to run `configure` and restore the logging state it
-  changed, the three `process_failures` hooks included; it is the one module that reads `configuration`'s list of touched loggers.
+  changed, the three `process_failures` hooks included; it is the one module that reads
+  `configuration`'s list of touched loggers.
 - `trace` owns the request's and the unit's trace: it starts or continues it in OpenTelemetry's context,
   reads `trace_id` from it and hands it on as headers or, for a message, as a `traceparent` value.
 
-`record` and `request` use `trace`; `request` uses `step`; `configuration` uses `record`, `uvicorn_records` and `process_failures` and names
-the request logger; `testing` uses `configuration`.
+`record` and `request` use `trace`; `request` uses `step`; `configuration` uses `record`, `uvicorn_records` and
+`process_failures` and names the request logger; `testing` uses `configuration`.
 `request` imports no web framework; an import contract keeps `logline` free of frameworks, servers and
 HTTP clients.
 

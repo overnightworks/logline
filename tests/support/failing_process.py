@@ -45,5 +45,3 @@ if __name__ == "__main__":
             _raise_in_a_thread()
         case "warning":
             warnings.warn(SECRET, DeprecationWarning, stacklevel=1)
-        case "streamed_warning":
-            warnings.showwarning(SECRET, DeprecationWarning, "host.py", 1, file=sys.stderr)

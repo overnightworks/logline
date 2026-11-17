@@ -1,3 +1,4 @@
+import io
 import subprocess
 import sys
 import threading
@@ -6,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from logline import process_failures
 from logline.testing import configured
 from tests.support.failing_process import SECRET
 from tests.support.lines import BASE_KEYS, Line, json_lines
@@ -116,8 +118,19 @@ def test_a_thread_that_raises_writes_a_critical_line_in_process(
     assert (line["level"], line["error_type"]) == ("critical", "ValueError")
 
 
-def test_a_warning_sent_to_a_named_stream_stays_text_in_that_stream() -> None:
-    result = _run_failing_process("streamed_warning")
+def test_a_warning_sent_to_a_named_stream_stays_text_in_that_stream(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # pytest records every warning, whatever stream it names, so the standard display is replaced
+    # by one that writes the stream's text as the standard library does.
+    def write_to_stream(message, category, filename, lineno, file=None, line=None):  # noqa: ANN001, ANN202
+        file.write(warnings.formatwarning(message, category, filename, lineno, line))
 
-    assert SECRET in result.stderr
-    assert "python_warning.raised" not in result.stdout
+    monkeypatch.setattr(process_failures, "_STANDARD_SHOWWARNING", write_to_stream)
+    stream = io.StringIO()
+
+    with configured("warnings"):
+        warnings.showwarning(SECRET, DeprecationWarning, "host.py", 1, file=stream)
+
+    assert SECRET in stream.getvalue()
+    assert capsys.readouterr().out == ""
