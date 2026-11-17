@@ -176,10 +176,7 @@ class _UvicornErrorRecords(logging.Filter):
 
     @staticmethod
     def _passes_without_the_mapping(record: logging.LogRecord) -> bool:
-        try:
-            return not _carries_content(record)
-        except Exception:  # noqa: BLE001 - a record that cannot be judged is dropped
-            return False
+        return not _carries_content(record)
 
     def _keeps(self, record: logging.LogRecord) -> bool:
         call = _lifespan_call()
