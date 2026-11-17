@@ -13,7 +13,7 @@ import uvicorn
 from fastapi import FastAPI
 from starlette.types import Receive, Scope, Send
 from websockets.asyncio.client import connect
-from websockets.exceptions import ConnectionClosed, InvalidStatus
+from websockets.exceptions import ConnectionClosed, InvalidHandshake
 
 from logline import configure
 from tests.support.apps import (
@@ -328,12 +328,17 @@ def test_an_unknown_uvicorn_record_passes_unchanged(
     assert not {"reason", "error_type"} & line.keys()
 
 
+async def _refused_upgrade(url: str) -> None:
+    # A refusal reaches the client as InvalidStatus, or as InvalidMessage where the server
+    # writes the denial response with a duplicate Content-Length header.
+    with pytest.raises(InvalidHandshake):
+        await connect(url)
+
+
 def _refuse_upgrades(paths: list[str], implementation: str) -> None:
     async def exercise(base_url: str) -> None:
         for path in paths:
-            with pytest.raises(InvalidStatus):
-                async with connect(base_url.replace("http", "ws") + path):
-                    pass
+            await _refused_upgrade(base_url.replace("http", "ws") + path)
 
     serve(uvicorn.Config(build_app(), log_config=None, ws=implementation), exercise)
 
