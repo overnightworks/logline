@@ -1,0 +1,8 @@
+claim_id = "b775c63a205a460c905f836b0ddb7623"
+agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
+role = "builder"
+base = "281800e26c0d0b20f91b1d0bc2a06fae96b74fc3"
+branch = "claude/issue-41-uvicorn-records-as-coded-events"
+scope = ["README.md", "docs/ARCHITECTURE.md", "src/logline", "tests"]
+opened_commit = "99afddc9fd6d6c26860cfa12c9ff29d70c30d2a9"
+whole_reason = "One filter on uvicorn.error with its real-server proof and its README and architecture lines."
