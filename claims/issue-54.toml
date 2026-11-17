@@ -1,8 +1,0 @@
-claim_id = "3d03c9b6edd24ec1ba23ab531d3541d2"
-agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
-role = "builder"
-base = "2c634f0b9a1d43bcca58558100d2193dab8cac6a"
-branch = "claude/issue-54-crash-lines"
-scope = ["README.md", "docs/ARCHITECTURE.md", "src/logline", "tests"]
-opened_commit = "0f53880f4142a0a32f0eb386f39ae06e5394a99c"
-whole_reason = "One extension of configure with its subprocess proof, its testing restore and its README lines."
