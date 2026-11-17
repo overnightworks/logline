@@ -1,8 +1,0 @@
-claim_id = "4b6281b05cec49fd9218983426244bf9"
-agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
-role = "builder"
-base = "3c62b78699c1342107bc832ce09d52d73d5d6d04"
-branch = "claude/issue-43-lifespan-failure-traceback-text"
-scope = ["README.md", "docs/ARCHITECTURE.md", "src/logline/configuration.py", "tests"]
-opened_commit = "0d99ebd6579a7107a35520a431926d9e4447f537"
-whole_reason = "One extension of the uvicorn.error filter with its real-server proof and README line."
