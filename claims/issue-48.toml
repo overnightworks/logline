@@ -1,8 +1,0 @@
-claim_id = "4bbf810f5c944ab392618d6baffad3a2"
-agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
-role = "builder"
-base = "9431b840fbb9cdc0791a7e14998b8e99e5760f7a"
-branch = "claude/issue-48-websocket-refusal-and-lifecycle-events"
-scope = ["README.md", "docs/ARCHITECTURE.md", "src/logline", "tests"]
-opened_commit = "ce69262b3b1e77f995a85932b028365ce9aa9a6a"
-whole_reason = "One extension of logline's uvicorn record mapping with its real-server proof, README and architecture lines."
