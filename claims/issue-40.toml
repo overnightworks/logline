@@ -1,0 +1,7 @@
+claim_id = "892b752e3df346638f33547595642190"
+agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
+role = "builder"
+base = "e562bff2160acc6d65f2be8d0783d2da4eebc14c"
+branch = "claude/issue-40-browser-code-not-covered"
+scope = ["README.md"]
+opened_commit = "164046f2b90c466819602af8b358c56735130b22"
