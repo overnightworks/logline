@@ -39,7 +39,8 @@ Module owners in `logline`:
   keys, the deny list of field names and suffixes (`is_denied_field`) and the event-name pattern. No other module
   holds a copy of them.
 - `record` owns the record shape: the processors that copy a standard-library record's scalar `extra=` fields
-  first (never `event`, `exception` or `color_message`), then stamp `ts`, `level`, `service`, `version`,
+  first (never `event`, `exception` or `color_message`), keep only the scalar fields of a structlog event,
+  render a non-finite float as `null`, then stamp `ts`, `level`, `service`, `version`,
   `logger` and `trace_id`, render exceptions as structlog's text traceback, and drop every field `standard`
   denies.
 - `request` owns the request line, the per-request record in `scope["state"]` and the functions that set

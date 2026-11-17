@@ -88,9 +88,11 @@ object with these keys, plus the key-value fields the caller adds:
 | `trace_id` | the running request's trace id as 32 hex digits, `null` outside a request |
 
 A caller's own field named like one of these keys (`base_keys` in `src/logline/standard.json`) is overwritten. The
-scalar `extra=` fields (text, numbers, booleans, `null`) of a standard-library record reach the line, and cannot
-override these keys or `event`; an object is not copied, and neither are `exception` (the key the traceback
-renders into) and uvicorn's `color_message`. An
+scalar rule holds on both write paths: only text, numbers, booleans and `null` reach the line, so an object or a
+nested value is dropped from a structlog event as from a standard-library record's `extra=` fields. A caller's field
+cannot override these keys or, on the standard-library path, `event`; neither path copies a caller's `exception` (the
+key the traceback renders into), and the standard-library path drops uvicorn's `color_message`. A `nan` or infinite
+number is written `null`, never `NaN` or `Infinity`. An
 exception renders as Python's text traceback in `exception`: its frames, its message and the whole chain
 (`__cause__`, `__context__`, the members of an `ExceptionGroup`), never local variables.
 An image build bakes `SERVICE_VERSION` from the release it builds.
@@ -101,6 +103,8 @@ The middleware writes one line per HTTP request on the logger `logline.request`,
 `logline.REQUEST_EVENT` (`request.ended`) and `outcome`, `method`, `route`, `status`, `duration_ms`, `sub` and
 `ip`:
 
+- `method` is one of `CONNECT`, `DELETE`, `GET`, `HEAD`, `OPTIONS`, `PATCH`, `POST`, `PUT` and `TRACE`, and any other
+  token is `_OTHER`, so the field takes a closed set of values.
 - `outcome` is `failed` when the app raised an `Exception` or the status is 5xx, `cancelled` when the app raised
   another `BaseException` (a cancellation), and `ok` otherwise, a 4xx status included: a refused request is
   the app's answer, not a failure. Such a `BaseException` still reaches the server, which answers 500 before

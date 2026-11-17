@@ -274,6 +274,33 @@ def _add_logging_routes(app: FastAPI) -> None:
         )
         return {"ok": True}
 
+    @app.get("/non-text-event")
+    async def non_text_event() -> dict[str, bool]:
+        structlog.get_logger("tests.event").info({"inner": 1})
+        return {"ok": True}
+
+    @app.get("/eventless-line")
+    async def eventless_line() -> dict[str, bool]:
+        structlog.get_logger("tests.eventless").info(order_id="o-18")
+        return {"ok": True}
+
+    @app.get("/hostile-fields")
+    async def hostile_fields() -> dict[str, bool]:
+        structlog.get_logger("tests.structlog").info(
+            "structlog with hostile fields",
+            order_id="o-17",
+            connection=object(),
+            nested={"inner": 1},
+            exception="forged traceback",
+            ratio=float("nan"),
+            ceiling=float("inf"),
+        )
+        logging.getLogger("tests.stdlib").warning(
+            "stdlib with hostile fields",
+            extra={"ratio": float("nan"), "floor": float("-inf")},
+        )
+        return {"ok": True}
+
     @app.get("/denied-fields")
     async def denied_fields(name: str) -> dict[str, bool]:
         structlog.get_logger("tests.denied").info("a line", order_id="o-17", **{name: "value"})
