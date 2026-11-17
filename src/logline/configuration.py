@@ -153,11 +153,11 @@ class _UvicornErrorRecords(logging.Filter):
     """Drop the `uvicorn.error` records that carry content and name the failure records."""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        if _carries_content(record):
-            return False
         call = _lifespan_call()
         if call and call.function == _UVICORN_LIFESPAN_SEND:
             _LIFESPAN_FAILURES[call.protocol] = sys.exception()
+            return False
+        if _carries_content(record):
             return False
         _name_known_record(record, call)
         return True

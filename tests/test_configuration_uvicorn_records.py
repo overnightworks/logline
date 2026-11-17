@@ -24,6 +24,8 @@ _LOCAL_HOST = "127.0.0.1"
 # TEST-NET-1 (RFC 5737): no local interface owns it, so binding fails without any network.
 _UNOWNED_HOST = "203.0.113.1"
 _FAILURE_MESSAGE = "lifespan failure message"
+# The text of uvicorn's WebSocket request line, which the content filter drops from a record.
+_WEBSOCKET_LINE_TEXT = '"WebSocket %s"'
 _REQUEST_SECRET = "request-secret"
 
 
@@ -50,13 +52,13 @@ def _content_of(line: Line) -> str:
     return json.dumps({key: value for key, value in line.items() if key not in {"ts", "exception"}})
 
 
-def _lifespan_app(*, fail_at_startup: bool) -> FastAPI:
+def _lifespan_app(*, fail_at_startup: bool, message: str = _FAILURE_MESSAGE) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         if fail_at_startup:
-            raise RuntimeError(_FAILURE_MESSAGE)
+            raise RuntimeError(message)
         yield
-        raise RuntimeError(_FAILURE_MESSAGE)
+        raise RuntimeError(message)
 
     return FastAPI(lifespan=lifespan)
 
@@ -160,6 +162,13 @@ def _startup_failure() -> tuple[str, ...]:
     return ()
 
 
+def _startup_failure_quoting_a_websocket_line() -> tuple[str, ...]:
+    app = _lifespan_app(fail_at_startup=True, message=f"failed on {_WEBSOCKET_LINE_TEXT}")
+    with contextlib.suppress(SystemExit):
+        _serve_without_requests(app)
+    return ()
+
+
 def _shutdown_failure() -> tuple[str, ...]:
     _serve_without_requests(_lifespan_app(fail_at_startup=False))
     return ()
@@ -223,6 +232,13 @@ def _shutdown_failure() -> tuple[str, ...]:
             {"event": "app_startup.failed", "error_type": "RuntimeError"},
             True,
             id="startup",
+        ),
+        pytest.param(
+            _startup_failure_quoting_a_websocket_line,
+            "error",
+            {"event": "app_startup.failed", "error_type": "RuntimeError"},
+            True,
+            id="startup whose message quotes a websocket line",
         ),
         pytest.param(
             _shutdown_failure,
