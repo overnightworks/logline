@@ -77,7 +77,7 @@ def _json_stdout_handler(processors: list[structlog.typing.Processor]) -> loggin
     return handler
 
 
-def _route_uvicorn_through_root(root_level: int) -> None:
+def _route_uvicorn_through_root() -> None:
     for name in _UVICORN_LOGGERS:
         uvicorn_logger = logging.getLogger(name)
         uvicorn_logger.handlers.clear()
@@ -85,7 +85,9 @@ def _route_uvicorn_through_root(root_level: int) -> None:
         uvicorn_logger.propagate = True
     logging.getLogger("uvicorn.access").addFilter(_DROP_ALL)
     uvicorn_error = logging.getLogger("uvicorn.error")
-    uvicorn_error.setLevel(min(root_level, logging.INFO))
+    # INFO whatever the root level: a refusal is INFO and must be seen under a quiet root, and
+    # websockets' DEBUG frames, which carry content, never reach the filter under a debug root.
+    uvicorn_error.setLevel(logging.INFO)
     uvicorn_error.addFilter(UVICORN_ERROR_RECORDS)
 
 
@@ -111,5 +113,5 @@ def configure(service: str) -> None:
     logging.getLogger(REQUEST_LOGGER_NAME).setLevel(logging.INFO)
     for name, level in _CAPPED_LOGGER_LEVELS.items():
         logging.getLogger(name).setLevel(max(level, root_level))
-    _route_uvicorn_through_root(root_level)
+    _route_uvicorn_through_root()
     install_process_failure_hooks()

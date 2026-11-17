@@ -555,3 +555,32 @@ def test_a_second_configure_leaves_the_uvicorn_lines_as_they_were(
         ("info", "app_shutdown.completed"),
         ("info", "server_process.finished"),
     ]
+
+
+def test_a_failing_lookup_in_the_filter_passes_the_record_and_keeps_the_server_up(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def lifespan_call_without_self() -> None:
+        raise KeyError("self")
+
+    monkeypatch.setattr("logline.uvicorn_records._lifespan_call", lifespan_call_without_self)
+    configure("uvicorn-service")
+
+    _start_and_stop(uvicorn.Config(build_app(), log_config=None))
+
+    events = [line["event"] for line in _uvicorn_lines(capsys.readouterr().out)]
+    assert "Application startup complete." in events
+    assert "Application shutdown complete." in events
+
+
+def test_a_websocket_under_the_debug_level_writes_no_uvicorn_debug_line(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LOG_LEVEL", "debug")
+    configure("uvicorn-service")
+
+    _refuse_upgrades([WEBSOCKET_DENIED_PATH], "websockets-sansio")
+
+    output = capsys.readouterr().out
+    assert _lines_at(output, "debug") == []
+    assert _the_one_line(output, _REFUSED)["level"] == "info"

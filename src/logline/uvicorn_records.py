@@ -165,6 +165,15 @@ class _UvicornErrorRecords(logging.Filter):
             _UPGRADE_REFUSED_IN_TASK.set(True)
         if not logging.getLogger().isEnabledFor(record.levelno):
             return False
+        try:
+            return self._keeps(record)
+        except Exception:  # noqa: BLE001 - see below
+            # The mapping reads uvicorn's frames, locals and templates, and logline declares no
+            # uvicorn bound; a filter that raises propagates into uvicorn's own code, which
+            # would turn a changed uvicorn into a crash. The record passes as written instead.
+            return True
+
+    def _keeps(self, record: logging.LogRecord) -> bool:
         call = _lifespan_call()
         if call and call.function == _UVICORN_LIFESPAN_SEND:
             _LIFESPAN_FAILURES[call.protocol] = sys.exception()
