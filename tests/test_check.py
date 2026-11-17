@@ -446,12 +446,12 @@ def test_column_counts_characters_not_bytes() -> None:
 
 def test_check_imports_only_the_standard_library_and_logline_standard() -> None:
     module = Path(check_module.__file__).read_text(encoding="utf-8")
-    imported = {
-        node.module if isinstance(node, ast.ImportFrom) else alias.name
-        for node in ast.walk(ast.parse(module))
-        if isinstance(node, (ast.Import, ast.ImportFrom))
-        for alias in (node.names if isinstance(node, ast.Import) else [None])
-    }
+    imported: set[str] = set()
+    for node in ast.walk(ast.parse(module)):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module is not None:
+            imported.add(node.module)
     foreign = {
         name
         for name in imported
