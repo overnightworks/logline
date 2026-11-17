@@ -1,7 +1,0 @@
-claim_id = "4ce86fb46dd149f997626d9a3563509d"
-agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
-role = "builder"
-base = "4ad622fbefd29f735c0ab9c8465d6c973534bf4c"
-branch = "claude/issue-56-no-claimed-check"
-scope = ["README.md", "docs/VISION.md"]
-opened_commit = "fb206956534c5d9ccdd10cbb7f0bdd646dfadcba"
