@@ -7,6 +7,8 @@ import os
 import sys
 import weakref
 from dataclasses import dataclass
+from types import TracebackType
+from typing import cast
 
 import structlog
 from structlog.processors import JSONRenderer
@@ -86,10 +88,12 @@ def _bind_failure(error: OSError) -> _CodedEvent:
     return _CodedEvent("server_bind.failed", reason)
 
 
+_ExceptionInfo = tuple[type[BaseException], BaseException, TracebackType]
+
+
 def _logged_exception_type_name(record: logging.LogRecord) -> str:
-    assert record.exc_info
-    exception_type = record.exc_info[0]
-    assert exception_type
+    # uvicorn logs `exc_info=exc`, which the logging module expands to the full triple.
+    exception_type, _, _ = cast("_ExceptionInfo", record.exc_info)
     return exception_type.__name__
 
 
