@@ -120,8 +120,9 @@ tests. The lowest direct dependency floors run the same tests.
   is known by its frame: the filter walks the stack to `send` in `uvicorn.lifespan.on`, drops the record, and
   keeps the exception it was handling under the `LifespanOn` object (`self`). uvicorn then logs its own coded
   template from the same object, and the exception moves onto that line. The recognition is coupled to that
-  module name, the function name `send` and the local `self`; uvicorn renaming one makes the failure message
-  pass unchanged. A record it does not know passes unchanged.
+  module name, the function name `send` and the local `self`; uvicorn renaming the module or the function makes
+  the failure message pass unchanged, and renaming `self` raises a `KeyError` from the filter. A record it does
+  not know passes unchanged.
 - `configure` takes over the root's handlers: one foreign stream handler would break "every line is one
   JSON object on stdout".
 
