@@ -257,18 +257,11 @@ and their `reason`, `status` and `error_type` values are public: renaming one is
 | `server_bind.failed` | error | the server cannot bind its address | `port_taken` (address in use) or `os_error` | `error_type`: the `OSError` class |
 | `http_request.refused` | warning | uvicorn refuses a request | `invalid_request` (not valid HTTP) or `unsupported_upgrade` | none |
 | `asgi_app.failed` | error | the app raises in an HTTP request or a WebSocket, with the traceback in `exception` | none | `error_type`: the exception class |
-| `app_startup.failed`, `app_shutdown.failed` | error | the app's lifespan fails, with the traceback in `exception` | none | `error_type`: the exception class |
 | `websocket_upgrade.refused` | info | websockets answers a WebSocket upgrade with an HTTP status other than 101 | none | `status`: the HTTP status |
 | `websocket_handshake.failed` | error | the app returned without answering the WebSocket upgrade | `handshake_incomplete` | none |
 | `server_process.started`, `server_process.finished` | info | the server process starts and ends | none | none |
-| `app_startup.completed`, `app_shutdown.completed` | info | the app's lifespan finished | none | none |
 | `server_listen.started` | info | the server listens, whatever the address form | none | none |
 | `server_shutdown.started` | info | the server begins to stop | none | none |
-
-A lifespan failure the app reports through its failure message, as Starlette and FastAPI do, is one line. uvicorn
-first logs that message, which under Starlette and FastAPI is the traceback text; `configure` drops it and puts the
-exception on the coded line. An app that reports its failure without an exception gets the coded line with neither
-`error_type` nor `exception`.
 
 A refused upgrade is one `websocket_upgrade.refused` line and no error line: uvicorn's websockets-sansio protocol
 also reports an upgrade the app answered with a denial response as an app that returned without completing the
@@ -282,8 +275,33 @@ shutdown" lines are dropped, because the next line says the same.
 Under `ws="wsproto"` uvicorn writes no refusal record: a denial response, a close before accept and an unanswered
 upgrade produce no `websocket_upgrade.refused` line, and `websocket_handshake.failed` is still written.
 
-Any other uvicorn record passes as uvicorn writes it, including the `Exception in 'lifespan' protocol` record of an
-app that raises from its lifespan without reporting a failure.
+Any other uvicorn record passes as uvicorn writes it.
+
+### The app's startup and shutdown lines
+
+`RequestLineMiddleware` writes these lines from the ASGI `lifespan` scope, on the logger `logline.lifespan`, so they
+read the same under any ASGI server. They are public: renaming one is a breaking change.
+
+| Event | Level | When | Other field |
+| --- | --- | --- | --- |
+| `app_startup.completed`, `app_shutdown.completed` | info | the app answered the phase with `complete` | none |
+| `app_startup.failed`, `app_shutdown.failed` | error | the app answered the phase with `failed`, or raised after it received the phase's message, with the traceback in `exception` | `error_type`: the exception class |
+
+A `failed` answer carries the traceback of the exception being handled when the app sends it, as Starlette and FastAPI
+do; an app that sends `failed` outside an exception gets the line without `error_type` and `exception`. The
+middleware forwards the answer without its free-text `message`, so the server writes none. This changes what the
+server receives: hypercorn shows no message in its own error. An exception raised before the app received
+`lifespan.startup` is the ASGI spec's "lifespan unsupported" and writes no line.
+
+The completed lines follow `LOG_LEVEL`, as uvicorn's did: at `warning` or above they are not written. The failed
+lines are at error.
+
+A host without the middleware, or an app that has no lifespan, gets no `app_*` lines. Behind uvicorn the middleware
+owns them: `configure` drops uvicorn's own startup and shutdown lines, so a host that does not wrap its app loses
+them.
+
+**Breaking:** the `logger` field of the four `app_*` lines moves from `uvicorn.error` to `logline.lifespan`. A host
+that filters or routes on the old logger changes it; a host that reads the `event` needs no migration.
 
 ## Never logged
 

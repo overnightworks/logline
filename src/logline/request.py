@@ -3,13 +3,13 @@
 This module imports no web framework: it speaks ASGI.
 """
 
-from collections.abc import Awaitable, Callable, MutableMapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
 
 import structlog
 
+from logline.asgi import ASGIApp, Message, Receive, Scope, Send
+from logline.lifespan import run_lifespan
 from logline.step import Outcome, Stopwatch
 from logline.trace import request_trace
 
@@ -21,12 +21,6 @@ __all__ = [
     "set_route",
     "set_sub",
 ]
-
-type Scope = MutableMapping[str, Any]
-type Message = MutableMapping[str, Any]
-type Receive = Callable[[], Awaitable[Message]]
-type Send = Callable[[Message], Awaitable[None]]
-type ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
 
 REQUEST_LOGGER_NAME = "logline.request"
 REQUEST_EVENT = "request.ended"
@@ -112,15 +106,25 @@ def _outcome_of_status(status: int) -> Outcome:
 
 
 class RequestLineMiddleware:
-    """ASGI middleware: writes one `logline.request` line per `http` scope and joins its trace."""
+    """ASGI middleware that owns two scopes and passes every other through.
+
+    An `http` scope gets one `logline.request` line and joins its trace. A `lifespan` scope gets
+    the app startup and shutdown lines on `logline.lifespan`, under any ASGI server.
+    """
 
     def __init__(self, app: ASGIApp) -> None:
         self._app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
-            await self._app(scope, receive, send)
-            return
+        match scope["type"]:
+            case "http":
+                await self._write_request_line(scope, receive, send)
+            case "lifespan":
+                await run_lifespan(self._app, scope, receive, send)
+            case _:
+                await self._app(scope, receive, send)
+
+    async def _write_request_line(self, scope: Scope, receive: Receive, send: Send) -> None:
         record = _RequestRecord(sub=None, ip=_client_host(scope), route=None)
         scope.setdefault("state", {})[_STATE_KEY] = record
         sent_status: int | None = None

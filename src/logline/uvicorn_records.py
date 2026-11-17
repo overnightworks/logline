@@ -1,21 +1,14 @@
 """The filter on `uvicorn.error` that drops records which carry content and names uvicorn's own."""
 
 import errno
-import inspect
 import logging
-import sys
-import weakref
 from contextvars import ContextVar
 from dataclasses import dataclass
-from types import TracebackType
-from typing import cast
 
 __all__: list[str] = []
 
 _UVICORN_WEBSOCKET_LINE = '"WebSocket %s"'
 _UVICORN_ASGI_EXCEPTION_TEMPLATE = "Exception in ASGI application\n"
-_UVICORN_LIFESPAN_MODULE = "uvicorn.lifespan.on"
-_UVICORN_LIFESPAN_SEND = "send"
 # websockets' template for a refused upgrade, which both of its servers write on the logger
 # uvicorn hands them, and uvicorn's for an app that returned without completing the handshake.
 _WEBSOCKETS_REFUSAL_TEMPLATE = "connection rejected (%d %s)"
@@ -48,17 +41,23 @@ _CODED_EVENTS_BY_TEMPLATE = {
     _UVICORN_INCOMPLETE_HANDSHAKE_TEMPLATE: _CodedEvent(
         "websocket_handshake.failed", "handshake_incomplete"
     ),
-    "Application startup failed. Exiting.": _CodedEvent("app_startup.failed"),
-    "Application shutdown failed. Exiting.": _CodedEvent("app_shutdown.failed"),
     "Started server process [%d]": _CodedEvent("server_process.started"),
-    "Application startup complete.": _CodedEvent("app_startup.completed"),
     "Shutting down": _CodedEvent("server_shutdown.started"),
-    "Application shutdown complete.": _CodedEvent("app_shutdown.completed"),
     "Finished server process [%d]": _CodedEvent("server_process.finished"),
 }
-# Each says what the line after it says.
+# Each says what another line says: "Waiting for" what the app's lifespan lines report, and the
+# lifespan's own outcome lines and failure record, which the middleware writes from the ASGI
+# messages with their traceback.
 _DROPPED_TEMPLATES = frozenset(
-    {"Waiting for application startup.", "Waiting for application shutdown."}
+    {
+        "Waiting for application startup.",
+        "Waiting for application shutdown.",
+        "Application startup complete.",
+        "Application shutdown complete.",
+        "Application startup failed. Exiting.",
+        "Application shutdown failed. Exiting.",
+        "Exception in 'lifespan' protocol\n",
+    }
 )
 # uvicorn names the address it listens on in several forms (an IPv4 or IPv6 URL, a unix socket, a
 # file descriptor's socket); each template begins alike and carries host, port or path.
@@ -71,40 +70,19 @@ def _bind_failure(error: OSError) -> _CodedEvent:
     return _CodedEvent("server_bind.failed", reason)
 
 
-_ExceptionInfo = tuple[type[BaseException], BaseException, TracebackType]
-
-
-def _logged_exception_type_name(record: logging.LogRecord) -> str:
+def _logged_exception_type_name(record: logging.LogRecord) -> str | None:
     # uvicorn logs `exc_info=exc`, which the logging module expands to the full triple.
-    exception_type, _, _ = cast("_ExceptionInfo", record.exc_info)
-    return exception_type.__name__
+    exc_info = record.exc_info
+    if isinstance(exc_info, tuple) and exc_info and isinstance(exc_info[0], type):
+        return exc_info[0].__name__
+    return None
 
 
-@dataclass(frozen=True)
-class _LifespanCall:
-    function: str
-    protocol: object
-
-
-def _lifespan_call() -> _LifespanCall | None:
-    """The uvicorn lifespan call that is logging the current record, if one is."""
-    frame = inspect.currentframe()
-    while frame and frame.f_globals.get("__name__") != _UVICORN_LIFESPAN_MODULE:
-        frame = frame.f_back
-    return _LifespanCall(frame.f_code.co_name, frame.f_locals["self"]) if frame else None
-
-
-# uvicorn logs the failure message an app sends with its lifespan failure, which is free text and,
-# under Starlette, the traceback with the exception message, and then logs its own coded template.
-# The message is dropped; the exception its sender was handling moves onto the template's line.
-# Both records come from one lifespan protocol object, which keys the exception.
-_LIFESPAN_FAILURES: weakref.WeakKeyDictionary[object, BaseException | None] = (
-    weakref.WeakKeyDictionary()
-)
-
-
-def _take_lifespan_failure(call: _LifespanCall | None) -> BaseException | None:
-    return _LIFESPAN_FAILURES.pop(call.protocol, None) if call else None
+def _refusal_status(record: logging.LogRecord) -> int | None:
+    arguments = record.args
+    if isinstance(arguments, tuple) and arguments and isinstance(arguments[0], int):
+        return arguments[0]
+    return None
 
 
 def _coded_event_of_template(template: object) -> _CodedEvent | None:
@@ -115,13 +93,13 @@ def _coded_event_of_template(template: object) -> _CodedEvent | None:
     return _CODED_EVENTS_BY_TEMPLATE.get(template)
 
 
-def _name_known_record(record: logging.LogRecord, call: _LifespanCall | None) -> None:
+def _name_known_record(record: logging.LogRecord) -> None:
     """Rewrite a uvicorn or websockets record into a literal event, with a code or a status.
 
     A record is known by its message template or by the `OSError` uvicorn logs for a failed bind,
     never by its formatted text. The rewritten record keeps its level and carries no message text,
-    host, port, pid or path; the ASGI exception and a lifespan failure keep their traceback. Any
-    other record stays unchanged.
+    host, port, pid or path; the ASGI exception keeps its traceback. Any other record stays
+    unchanged.
     """
     fields: dict[str, str | int | None] = {}
     if isinstance(record.msg, OSError):
@@ -132,18 +110,14 @@ def _name_known_record(record: logging.LogRecord, call: _LifespanCall | None) ->
         fields["error_type"] = _logged_exception_type_name(record)
     elif record.msg == _WEBSOCKETS_REFUSAL_TEMPLATE:
         coded = _CodedEvent("websocket_upgrade.refused")
-        fields["status"] = cast("tuple[int, str]", record.args)[0]
-    elif coded := _coded_event_of_template(record.msg):
-        if failure := _take_lifespan_failure(call):
-            record.exc_info = (type(failure), failure, failure.__traceback__)
-            fields["error_type"] = type(failure).__name__
-    else:
+        fields["status"] = _refusal_status(record)
+    elif not (coded := _coded_event_of_template(record.msg)):
         return
     if coded.reason:
         fields["reason"] = coded.reason
     record.msg = coded.event
     record.args = ()
-    record.__dict__.update(fields)
+    record.__dict__.update({key: value for key, value in fields.items() if value is not None})
 
 
 def _is_redundant(record: logging.LogRecord) -> bool:
@@ -165,27 +139,9 @@ class _UvicornErrorRecords(logging.Filter):
             _UPGRADE_REFUSED_IN_TASK.set(True)
         if not logging.getLogger().isEnabledFor(record.levelno):
             return False
-        try:
-            return self._keeps(record)
-        except Exception:  # noqa: BLE001 - see below
-            # The mapping reads uvicorn's frames, locals and templates, and logline declares no
-            # uvicorn bound; a filter that raises propagates into uvicorn's own code, which
-            # would turn a changed uvicorn into a crash. The record passes as written unless it
-            # carries content, which is dropped whenever the filter cannot tell it is safe.
-            return self._passes_without_the_mapping(record)
-
-    @staticmethod
-    def _passes_without_the_mapping(record: logging.LogRecord) -> bool:
-        return not _carries_content(record)
-
-    def _keeps(self, record: logging.LogRecord) -> bool:
-        call = _lifespan_call()
-        if call and call.function == _UVICORN_LIFESPAN_SEND:
-            _LIFESPAN_FAILURES[call.protocol] = sys.exception()
-            return False
         if _carries_content(record) or _is_redundant(record):
             return False
-        _name_known_record(record, call)
+        _name_known_record(record)
         return True
 
 

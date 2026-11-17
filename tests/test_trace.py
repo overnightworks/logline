@@ -8,6 +8,7 @@ import uvicorn
 from websockets.asyncio.client import connect
 
 from logline import configure, outgoing_headers
+from logline.lifespan import LIFESPAN_LOGGER_NAME
 from tests.support.apps import build_app
 from tests.support.lines import Line, json_lines, lines_of, request_lines
 from tests.support.serving import serve
@@ -52,7 +53,9 @@ def test_an_incoming_traceparent_gives_every_line_of_the_request_its_trace_id(
     body = _call(path, traceparent=traceparent, tracestate=_INCOMING_TRACESTATE)
 
     lines = json_lines(capsys.readouterr().out)
-    in_request = [line for line in lines if line["logger"] != "uvicorn.error"]
+    in_request = [
+        line for line in lines if line["logger"] not in {"uvicorn.error", LIFESPAN_LOGGER_NAME}
+    ]
     assert len(in_request) == lines_in_the_request
     assert {line["trace_id"] for line in in_request} == {_INCOMING_TRACE_ID}
     outgoing = _traceparent(body)

@@ -30,10 +30,9 @@ Module owners in `logline`:
   `warnings.showwarning`, and the events they write: `process.crashed`, `thread.crashed` and
   `python_warning.raised`, with an `error_type`.
 - `uvicorn_records` owns the filter `configure` puts on `uvicorn.error`: which uvicorn and websockets records it
-  drops and which it names as `server_bind.failed`, `http_request.refused`, `asgi_app.failed`, `app_startup.failed`,
-  `app_shutdown.failed`, `websocket_upgrade.refused`, `websocket_handshake.failed` and the lifecycle events
-  `server_process.started`, `app_startup.completed`, `server_listen.started`, `server_shutdown.started`,
-  `app_shutdown.completed` and `server_process.finished`, with a `reason`, `status` or `error_type`. Those names
+  drops and which it names as `server_bind.failed`, `http_request.refused`, `asgi_app.failed`, `websocket_upgrade.refused`,
+  `websocket_handshake.failed` and the lifecycle events `server_process.started`, `server_listen.started`,
+  `server_shutdown.started` and `server_process.finished`, with a `reason`, `status` or `error_type`. Those names
   and codes are public (README, "Starting uvicorn").
 - `standard` owns the machine rules of the logging standard, read from the package's `standard.json`: the base
   keys, the deny list of field names and suffixes (`is_denied_field`), the event-name pattern and the calls and
@@ -46,6 +45,10 @@ Module owners in `logline`:
   render a non-finite float as `null`, then stamp `ts`, `level`, `service`, `version`,
   `logger` and `trace_id`, render exceptions as structlog's text traceback, and drop every field `standard`
   denies.
+- `lifespan` owns the app startup and shutdown lines (`app_startup.completed`, `app_startup.failed`,
+  `app_shutdown.completed`, `app_shutdown.failed`) on `logline.lifespan`: it runs the app's `lifespan` scope and
+  writes them from the ASGI messages, under any server. `request`'s middleware dispatches to it.
+- `asgi` owns the ASGI type aliases `request` and `lifespan` share.
 - `request` owns the request line, the per-request record in `scope["state"]` and the functions that set
   `sub`, `ip` and `route`.
 - `step` owns `Outcome`, the one owner of the `outcome` values, the stopwatch behind every `duration_ms`, and
@@ -57,7 +60,7 @@ Module owners in `logline`:
 - `trace` owns the request's and the unit's trace: it starts or continues it in OpenTelemetry's context,
   reads `trace_id` from it and hands it on as headers or, for a message, as a `traceparent` value.
 
-`record` uses `standard` and `trace`; `request` uses `step`; `configuration` uses `record`, `uvicorn_records` and
+`record` uses `standard` and `trace`; `request` uses `step`, `lifespan` and `asgi`; `configuration` uses `record`, `uvicorn_records` and
 `process_failures` and names the request logger; `testing` uses `configuration`.
 `request` imports no web framework; an import contract keeps `logline` free of frameworks, servers and
 HTTP clients.
@@ -131,16 +134,17 @@ lowest direct dependency floors run the same tests.
   `OTEL_PROPAGATORS` switch cannot change what the fleet propagates.
 - `configure` puts a drop-all filter on `uvicorn.access`: a later `dictConfig` removes handlers but never
   filters, so the access log, which carries the raw path, stays silent in every start mode.
-- The `uvicorn.error` filter knows a record by uvicorn's message template, by the `OSError` it logs for a bind
-  failure, or by the uvicorn frame that logs it, never by its formatted text, which carries host, port or the
-  app's message. The failure message an app sends with its lifespan failure (under Starlette the traceback text)
-  is known by its frame: the filter walks the stack to `send` in `uvicorn.lifespan.on`, drops the record, and
-  keeps the exception it was handling under the `LifespanOn` object (`self`). uvicorn then logs its own coded
-  template from the same object, and the exception moves onto that line. The recognition is coupled to that
-  module name, the function name `send` and the local `self`; uvicorn renaming the module or the function makes
-  the failure message pass unchanged. Any exception inside the filter's lookup or mapping, a renamed `self`
-  included, passes the record unchanged, or drops it when it carries content, instead of raising into uvicorn, so a
-  changed uvicorn costs a line that is not named, never a crash or a leak. A record it does not know passes unchanged.
+- The `uvicorn.error` filter knows a record by uvicorn's message template or by the `OSError` it logs for a bind
+  failure, never by its formatted text, which carries host, port or the app's message. A record it does not know
+  passes unchanged, and every read it makes of a record (`exc_info`, `args`) is total: a record that lacks what
+  uvicorn normally supplies loses the field, never raises into uvicorn.
+- The app startup and shutdown lines come from the `lifespan` scope the middleware already receives, because every
+  ASGI server runs that scope through the app: no stack walk, no server-specific state. uvicorn's own four
+  `app_*` templates and its "Exception in 'lifespan' protocol" record are dropped by equality, since the middleware
+  writes what they said, with the traceback held at the `failed` send (`sys.exception()`). The middleware strips
+  `message` from the `failed` answer it forwards, so no server logs the app's free text. What never reaches the
+  app (a bind failure, a refused request, the server process lines, an app exception) stays template-mapped and
+  uvicorn-only.
 - A refused WebSocket upgrade and uvicorn's "returned without completing handshake" line come from one task, the one
   uvicorn's websockets-sansio protocol creates for the connection: the filter sets a context variable when it sees
   websockets' refusal template and drops the handshake line when it is set, so the link needs no pid, socket or
