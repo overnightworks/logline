@@ -291,6 +291,9 @@ frames; logline neither masks nor caps them. `configure` also does the following
 raises the floor, so a stricter `LOG_LEVEL` silences the capped logger too:
 
 - renders exceptions as text, never as a dict with local variables;
+- sets `sys.excepthook`, `threading.excepthook` and `warnings.showwarning`, so that the process's death, a thread's death and a
+  Python warning are one line each on stdout (`process.crashed` and `thread.crashed` on `logline.crash`, `python_warning.raised`
+  on `py.warnings`), where Python would print plain text on stderr; `logline.testing.configured` restores all three;
 - sets the `httpx`, `httpx2`, `httpcore` and `httpcore2` loggers to WARNING, because their INFO lines carry the full URL
   with its query; the callee's request line with the same `trace_id` covers the call;
 - sets the `mcp` tree to WARNING, because `mcp.client.streamable_http` logs the session id, which works like a bearer
@@ -346,6 +349,18 @@ line, the same error at each layer.
 - `.failed` is an error outside a timed step.
 
 One event per step, whatever its outcome.
+
+### Crashes and warnings
+
+`configure` replaces Python's plain-text stderr output of three failures with one line on stdout, so a host installs
+no hook of its own. These events and their `error_type` values are public: renaming one is a breaking change.
+A dying process exits with status 1 as before.
+
+| Event | Logger | Level | When | `error_type` |
+| --- | --- | --- | --- | --- |
+| `process.crashed` | `logline.crash` | critical | the process ends on an uncaught exception, with the traceback in `exception` | the exception class |
+| `thread.crashed` | `logline.crash` | critical | a thread ends on an uncaught exception other than `SystemExit`, with the traceback in `exception` | the exception class |
+| `python_warning.raised` | `py.warnings` | warning | Python issues a warning; its message text is written nowhere | the warning category |
 
 ### Shared fields
 

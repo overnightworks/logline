@@ -1,4 +1,7 @@
 import logging
+import sys
+import threading
+import warnings
 from collections.abc import Iterator
 from dataclasses import replace
 
@@ -17,8 +20,10 @@ def isolated_logging(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Give each test the process's logging as it was, and no logline environment."""
     monkeypatch.delenv("LOG_LEVEL", raising=False)
     monkeypatch.delenv("SERVICE_VERSION", raising=False)
+    hooks = (sys.excepthook, threading.excepthook, warnings.showwarning)
     saved = [LoggerState.of(logging.getLogger(name)) for name in TOUCHED_LOGGER_NAMES]
     yield
+    sys.excepthook, threading.excepthook, warnings.showwarning = hooks
     for state in saved:
         if state.logger is logging.getLogger():
             # The root's handlers belong to pytest's capture, which swaps them between the phases of
