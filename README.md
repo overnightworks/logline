@@ -255,11 +255,13 @@ are public: renaming one is a breaking change.
 | `asgi_app.failed` | the app raises in an HTTP request or a WebSocket, with the traceback in `exception` | none | the exception class |
 | `app_startup.failed`, `app_shutdown.failed` | the app's lifespan fails, with the traceback in `exception` | none | the exception class |
 
-A lifespan failure is one line. uvicorn first logs the failure message the app sends, which under Starlette and
-FastAPI is the traceback text; `configure` drops that message and puts the exception on the coded line. An app that
-reports its failure without an exception gets the coded line with neither `error_type` nor `exception`.
+A lifespan failure the app reports through its failure message, as Starlette and FastAPI do, is one line. uvicorn
+first logs that message, which under Starlette and FastAPI is the traceback text; `configure` drops it and puts the
+exception on the coded line. An app that reports its failure without an exception gets the coded line with neither
+`error_type` nor `exception`.
 
-Any other uvicorn record passes as uvicorn writes it.
+Any other uvicorn record passes as uvicorn writes it, including the `Exception in 'lifespan' protocol` record of an
+app that raises from its lifespan without reporting a failure.
 
 ## Never logged
 
