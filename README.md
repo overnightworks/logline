@@ -275,6 +275,9 @@ one connection, which holds for uvicorn's default WebSocket protocol; the refusa
 so a root level above INFO drops both. uvicorn's "Waiting for application startup" and "Waiting for application
 shutdown" lines are dropped, because the next line says the same.
 
+Under `ws="wsproto"` uvicorn writes no refusal record: a denial response, a close before accept and an unanswered
+upgrade produce no `websocket_upgrade.refused` line, and `websocket_handshake.failed` is still written.
+
 Any other uvicorn record passes as uvicorn writes it, including the `Exception in 'lifespan' protocol` record of an
 app that raises from its lifespan without reporting a failure.
 
