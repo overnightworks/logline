@@ -24,7 +24,11 @@ Module owners in `logline`:
 
 - `configuration` owns `configure`: the root JSON handler on stdout, the root level from `LOG_LEVEL`, the
   `logline.request` level pin, the capped library loggers' levels (HTTP clients, `mcp` and
-  `sqlalchemy.dialects.postgresql` at WARNING, `piper` at ERROR) and the routing of uvicorn's loggers.
+  `sqlalchemy.dialects.postgresql` at WARNING, `piper` at ERROR), the routing of uvicorn's loggers and the
+  installing of the `process_failures` hooks.
+- `process_failures` owns the three hooks `configure` installs, `sys.excepthook`, `threading.excepthook` and
+  `warnings.showwarning`, and the events they write: `process.crashed`, `thread.crashed` and
+  `python_warning.raised`, with an `error_type`.
 - `uvicorn_records` owns the filter `configure` puts on `uvicorn.error`: which uvicorn and websockets records it
   drops and which it names as `server_bind.failed`, `http_request.refused`, `asgi_app.failed`, `app_startup.failed`,
   `app_shutdown.failed`, `websocket_upgrade.refused`, `websocket_handshake.failed` and the lifecycle events
@@ -40,12 +44,12 @@ Module owners in `logline`:
   `StepTimer`, which writes a step's `.ended` line through the standard-library logger the caller names, so
   `record` shapes it like any library's line.
 - `testing` owns `configured`, the host tests' way to run `configure` and restore the logging state it
-  changed; it is the one module that reads `configuration`'s list of touched loggers.
+  changed, the three `process_failures` hooks included; it is the one module that reads `configuration`'s list of touched loggers.
 - `trace` owns the request's and the unit's trace: it starts or continues it in OpenTelemetry's context,
   reads `trace_id` from it and hands it on as headers or, for a message, as a `traceparent` value.
 
-`record` and `request` use `trace`; `request` uses `step`; `configuration` uses `record` and `uvicorn_records` and names
-the request logger.
+`record` and `request` use `trace`; `request` uses `step`; `configuration` uses `record`, `uvicorn_records` and `process_failures` and names
+the request logger; `testing` uses `configuration`.
 `request` imports no web framework; an import contract keeps `logline` free of frameworks, servers and
 HTTP clients.
 

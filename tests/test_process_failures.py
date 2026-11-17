@@ -114,3 +114,10 @@ def test_a_thread_that_raises_writes_a_critical_line_in_process(
 
     line = _the_line_of(capsys.readouterr().out, "thread.crashed")
     assert (line["level"], line["error_type"]) == ("critical", "ValueError")
+
+
+def test_a_warning_sent_to_a_named_stream_stays_text_in_that_stream() -> None:
+    result = _run_failing_process("streamed_warning")
+
+    assert SECRET in result.stderr
+    assert "python_warning.raised" not in result.stdout

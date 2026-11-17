@@ -11,6 +11,7 @@ __all__: list[str] = []
 
 _CRASH_LOGGER = logging.getLogger("logline.crash")
 _WARNINGS_LOGGER = logging.getLogger("py.warnings")
+_STANDARD_SHOWWARNING = warnings.showwarning
 PROCESS_CRASHED = "process.crashed"
 THREAD_CRASHED = "thread.crashed"
 PYTHON_WARNING_RAISED = "python_warning.raised"
@@ -54,6 +55,10 @@ def _python_warning_raised(
     file: TextIO | None = None,
     line: str | None = None,
 ) -> None:
+    if file is not None:
+        # A caller that names a stream asked for text in it, as `logging.captureWarnings` honours.
+        _STANDARD_SHOWWARNING(message, category, filename, lineno, file, line)
+        return
     # The message text and the source location stay out of the line.
     _WARNINGS_LOGGER.warning(PYTHON_WARNING_RAISED, extra={"error_type": category.__name__})
 
