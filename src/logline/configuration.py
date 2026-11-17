@@ -108,5 +108,5 @@ def configure(service: str) -> None:
     root.setLevel(root_level)
     logging.getLogger(REQUEST_LOGGER_NAME).setLevel(logging.INFO)
     for name, level in _CAPPED_LOGGER_LEVELS.items():
-        logging.getLogger(name).setLevel(level)
+        logging.getLogger(name).setLevel(max(level, root_level))
     _route_uvicorn_through_root(root_level)

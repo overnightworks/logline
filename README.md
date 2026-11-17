@@ -287,7 +287,8 @@ At the default level and above, no line carries credentials, tokens, cookies, he
 messages, prompts, transcripts, audio) or raw paths and query strings: logline writes none of them, and a host
 adds none through a field, so it logs ids and the `trace_id`. At `LOG_LEVEL=debug`, DEBUG records of other
 libraries pass as those libraries write them, and some of those write paths, query strings, header values or
-frames; logline neither masks nor caps them. `configure` also does the following at every `LOG_LEVEL`:
+frames; logline neither masks nor caps them. `configure` also does the following at every `LOG_LEVEL`; a cap only
+raises the floor, so a stricter `LOG_LEVEL` silences the capped logger too:
 
 - renders exceptions as text, never as a dict with local variables;
 - sets the `httpx`, `httpx2`, `httpcore` and `httpcore2` loggers to WARNING, because their INFO lines carry the full URL

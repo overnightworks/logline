@@ -79,3 +79,39 @@ def test_the_request_line_appears_at_the_error_level(
     lines = json_lines(capsys.readouterr().out)
     assert [line["status"] for line in request_lines(lines)] == [200]
     assert {line["level"] for line in lines} == {"info"}
+
+
+@pytest.mark.parametrize(
+    ("setting", "logger", "emitted", "appears"),
+    [
+        ("error", "httpx", logging.WARNING, False),
+        ("error", "mcp.client.streamable_http", logging.WARNING, False),
+        ("error", "sqlalchemy.dialects.postgresql", logging.WARNING, False),
+        ("critical", "piper", logging.ERROR, False),
+        ("error", "httpx", logging.ERROR, True),
+        ("debug", "httpx", logging.INFO, False),
+        ("debug", "httpx", logging.WARNING, True),
+        ("debug", "piper", logging.WARNING, False),
+        ("debug", "piper", logging.ERROR, True),
+    ],
+)
+def test_a_logger_cap_only_raises_the_floor_of_the_log_level(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    setting: str,
+    logger: str,
+    emitted: int,
+    appears: bool,
+) -> None:
+    monkeypatch.setenv("LOG_LEVEL", setting)
+    configure("levels")
+
+    async def exercise(base_url: str) -> None:
+        async with httpx.AsyncClient(base_url=base_url) as client:
+            await client.get("/items/1")
+        logging.getLogger(logger).log(emitted, "capped library line")
+
+    serve(uvicorn.Config(build_app(), log_config=None), exercise)
+
+    events = {line["event"] for line in json_lines(capsys.readouterr().out)}
+    assert ("capped library line" in events) is appears
