@@ -1,8 +1,0 @@
-claim_id = "8c992af4ced64710927ad56efe5be0d0"
-agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
-role = "builder"
-base = "39c676e343a57227fcd2a128dd64fcba2d088946"
-branch = "claude/issue-71-logging-checker"
-scope = [".importlinter", "AGENTS.md", "README.md", "docs/ARCHITECTURE.md", "src/logline", "tests"]
-opened_commit = "13a557ac6ba9a5cd1681d4b96f81c49472eaec1b"
-whole_reason = "One new checker module with its data key, unit proofs, import contract, amended proof rule and the documents that name it."
