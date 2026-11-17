@@ -10,6 +10,7 @@ import httpx
 import pytest
 import uvicorn
 from fastapi import FastAPI
+from starlette.types import Receive, Scope, Send
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
@@ -34,6 +35,11 @@ def _coded_lines(output: str, event_prefix: str) -> list[Line]:
     ]
 
 
+def _lines_at(output: str, level: str) -> list[Line]:
+    lines = lines_of(json_lines(output), _UVICORN_LOGGER)
+    return [line for line in lines if line["level"] == level]
+
+
 def _the_one_line(output: str, event: str) -> Line:
     (line,) = [line for line in _coded_lines(output, event) if line["event"] == event]
     return line
@@ -44,13 +50,13 @@ def _content_of(line: Line) -> str:
     return json.dumps({key: value for key, value in line.items() if key not in {"ts", "exception"}})
 
 
-def _lifespan_app(*, fail_at_startup: bool) -> FastAPI:
+def _lifespan_app(*, fail_at_startup: bool, message: str = _FAILURE_MESSAGE) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         if fail_at_startup:
-            raise RuntimeError(_FAILURE_MESSAGE)
+            raise RuntimeError(message)
         yield
-        raise RuntimeError(_FAILURE_MESSAGE)
+        raise RuntimeError(message)
 
     return FastAPI(lifespan=lifespan)
 
@@ -129,9 +135,34 @@ def _websocket_app_exception(implementation: str) -> Callable[[], tuple[str, ...
     return drive
 
 
+async def _app_that_reports_its_failure_outside_an_exception(
+    scope: Scope, receive: Receive, send: Send
+) -> None:
+    assert scope["type"] == "lifespan"
+    await receive()
+    await send({"type": "lifespan.startup.failed", "message": _FAILURE_MESSAGE})
+
+
+def _startup_failure_without_exception() -> tuple[str, ...]:
+    config = uvicorn.Config(
+        _app_that_reports_its_failure_outside_an_exception, log_config=None, lifespan="on"
+    )
+    with contextlib.suppress(SystemExit):
+        serve(config, _nothing)
+    return ()
+
+
 def _startup_failure() -> tuple[str, ...]:
     app = _lifespan_app(fail_at_startup=True)
     # Recent uvicorn exits the process on a failed startup; older releases return from `serve`.
+    with contextlib.suppress(SystemExit):
+        _serve_without_requests(app)
+    return ()
+
+
+def _startup_failure_quoting_a_websocket_line() -> tuple[str, ...]:
+    # The text of uvicorn's WebSocket request line, which the content filter drops from a record.
+    app = _lifespan_app(fail_at_startup=True, message='failed on "WebSocket %s"')
     with contextlib.suppress(SystemExit):
         _serve_without_requests(app)
     return ()
@@ -195,10 +226,32 @@ def _shutdown_failure() -> tuple[str, ...]:
             id="websocket app exception, websockets-sansio",
         ),
         pytest.param(
-            _startup_failure, "error", {"event": "app_startup.failed"}, False, id="startup"
+            _startup_failure,
+            "error",
+            {"event": "app_startup.failed", "error_type": "RuntimeError"},
+            True,
+            id="startup",
         ),
         pytest.param(
-            _shutdown_failure, "error", {"event": "app_shutdown.failed"}, False, id="shutdown"
+            _startup_failure_quoting_a_websocket_line,
+            "error",
+            {"event": "app_startup.failed", "error_type": "RuntimeError"},
+            True,
+            id="startup whose message quotes a websocket line",
+        ),
+        pytest.param(
+            _shutdown_failure,
+            "error",
+            {"event": "app_shutdown.failed", "error_type": "RuntimeError"},
+            True,
+            id="shutdown",
+        ),
+        pytest.param(
+            _startup_failure_without_exception,
+            "error",
+            {"event": "app_startup.failed"},
+            False,
+            id="startup reported outside an exception",
         ),
     ],
 )
@@ -213,7 +266,9 @@ def test_a_uvicorn_failure_logs_one_literal_event_with_its_code(
 
     forbidden_in_content = drive()
 
-    line = _the_one_line(capsys.readouterr().out, str(expected["event"]))
+    output = capsys.readouterr().out
+    line = _the_one_line(output, str(expected["event"]))
+    assert len(_lines_at(output, level)) == 1
     assert line["level"] == level
     assert expected.items() <= line.items()
     assert line.keys() <= {*BASE_KEYS, "reason", "error_type", "exception"}
@@ -233,6 +288,7 @@ def test_a_uvicorn_failure_logs_one_literal_event_with_its_code(
         "Application",
         "Exception in",
         _REQUEST_SECRET,
+        _FAILURE_MESSAGE,
     ):
         assert forbidden not in content
 
