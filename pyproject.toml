@@ -49,6 +49,9 @@ version = {attr = "logline.__version__"}
 where = ["src"]
 include = ["logline*"]
 
+[tool.setuptools.package-data]
+logline = ["standard.json"]
+
 [tool.ruff]
 target-version = "py314"
 line-length = 100

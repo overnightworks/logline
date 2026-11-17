@@ -35,9 +35,13 @@ Module owners in `logline`:
   `server_process.started`, `app_startup.completed`, `server_listen.started`, `server_shutdown.started`,
   `app_shutdown.completed` and `server_process.finished`, with a `reason`, `status` or `error_type`. Those names
   and codes are public (README, "Starting uvicorn").
+- `standard` owns the machine rules of the logging standard, read from the package's `standard.json`: the base
+  keys, the deny list of field names and suffixes (`is_denied_field`) and the event-name pattern. No other module
+  holds a copy of them.
 - `record` owns the record shape: the processors that copy a standard-library record's scalar `extra=` fields
   first (never `event`, `exception` or `color_message`), then stamp `ts`, `level`, `service`, `version`,
-  `logger` and `trace_id`, and render exceptions as structlog's text traceback.
+  `logger` and `trace_id`, render exceptions as structlog's text traceback, and drop every field `standard`
+  denies.
 - `request` owns the request line, the per-request record in `scope["state"]` and the functions that set
   `sub`, `ip` and `route`.
 - `step` owns `Outcome`, the one owner of the `outcome` values, the stopwatch behind every `duration_ms`, and
@@ -49,7 +53,7 @@ Module owners in `logline`:
 - `trace` owns the request's and the unit's trace: it starts or continues it in OpenTelemetry's context,
   reads `trace_id` from it and hands it on as headers or, for a message, as a `traceparent` value.
 
-`record` and `request` use `trace`; `request` uses `step`; `configuration` uses `record`, `uvicorn_records` and
+`record` uses `standard` and `trace`; `request` uses `step`; `configuration` uses `record`, `uvicorn_records` and
 `process_failures` and names the request logger; `testing` uses `configuration`.
 `request` imports no web framework; an import contract keeps `logline` free of frameworks, servers and
 HTTP clients.
