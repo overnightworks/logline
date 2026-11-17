@@ -1,0 +1,8 @@
+claim_id = "f85020f8c1fc4ec6bd9359601068ab48"
+agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
+role = "builder"
+base = "5c91974a66e65ec47a2a517a9e8c0c3d67730c1e"
+branch = "claude/issue-73-asgi-owned-lifespan-lines"
+scope = ["README.md", "docs/ARCHITECTURE.md", "src/logline", "tests"]
+opened_commit = "9af7173013067853282802aec4235b6e9493cc80"
+whole_reason = "One move of the lifespan lines from uvicorn templates to a middleware-owned module, with proof and docs."
