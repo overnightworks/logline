@@ -4,6 +4,7 @@ import sys
 import threading
 import warnings
 from pathlib import Path
+from typing import TextIO
 
 import pytest
 
@@ -123,7 +124,15 @@ def test_a_warning_sent_to_a_named_stream_stays_text_in_that_stream(
 ) -> None:
     # pytest records every warning, whatever stream it names, so the standard display is replaced
     # by one that writes the stream's text as the standard library does.
-    def write_to_stream(message, category, filename, lineno, file=None, line=None):  # noqa: ANN001, ANN202
+    def write_to_stream(  # noqa: PLR0913
+        message: Warning | str,
+        category: type[Warning],
+        filename: str,
+        lineno: int,
+        file: TextIO | None = None,
+        line: str | None = None,
+    ) -> None:
+        assert file is not None
         file.write(warnings.formatwarning(message, category, filename, lineno, line))
 
     monkeypatch.setattr(process_failures, "_STANDARD_SHOWWARNING", write_to_stream)
