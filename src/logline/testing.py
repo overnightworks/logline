@@ -4,6 +4,9 @@ Importing this module imports no test framework.
 """
 
 import logging
+import sys
+import threading
+import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -44,16 +47,23 @@ def configured(service: str) -> Iterator[None]:
 
     Restored are the handlers, filters, level and propagation of the root logger, uvicorn's, the
     HTTP clients', the request and the capped library loggers, structlog's configuration and the
-    stdlib logger class structlog's factory installs, as they were on entry.
+    stdlib logger class structlog's factory installs, the process's and the threads' exception hooks
+    and the warning display, as they were on entry.
     """
     logger_states = [LoggerState.of(logging.getLogger(name)) for name in TOUCHED_LOGGER_NAMES]
     logger_class = logging.getLoggerClass()
     structlog_was_configured = structlog.is_configured()
     structlog_configuration = structlog.get_config()
+    process_hook = sys.excepthook
+    thread_hook = threading.excepthook
+    warning_hook = warnings.showwarning
     try:
         configure(service)
         yield
     finally:
+        sys.excepthook = process_hook
+        threading.excepthook = thread_hook
+        warnings.showwarning = warning_hook
         logging.setLoggerClass(logger_class)
         for state in logger_states:
             state.restore()

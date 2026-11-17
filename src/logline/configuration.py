@@ -8,6 +8,7 @@ import structlog
 from structlog.processors import JSONRenderer
 from structlog.stdlib import BoundLogger, LoggerFactory, ProcessorFormatter, filter_by_level
 
+from logline.process_failures import install_process_failure_hooks
 from logline.record import record_shape
 from logline.request import REQUEST_LOGGER_NAME
 from logline.uvicorn_records import UVICORN_ERROR_RECORDS
@@ -92,7 +93,8 @@ def configure(service: str) -> None:
     """Make every log line of this process one JSON object on stdout; call once at the entry point.
 
     `service` names the app or service. `SERVICE_VERSION` is read here and `LOG_LEVEL` sets the
-    root level; a malformed `LOG_LEVEL` raises `ValueError` before anything changes.
+    root level; a malformed `LOG_LEVEL` raises `ValueError` before anything changes. It also writes
+    an uncaught exception, a thread's uncaught exception and a Python warning as record lines.
     """
     root_level = _root_level()
     processors = record_shape(service, os.environ.get("SERVICE_VERSION") or None)
@@ -110,3 +112,4 @@ def configure(service: str) -> None:
     for name, level in _CAPPED_LOGGER_LEVELS.items():
         logging.getLogger(name).setLevel(max(level, root_level))
     _route_uvicorn_through_root(root_level)
+    install_process_failure_hooks()
