@@ -356,6 +356,22 @@ _OWN_SETUP_CASES = [
 _UVICORN_CASES = [
     _case("run clean", "import uvicorn\nuvicorn.run(app, log_config=None)\n"),
     _case("Config clean", "import uvicorn\nuvicorn.Config(app, log_config=None)\n"),
+    _case("main.run clean", "import uvicorn.main\nuvicorn.main.run(app, log_config=None)\n"),
+    _case(
+        "main.run without log_config",
+        "import uvicorn.main\nuvicorn.main.run(app)\n",
+        Rule.UVICORN_LOG_CONFIG,
+    ),
+    _case(
+        "positional options hide log_config",
+        'import uvicorn\nuvicorn.run(app, "h", 1, None)\n',
+        Rule.UVICORN_OPTIONS_HIDDEN,
+    ),
+    _case(
+        "starred positional hides options",
+        "import uvicorn\nuvicorn.run(*arguments)\n",
+        Rule.UVICORN_OPTIONS_HIDDEN,
+    ),
     _case(
         "from import",
         "from uvicorn import run\nrun(app, log_config=None)\n",

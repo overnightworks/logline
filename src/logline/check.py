@@ -61,7 +61,7 @@ _ANNOTATION_KINDS = {
 }
 _STEP_TIMERS = frozenset({"logline.StepTimer", "logline.step.StepTimer"})
 _FIELD_BINDERS = frozenset({"structlog.contextvars.bind_contextvars"})
-_UVICORN_STARTS = frozenset({"uvicorn.run", "uvicorn.Config"})
+_UVICORN_STARTS = frozenset({"uvicorn.run", "uvicorn.main.run", "uvicorn.Config"})
 
 _Row = tuple[ast.expr | ast.keyword | ast.stmt, Rule]
 
@@ -338,7 +338,11 @@ def _extra_rows(extra: ast.Dict) -> Iterator[_Row]:
 
 
 def _uvicorn_rows(call: ast.Call) -> Iterator[_Row]:
-    options_hidden = any(keyword.arg is None for keyword in call.keywords)
+    options_hidden = (
+        len(call.args) > 1
+        or any(isinstance(a, ast.Starred) for a in call.args)
+        or any(keyword.arg is None for keyword in call.keywords)
+    )
     if options_hidden:
         yield call, Rule.UVICORN_OPTIONS_HIDDEN
     named = {keyword.arg: keyword for keyword in call.keywords if keyword.arg is not None}

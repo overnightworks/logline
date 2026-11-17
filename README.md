@@ -604,9 +604,9 @@ a breaking change.
 | `message_args` | a standard-library logging call passes positional arguments after the event |
 | `denied_field` | a field on the deny list is a keyword of a structlog call, of `.bind(...)`, of `bind_contextvars(...)`, of `StepTimer(...)` or `step.add(...)`, or a literal key of an `extra=` dict |
 | `own_setup` | the source calls one of `own_setup_calls` in `standard.json` (`logging.basicConfig`, `structlog.configure`, ...) or assigns `sys.excepthook` or `threading.excepthook` |
-| `uvicorn_log_config` | `uvicorn.run` or `uvicorn.Config` is called without `log_config=None` |
-| `uvicorn_log_level` | `uvicorn.run` or `uvicorn.Config` is called with a `log_level` |
-| `uvicorn_options_hidden` | `uvicorn.run` or `uvicorn.Config` is called with a `**` argument, which hides its options |
+| `uvicorn_log_config` | `uvicorn.run`, `uvicorn.main.run` or `uvicorn.Config` is called without `log_config=None` |
+| `uvicorn_log_level` | `uvicorn.run`, `uvicorn.main.run` or `uvicorn.Config` is called with a `log_level` |
+| `uvicorn_options_hidden` | one of them is called with a `**` argument, a `*` argument or a positional argument after the app, which hide its options |
 
 A logging call is `debug`, `info`, `warning`, `error`, `exception`, `critical` or `log` (the event is its
 second argument) on a logger the same file binds from `logging.getLogger`, `structlog.get_logger`,
