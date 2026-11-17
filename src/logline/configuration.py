@@ -76,14 +76,16 @@ def _json_stdout_handler(processors: list[structlog.typing.Processor]) -> loggin
     return handler
 
 
-def _route_uvicorn_through_root() -> None:
+def _route_uvicorn_through_root(root_level: int) -> None:
     for name in _UVICORN_LOGGERS:
         uvicorn_logger = logging.getLogger(name)
         uvicorn_logger.handlers.clear()
         uvicorn_logger.setLevel(logging.NOTSET)
         uvicorn_logger.propagate = True
     logging.getLogger("uvicorn.access").addFilter(_DROP_ALL)
-    logging.getLogger("uvicorn.error").addFilter(UVICORN_ERROR_RECORDS)
+    uvicorn_error = logging.getLogger("uvicorn.error")
+    uvicorn_error.setLevel(min(root_level, logging.INFO))
+    uvicorn_error.addFilter(UVICORN_ERROR_RECORDS)
 
 
 def configure(service: str) -> None:
@@ -107,4 +109,4 @@ def configure(service: str) -> None:
     logging.getLogger(REQUEST_LOGGER_NAME).setLevel(logging.INFO)
     for name, level in _CAPPED_LOGGER_LEVELS.items():
         logging.getLogger(name).setLevel(level)
-    _route_uvicorn_through_root()
+    _route_uvicorn_through_root(root_level)
