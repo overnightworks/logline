@@ -279,6 +279,11 @@ def _add_logging_routes(app: FastAPI) -> None:
         structlog.get_logger("tests.event").info({"inner": 1})
         return {"ok": True}
 
+    @app.get("/eventless-line")
+    async def eventless_line() -> dict[str, bool]:
+        structlog.get_logger("tests.eventless").info(order_id="o-18")
+        return {"ok": True}
+
     @app.get("/hostile-fields")
     async def hostile_fields() -> dict[str, bool]:
         structlog.get_logger("tests.structlog").info(

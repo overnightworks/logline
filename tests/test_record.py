@@ -157,6 +157,22 @@ def test_a_structlog_line_with_a_non_text_event_keeps_its_event_as_text(
     assert line["event"] == "{'inner': 1}"
 
 
+def test_a_structlog_line_without_an_event_keeps_its_fields_and_gains_no_event(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure("honest")
+
+    async def exercise(base_url: str) -> None:
+        async with httpx.AsyncClient(base_url=base_url) as client:
+            await client.get("/eventless-line")
+
+    serve(uvicorn.Config(build_app(), log_config=None), exercise)
+
+    (line,) = [line for line in _logged_lines(capsys) if line["logger"] == "tests.eventless"]
+    assert line["order_id"] == "o-18"
+    assert "event" not in line
+
+
 def test_a_non_finite_float_is_null_on_both_write_paths(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
