@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from types import TracebackType
 from typing import cast
 
-__all__ = ["UVICORN_ERROR_RECORDS"]
+__all__: list[str] = []
 
 _UVICORN_WEBSOCKET_LINE = '"WebSocket %s"'
 _UVICORN_ASGI_EXCEPTION_TEMPLATE = "Exception in ASGI application\n"
