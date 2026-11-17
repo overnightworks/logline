@@ -274,6 +274,11 @@ def _add_logging_routes(app: FastAPI) -> None:
         )
         return {"ok": True}
 
+    @app.get("/non-text-event")
+    async def non_text_event() -> dict[str, bool]:
+        structlog.get_logger("tests.event").info({"inner": 1})
+        return {"ok": True}
+
     @app.get("/hostile-fields")
     async def hostile_fields() -> dict[str, bool]:
         structlog.get_logger("tests.structlog").info(
