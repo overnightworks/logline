@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from starlette.types import Receive, Scope, Send
 
 from logline import RequestLineMiddleware, configure
+from logline.asgi import Message
 from logline.lifespan import LIFESPAN_LOGGER_NAME
 from logline.standard import BASE_KEYS
 from tests.support.apps import build_app
@@ -192,12 +193,12 @@ async def _sends_an_unknown_lifespan_message(scope: Scope, receive: Receive, sen
 
 
 def test_a_lifespan_message_of_another_type_reaches_the_server_untouched() -> None:
-    sent: list[dict[str, object]] = []
+    sent: list[Message] = []
 
-    async def receive() -> dict[str, object]:
+    async def receive() -> Message:
         return {"type": "lifespan.startup"}
 
-    async def send(message: dict[str, object]) -> None:
+    async def send(message: Message) -> None:
         sent.append(message)
 
     asyncio.run(
