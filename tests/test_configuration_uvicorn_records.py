@@ -3,6 +3,7 @@ import contextlib
 import json
 import logging
 import socket
+from collections import Counter
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -335,10 +336,14 @@ async def _refused_upgrade(url: str) -> None:
         await connect(url)
 
 
-def _refuse_upgrades(paths: list[str], implementation: str) -> None:
+def _refuse_upgrades(paths: list[str], implementation: str, *, concurrently: bool = False) -> None:
     async def exercise(base_url: str) -> None:
-        for path in paths:
-            await _refused_upgrade(base_url.replace("http", "ws") + path)
+        urls = [base_url.replace("http", "ws") + path for path in paths]
+        if concurrently:
+            await asyncio.gather(*(_refused_upgrade(url) for url in urls))
+        else:
+            for url in urls:
+                await _refused_upgrade(url)
 
     serve(uvicorn.Config(build_app(), log_config=None, ws=implementation), exercise)
 
@@ -425,6 +430,22 @@ def test_a_websocket_upgrade_the_app_does_not_accept_logs_literal_events(
         assert "Unauthorized" not in _content_of(line)
 
 
+def test_concurrent_upgrades_each_log_their_own_outcome(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure("uvicorn-service")
+
+    _refuse_upgrades(
+        [WEBSOCKET_DENIED_PATH, WEBSOCKET_SILENT_PATH] * 2, "websockets-sansio", concurrently=True
+    )
+
+    assert Counter(_websocket_lines(capsys.readouterr().out)) == {
+        ("info", _REFUSED, WEBSOCKET_DENIED_STATUS): 2,
+        _INCOMPLETE: 2,
+        ("info", _REFUSED, 500): 2,
+    }
+
+
 def test_a_websocket_refusal_below_the_root_level_writes_no_line(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -458,31 +479,72 @@ def _listening_on_a_socket_descriptor(directory: Path) -> uvicorn.Config:
     return uvicorn.Config(build_app(), fd=listener.detach(), log_config=None)
 
 
+def _listening_with_the_lifespan_off(_directory: Path) -> uvicorn.Config:
+    return uvicorn.Config(build_app(), host=_LOCAL_HOST, port=0, lifespan="off", log_config=None)
+
+
+_LIFECYCLE_EVENTS = [
+    "server_process.started",
+    "app_startup.completed",
+    "server_listen.started",
+    "server_shutdown.started",
+    "app_shutdown.completed",
+    "server_process.finished",
+]
+_LIFECYCLE_EVENTS_WITHOUT_THE_LIFESPAN = [
+    event for event in _LIFECYCLE_EVENTS if not event.startswith("app_")
+]
+
+
+def _uvicorn_lines(output: str) -> list[Line]:
+    return lines_of(json_lines(output), _UVICORN_LOGGER)
+
+
 @pytest.mark.parametrize(
-    "config_for",
+    ("config_for", "events"),
     [
-        pytest.param(_listening_on_a_port, id="port"),
-        pytest.param(_listening_on_a_unix_socket, id="unix socket"),
-        pytest.param(_listening_on_a_socket_descriptor, id="socket descriptor"),
+        pytest.param(_listening_on_a_port, _LIFECYCLE_EVENTS, id="port"),
+        pytest.param(_listening_on_a_unix_socket, _LIFECYCLE_EVENTS, id="unix socket"),
+        pytest.param(_listening_on_a_socket_descriptor, _LIFECYCLE_EVENTS, id="socket descriptor"),
+        pytest.param(
+            _listening_with_the_lifespan_off,
+            _LIFECYCLE_EVENTS_WITHOUT_THE_LIFESPAN,
+            id="lifespan off",
+        ),
     ],
 )
 def test_a_start_and_stop_logs_only_the_literal_lifecycle_events(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
     config_for: Callable[[Path], uvicorn.Config],
+    events: list[str],
 ) -> None:
     configure("uvicorn-service")
 
     _start_and_stop(config_for(tmp_path))
 
-    lines = lines_of(json_lines(capsys.readouterr().out), _UVICORN_LOGGER)
+    lines = _uvicorn_lines(capsys.readouterr().out)
+    assert [(line["level"], line["event"]) for line in lines] == [
+        ("info", event) for event in events
+    ]
+    for line in lines:
+        assert line.keys() == BASE_KEYS
+
+
+def test_a_second_configure_leaves_the_uvicorn_lines_as_they_were(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure("uvicorn-service")
+    configure("uvicorn-service")
+
+    _refuse_upgrades([WEBSOCKET_DENIED_PATH], "websockets-sansio")
+
+    lines = _uvicorn_lines(capsys.readouterr().out)
     assert [(line["level"], line["event"]) for line in lines] == [
         ("info", "server_process.started"),
         ("info", "app_startup.completed"),
-        ("info", "server_listen.started"),
+        ("info", _REFUSED),
         ("info", "server_shutdown.started"),
         ("info", "app_shutdown.completed"),
         ("info", "server_process.finished"),
     ]
-    for line in lines:
-        assert line.keys() == BASE_KEYS
