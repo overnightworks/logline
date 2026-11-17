@@ -18,8 +18,8 @@ from lines, never a second channel in the app. A trace reaches every call a proc
 hand, so no call site can drop it. Every connection and every end leaves its line: a socket session like a
 request, a crash like any error. The standard is data: one description of the record, the event names and the
 fields, from which the documents' tables, the fleet's check, a host's tests and the platform's views are
-derived, so none can drift from another. It is made by and for agents: every rule a machine can check is in
-the checks, and the documents say what an agent cannot derive from the code.
+derived, so none can drift from another. It is made by and for agents: every rule a machine can check belongs
+in the checks, and the documents say what an agent cannot derive from the code.
 
 ## Who uses it today
 

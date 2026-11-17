@@ -235,7 +235,7 @@ logline shows what the app logs; the app keeps its logs meaningful and safe:
 - No `logging.config.dictConfig` after `configure`: it replaces the handlers `configure` installed.
 - uvicorn runs with `log_config=None` (see below).
 
-quality's check rule for hosts is where these duties get checked.
+No check enforces these duties yet; quality#889 owns the host check.
 
 ## Starting uvicorn
 
@@ -317,9 +317,10 @@ The rules for what a covered host logs and how. What a line never carries is [Ne
 - New code complies at once; existing repositories adopt now.
 - `service` is one name per deployed process: the app's main process takes the app's name, every other
   process `<app>-<role>`, such as `presentator-worker`.
-- The rules a machine checks: a released logline tag, a literal event name of the form below, no
+- The rules a machine can check: a released logline tag, a literal event name of the form below, no
   value formatted into a message, no field from the deny list, and no logging setup of the
-  host's own. The record drops a field on the deny list.
+  host's own. No check enforces them yet; quality#889 owns the host check and, once it lands, this
+  sentence. The record drops a field on the deny list.
 - The deny list, the event-name pattern and the record's base keys are the data file
   `src/logline/standard.json` in the logline package, which owns them; `logline.standard` reads it.
 - Whether the log points, levels and single errors are right is judged by a scheduled audit.
