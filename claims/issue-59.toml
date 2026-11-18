@@ -1,0 +1,8 @@
+claim_id = "e395e54a09074f9694e7d3282984a366"
+agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
+role = "builder"
+base = "dfd135038a109365aa29a11cfff2e296403a09b2"
+branch = "claude/issue-59-size-ratchet-and-tests"
+scope = ["quality", "src/logline/step.py", "tests"]
+opened_commit = "945497f8ce48aaa6a77a7f1307af0ec5a8fa00c6"
+whole_reason = "One test and ratchet cleanup across the test support, three test modules and the baseline."
