@@ -11,7 +11,7 @@ from collections.abc import Callable
 from enum import StrEnum
 from types import TracebackType
 
-__all__ = ["Outcome", "StepTimer"]
+__all__: list[str] = []
 
 type Scalar = str | int | float | bool | None
 

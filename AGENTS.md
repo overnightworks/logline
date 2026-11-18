@@ -16,7 +16,7 @@
 - FastAPI, uvicorn, httpx and websockets are test dependencies only; `.importlinter` keeps them out of `logline`.
 - Runtime behaviour is proven by driving a real FastAPI app through the middleware under a real `uvicorn.Server` and reading stdout, with only the clock and randomness faked; pure logic, such as `logline.check`, by unit tests. Branch coverage stays 100 %.
 - The trace id has one owner, OpenTelemetry's context through `logline.trace`; no module keeps a second copy.
-- A name is public when its module's `__all__` lists it. A pull request that changes a public name states its **Breaking** line and the hosts' migration or "No migration".
+- The public modules are `logline`, `logline.check`, `logline.testing` and `logline.trace`; a name is public when a public module's `__all__` lists it, and every other module declares `__all__: list[str] = []`. A pull request that changes a public name states its **Breaking** line and the hosts' migration or "No migration".
 
 ## Owners
 

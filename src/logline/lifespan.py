@@ -10,7 +10,7 @@ import structlog
 
 from logline.asgi import ASGIApp, Message, Receive, Scope, Send
 
-__all__ = ["LIFESPAN_LOGGER_NAME", "run_lifespan"]
+__all__: list[str] = []
 
 LIFESPAN_LOGGER_NAME = "logline.lifespan"
 

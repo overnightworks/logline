@@ -15,14 +15,7 @@ from logline.step import Outcome, Stopwatch
 from logline.trace import request_trace
 from logline.websocket import SessionEnd, run_websocket
 
-__all__ = [
-    "REQUEST_EVENT",
-    "REQUEST_LOGGER_NAME",
-    "RequestLineMiddleware",
-    "set_client_ip",
-    "set_route",
-    "set_sub",
-]
+__all__: list[str] = []
 
 REQUEST_LOGGER_NAME = "logline.request"
 REQUEST_EVENT = "request.ended"
