@@ -1,20 +1,2 @@
 [gate]
 mandatory_jobs = ["checks", "lowest-direct"]
-
-[[gate.loosened]]
-what = 'import contract "logline.check imports only the standard library and logline.standard" changes forbidden_modules'
-item = "#75"
-date = 2026-11-18
-reason = "logline.* replaces the hand list of runtime modules, so a new module is forbidden to logline.check without an edit"
-
-[[gate.loosened]]
-what = 'import contract "logline.check imports only the standard library and logline.standard" ignores logline.check -> logline.standard'
-item = "#75"
-date = 2026-11-18
-reason = "logline.check may import logline.standard, the one logline module the wildcard would otherwise forbid"
-
-[[gate.loosened]]
-what = 'import contract "no runtime module imports logline.check" changes source_modules'
-item = "#75"
-date = 2026-11-18
-reason = "logline.* replaces the hand list of runtime modules, so a new module is forbidden to import logline.check without an edit"

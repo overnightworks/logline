@@ -28,9 +28,16 @@ source_modules =
 forbidden_modules =
     structlog
     opentelemetry
-    logline.*
-ignore_imports =
-    logline.check -> logline.standard
+    logline.asgi
+    logline.configuration
+    logline.lifespan
+    logline.process_failures
+    logline.record
+    logline.request
+    logline.step
+    logline.testing
+    logline.trace
+    logline.uvicorn_records
 
 [importlinter:contract:no-runtime-module-imports-logline-check]
 name = no runtime module imports logline.check
@@ -38,6 +45,16 @@ type = forbidden
 as_packages = False
 source_modules =
     logline
-    logline.*
+    logline.asgi
+    logline.configuration
+    logline.lifespan
+    logline.process_failures
+    logline.record
+    logline.request
+    logline.standard
+    logline.step
+    logline.testing
+    logline.trace
+    logline.uvicorn_records
 forbidden_modules =
     logline.check
