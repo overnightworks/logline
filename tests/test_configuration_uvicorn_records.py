@@ -287,8 +287,9 @@ def test_a_denied_upgrade_of_uvicorns_older_websockets_implementation_logs_its_r
     configure("uvicorn-service")
 
     async def exercise(base_url: str) -> None:
+        denied_url = base_url.replace("http", "ws") + WEBSOCKET_DENIED_PATH
         with pytest.raises(InvalidHandshake):
-            await connect(base_url.replace("http", "ws") + WEBSOCKET_DENIED_PATH)
+            await connect(denied_url)
 
     serve(uvicorn.Config(build_app(), log_config=None, ws="websockets"), exercise)
 
