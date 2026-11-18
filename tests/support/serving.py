@@ -13,7 +13,6 @@ from logline import configure
 from tests.support.apps import build_app
 from tests.support.lines import Line, json_lines
 
-
 HTTP_IMPLEMENTATIONS = ["h11", "httptools"]
 
 
