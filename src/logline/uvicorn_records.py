@@ -83,7 +83,8 @@ _CODED_EVENTS_BY_TEMPLATE = {
 # messages with their traceback, websockets' "connection open", and uvicorn's two records for an
 # app that returned without answering an upgrade, which the middleware's session line carries.
 # websockets' "connection closed" repeats the end that the session line or the refusal line
-# already reports.
+# reports, or, when the handshake ended in a dropped client or a timeout, belongs to a connection
+# that never became a WebSocket, which has no session line and no refusal line.
 _DROPPED_TEMPLATES = frozenset(
     {
         "Waiting for application startup.",

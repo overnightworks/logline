@@ -1,5 +1,4 @@
 import asyncio
-import socket
 
 import pytest
 import uvicorn
@@ -9,7 +8,7 @@ from logline import configure
 from logline.standard import BASE_KEYS
 from tests.support.lines import Line, json_lines, lines_of
 from tests.support.raw_app import HELD_PATH, HELD_SOCKET_PATH, RawApp
-from tests.support.serving import HTTP_IMPLEMENTATIONS, WrittenEvents
+from tests.support.serving import HTTP_IMPLEMENTATIONS, WrittenEvents, serve_with_server
 
 _UVICORN_LOGGER = "uvicorn.error"
 _WAITING = "server_shutdown.waiting"
@@ -29,30 +28,23 @@ def _stop_with_work_left(
 ) -> None:
     """Stop a server that still has a background task and, if asked, an open WebSocket."""
 
-    async def run() -> None:
-        app = RawApp()
-        listener = socket.socket()
-        listener.bind(("127.0.0.1", 0))
-        listener.listen()
-        base_url = f"http://127.0.0.1:{listener.getsockname()[1]}"
-        config = uvicorn.Config(
-            app,
-            log_config=None,
-            lifespan="off",
-            http=http,
-            timeout_graceful_shutdown=timeout_graceful_shutdown,
-        )
-        server = uvicorn.Server(config)
+    app = RawApp()
+    config = uvicorn.Config(
+        app,
+        log_config=None,
+        lifespan="off",
+        http=http,
+        timeout_graceful_shutdown=timeout_graceful_shutdown,
+    )
+
+    async def exercise(base_url: str, server: uvicorn.Server) -> None:
         with WrittenEvents(_UVICORN_LOGGER) as written:
-            serving = asyncio.create_task(server.serve(sockets=[listener]))
             try:
                 await _hold_and_stop(server, app, written, base_url, open_websocket)
             finally:
                 app.release.set()
-                await serving
-                listener.close()
 
-    asyncio.run(run())
+    serve_with_server(config, exercise)
 
 
 async def _hold_and_stop(

@@ -23,6 +23,17 @@ def serve(config: uvicorn.Config, exercise: Callable[[str], Awaitable[None]]) ->
     so a request made at once waits in its backlog and nothing needs polling. A config that leaves
     `http` on "auto" runs h11, so an installed httptools never changes which parser a test means.
     """
+
+    async def exercise_url(base_url: str, _server: uvicorn.Server) -> None:
+        await exercise(base_url)
+
+    serve_with_server(config, exercise_url)
+
+
+def serve_with_server(
+    config: uvicorn.Config, exercise: Callable[[str, uvicorn.Server], Awaitable[None]]
+) -> None:
+    """Serve like `serve`, and hand `exercise` the server too, for a test that stops it itself."""
     if config.http == "auto":
         config.http = "h11"
 
@@ -34,7 +45,7 @@ def serve(config: uvicorn.Config, exercise: Callable[[str], Awaitable[None]]) ->
         server = uvicorn.Server(config)
         serving = asyncio.create_task(server.serve(sockets=[listener]))
         try:
-            await exercise(base_url)
+            await exercise(base_url, server)
         finally:
             server.should_exit = True
             await serving

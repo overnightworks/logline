@@ -161,8 +161,9 @@ lowest direct dependency floors run the same tests.
   websockets-sansio writes its refusal synchronously in that task, so the filter drops the refusal when the variable is
   set and keeps it when it is not (a malformed upgrade is answered before any app task exists). uvicorn's older
   `websockets` implementation writes the refusal from the handler task, which the variable does not reach, so it
-  writes the refusal beside the session line. websockets' `connection open` and `connection closed` and uvicorn's two "without completing
-  (or sending) handshake" records are dropped by equality, since the session line says what they said.
+  writes the refusal beside the session line. websockets' `connection open`, its `connection closed` (also written when the handshake never produced a session or a
+  refusal, a connection that never became a WebSocket) and uvicorn's two "without completing
+  (or sending) handshake" records are dropped by equality; the session line says what the others said.
   The refusal is INFO, so `configure` opens `uvicorn.error` to INFO
   under a higher root level and the filter drops what the root level would drop after it has seen the refusal.
   `uvicorn.error` stays at INFO under `LOG_LEVEL=debug` too, so websockets' DEBUG frames never reach the filter.
