@@ -20,6 +20,9 @@ which receive the request's trace through `outgoing_headers()`; and the platform
 
 ## 2. Building Block View
 
+The public modules are `logline`, `logline.check`, `logline.testing` and `logline.trace`; a name is public when
+that module's `__all__` lists it. Every other module listed below is internal and may change in any release.
+
 Module owners in `logline`:
 
 - `configuration` owns `configure`: the root JSON handler on stdout, the root level from `LOG_LEVEL`, the
@@ -39,7 +42,8 @@ Module owners in `logline`:
   assignments that are a host's own logging setup. No other module holds a copy of them.
 - `check` owns the checker of those rules over one Python source: `check`, `Finding` and `Rule`. It parses text
   and never imports the checked code. It uses only the standard library and `standard`, no runtime module
-  imports it, and an import contract and a test over its import statements hold both. Hosts never import it; the fleet's quality gate will, once quality#889 lands.
+  imports it, and an import contract and a test over its import statements hold both. It is public
+  (`logline.check`): a host or the fleet's quality gate may import it.
 - `record` owns the record shape: the processors that copy a standard-library record's scalar `extra=` fields
   first (never `event`, `exception` or `color_message`), keep only the scalar fields of a structlog event,
   render a non-finite float as `null`, then stamp `ts`, `level`, `service`, `version`,
