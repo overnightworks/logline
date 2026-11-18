@@ -1,0 +1,7 @@
+claim_id = "04d251d7cede48cda6cd68f4bea27728"
+agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
+role = "builder"
+base = "8fb79379f340265badebf8230afee69c4da16b95"
+branch = "claude/issue-79-release-wheel-asset"
+scope = [".github/workflows/release.yml", "README.md"]
+opened_commit = "a8b99097d843eb65f70e4101d8315c32df981610"
