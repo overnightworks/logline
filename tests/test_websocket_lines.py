@@ -115,7 +115,20 @@ _SESSIONS = [
     pytest.param(_CLOSED_BEFORE_ACCEPT, id="refused by a close before accept"),
     pytest.param(_NOT_ANSWERED, id="the app returned without answering"),
 ]
-_IMPLEMENTATIONS = ["auto", "wsproto"]
+# The legacy implementation runs the handshake outside the app task, so its own refusal line
+# stays; the others run in the app task, where the session line replaces it.
+_REFUSAL_EVENT = "websocket_upgrade.refused"
+_IMPLEMENTATIONS = [
+    pytest.param(
+        "websockets-sansio",
+        {"connection open", "websocket_handshake.failed", _REFUSAL_EVENT},
+        id="sansio",
+    ),
+    pytest.param(
+        "wsproto", {"connection open", "websocket_handshake.failed", _REFUSAL_EVENT}, id="wsproto"
+    ),
+    pytest.param("websockets", {"connection open", "websocket_handshake.failed"}, id="legacy"),
+]
 
 
 def _serve_sessions(sessions: list[Session], implementation: str, *, concurrently: bool) -> None:
@@ -136,10 +149,13 @@ def _session_lines(lines: list[Line]) -> list[Line]:
     ]
 
 
-@pytest.mark.parametrize("implementation", _IMPLEMENTATIONS)
+@pytest.mark.parametrize(("implementation", "absent_events"), _IMPLEMENTATIONS)
 @pytest.mark.parametrize("session", _SESSIONS)
 def test_a_websocket_session_writes_one_line_when_it_ends(
-    capsys: pytest.CaptureFixture[str], session: Session, implementation: str
+    capsys: pytest.CaptureFixture[str],
+    session: Session,
+    implementation: str,
+    absent_events: set[str],
 ) -> None:
     configure("socket-service")
 
@@ -152,9 +168,7 @@ def test_a_websocket_session_writes_one_line_when_it_ends(
     assert isinstance(line["duration_ms"], int | float)
     assert not [line for line in lines if str(line["event"]).startswith("request.")]
     server_events = {line["event"] for line in lines_of(lines, _UVICORN_LOGGER)}
-    assert not {"connection open", "websocket_handshake.failed"} & {
-        str(event) for event in server_events
-    }
+    assert not absent_events & {str(event) for event in server_events}
 
 
 def test_concurrent_sessions_each_write_their_own_line(
@@ -162,7 +176,9 @@ def test_concurrent_sessions_each_write_their_own_line(
 ) -> None:
     configure("socket-service")
 
-    _serve_sessions([_DENIED, _NOT_ANSWERED, _OK_BY_SERVER] * 2, "auto", concurrently=True)
+    _serve_sessions(
+        [_DENIED, _NOT_ANSWERED, _OK_BY_SERVER] * 2, "websockets-sansio", concurrently=True
+    )
 
     lines = json_lines(capsys.readouterr().out)
     assert Counter((line["outcome"], line.get("status")) for line in _session_lines(lines)) == {
@@ -173,5 +189,5 @@ def test_concurrent_sessions_each_write_their_own_line(
     assert not [
         line
         for line in lines_of(lines, _UVICORN_LOGGER)
-        if "websocket_handshake.failed" == str(line["event"])
+        if str(line["event"]) in {"websocket_handshake.failed", _REFUSAL_EVENT}
     ]
