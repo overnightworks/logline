@@ -480,7 +480,9 @@ async def ask_model(client, request):
   `started_at`: a field of one of those names is dropped. A field named like an attribute of `logging.LogRecord` (`name`, `module`,
   `process`, `thread`, `args`, `message`, ...) raises `ValueError` when the timer is constructed, because the
   standard library refuses it as an `extra` key.
-- A block that ends normally is `ok`. `step.refuse(reason)` makes it `refused` with `reason`, a code from the
+- A block that ends normally is `ok`. `step.reason(code)` gives that `ok` line a `reason`, such as `silence` for
+  a wait that ended because the speaker stopped; a later `refuse` or `fail` replaces it, and a failed or
+  cancelled end by exception carries none of it. `step.refuse(reason)` makes it `refused` with `reason`, a code from the
   app's closed set. `step.first_output()` adds `first_output_ms`, from the first call only.
 - An `Exception` makes it `failed` with `error_type`, the class name, and propagates unchanged. The line
   never carries the message or a traceback: the layer where the exception stops logs it. After
