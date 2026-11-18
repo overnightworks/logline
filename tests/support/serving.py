@@ -14,12 +14,18 @@ from tests.support.apps import build_app
 from tests.support.lines import Line, json_lines
 
 
+HTTP_IMPLEMENTATIONS = ["h11", "httptools"]
+
+
 def serve(config: uvicorn.Config, exercise: Callable[[str], Awaitable[None]]) -> None:
     """Serve `config` with a real uvicorn server while `exercise` runs, then stop it.
 
     `exercise` gets the server's base URL. The listening socket exists before the server runs,
-    so a request made at once waits in its backlog and nothing needs polling.
+    so a request made at once waits in its backlog and nothing needs polling. A config that leaves
+    `http` on "auto" runs h11, so an installed httptools never changes which parser a test means.
     """
+    if config.http == "auto":
+        config.http = "h11"
 
     async def run() -> None:
         listener = socket.socket()
