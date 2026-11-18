@@ -3,6 +3,6 @@ agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
 role = "builder"
 base = "07db23cf6f40aaece8b77ec6697fc630ae4ccec0"
 branch = "claude/issue-93-uvicorn-templates"
-scope = ["README.md", "docs/ARCHITECTURE.md", "src/logline/uvicorn_records.py", "tests"]
+scope = ["README.md", "docs/ARCHITECTURE.md", "pyproject.toml", "src/logline/uvicorn_records.py", "tests", "uv.lock"]
 opened_commit = "66fc87c968b7736d7e3eb9e27bf682d99f2057b1"
 whole_reason = "One filter, its real-server tests and the event table that lists its lines."
