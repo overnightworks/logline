@@ -80,8 +80,9 @@ _CODED_EVENTS_BY_TEMPLATE = {
 }
 # Each says what another line says: "Waiting for" what the app's lifespan lines report, the
 # lifespan's own outcome lines and failure record, which the middleware writes from the ASGI
-# messages with their traceback, and websockets' "connection open" and uvicorn's two records for an
-# app that returned without answering an upgrade, which the middleware's session line carries.
+# messages with their traceback, and websockets' "connection open" and "connection closed" and
+# uvicorn's two records for an app that returned without answering an upgrade, which the
+# middleware's session line carries.
 _DROPPED_TEMPLATES = frozenset(
     {
         "Waiting for application startup.",
@@ -92,6 +93,7 @@ _DROPPED_TEMPLATES = frozenset(
         "Application shutdown failed. Exiting.",
         "Exception in 'lifespan' protocol\n",
         "connection open",
+        "connection closed",
         "ASGI callable returned without completing handshake.",
         "ASGI callable returned without sending handshake.",
     }

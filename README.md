@@ -307,7 +307,7 @@ and their `reason`, `status`, `task_count` and `error_type` values are public: r
 An upgrade that reaches the app is never a `websocket_upgrade.refused` line: a denial response, a close before accept
 and an app that returned without answering are `websocket.ended` lines (see
 [The WebSocket session line](#the-websocket-session-line)), under uvicorn's default WebSocket protocol and under
-`ws="wsproto"`, which writes no refusal record of its own. `configure` drops websockets' `connection open`,
+`ws="wsproto"`, which writes no refusal record of its own. `configure` drops websockets' `connection open` and `connection closed`,
 uvicorn's `ASGI callable returned without completing handshake.` and `... without sending handshake.`, and the
 refusal websockets writes in the task of the app, because the session line says the same. uvicorn's older
 `ws="websockets"` implementation writes that refusal from another task, so it still writes
