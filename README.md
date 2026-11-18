@@ -663,14 +663,12 @@ What the check does not see, so a clean result is not a proof:
 
 ## Versioning
 
-The version follows [semantic versioning](https://semver.org/). While it is 0.x, a minor release may break a
-public contract and says so under **Breaking** in the
-[release pages](https://github.com/overnightworks/logline/releases); a patch release never does. A module's
-public names are the names its `__all__` lists; everything else may change in any release.
-
-From 1.0 a public name changes within a major only by a rename or removal, or by a change to its signature; those
-are a major. The one semver exception: a change to the record, to an event name or to `configure`'s policy touches
-hosts only, so it is a minor release with a **Breaking** note, because hosts pin a tag and take it deliberately.
+The version follows [semantic versioning](https://semver.org/). From 1.0 the public names are stable within a major:
+only renaming or removing one, or changing its signature, is a major, and a patch release never breaks one. The one
+semver exception: a change to the record, to an event name or to `configure`'s policy touches hosts only, so it is a
+minor release with a **Breaking** note in the [release pages](https://github.com/overnightworks/logline/releases),
+because hosts pin a tag and take it deliberately. A module's public names are the names its `__all__` lists;
+everything else may change in any release.
 
 ## Development
 
