@@ -18,6 +18,7 @@ pytest.register_assert_rewrite("tests.support")
 def isolated_logging(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Give each test the process's logging as it was, and no logline environment."""
     from tests.support.loggers import all_loggers  # noqa: PLC0415 - after register_assert_rewrite
+
     monkeypatch.delenv("LOG_LEVEL", raising=False)
     monkeypatch.delenv("SERVICE_VERSION", raising=False)
     hooks = (sys.excepthook, threading.excepthook, warnings.showwarning)
