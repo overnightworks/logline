@@ -125,9 +125,7 @@ _IMPLEMENTATIONS = [
         {*_UNCODED_EVENTS, _REFUSAL_EVENT},
         id="sansio",
     ),
-    pytest.param(
-        "wsproto", {*_UNCODED_EVENTS, _REFUSAL_EVENT}, id="wsproto"
-    ),
+    pytest.param("wsproto", {*_UNCODED_EVENTS, _REFUSAL_EVENT}, id="wsproto"),
     pytest.param("websockets", _UNCODED_EVENTS, id="legacy"),
 ]
 
