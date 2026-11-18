@@ -25,13 +25,15 @@ _LEVELS = {
 _DEFAULT_LEVEL_NAME = "info"
 _UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access", "uvicorn.asgi")
 # Each carries content below its cap: a URL with its query, an MCP session id, a postgres
-# server notice, and spoken text and phonemes, which piper writes at WARNING.
+# server notice, the credentials file path botocore writes at INFO, and spoken text and
+# phonemes, which piper writes at WARNING.
 _CAPPED_LOGGER_LEVELS = {
     "httpx": logging.WARNING,
     "httpx2": logging.WARNING,
     "httpcore": logging.WARNING,
     "httpcore2": logging.WARNING,
     "mcp": logging.WARNING,
+    "botocore": logging.WARNING,
     "sqlalchemy.dialects.postgresql": logging.WARNING,
     "piper": logging.ERROR,
 }

@@ -26,7 +26,7 @@ that module's `__all__` lists it. Every other module listed below is internal an
 Module owners in `logline`:
 
 - `configuration` owns `configure`: the root JSON handler on stdout, the root level from `LOG_LEVEL`, the
-  `logline.request` level pin, the capped library loggers' levels (HTTP clients, `mcp` and
+  `logline.request` level pin, the capped library loggers' levels (HTTP clients, `mcp`, `botocore` and
   `sqlalchemy.dialects.postgresql` at WARNING, `piper` at ERROR), the routing of uvicorn's loggers and the
   installing of the `process_failures` hooks.
 - `process_failures` owns the three hooks `configure` installs, `sys.excepthook`, `threading.excepthook` and

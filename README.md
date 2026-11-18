@@ -362,6 +362,7 @@ raises the floor, so a stricter `LOG_LEVEL` silences the capped logger too:
   with its query; the callee's request line with the same `trace_id` covers the call;
 - sets the `mcp` tree to WARNING, because `mcp.client.streamable_http` logs the session id, which works like a bearer
   token, and a new INFO line must not leak;
+- sets the `botocore` tree to WARNING, because `botocore.credentials` logs the absolute path of the credentials file at INFO;
 - sets `sqlalchemy.dialects.postgresql` to WARNING, because it logs the text of a server notice;
 - sets `piper` to ERROR, because it writes spoken text and phonemes at WARNING;
 - drops uvicorn's WebSocket connection lines, which carry the raw path with its query;
@@ -603,7 +604,7 @@ Why this log is the target:
 `logline.testing.configured(service)` is a context manager for a host's in-process tests. It calls
 `configure(service)` and on exit restores the process's logging as it was before: the root logger's handlers
 and level, the handlers, filters, levels and propagation of the uvicorn, HTTP client, `logline.request` and
-capped library (`mcp`, `sqlalchemy.dialects.postgresql`, `piper`) loggers, structlog's configuration and the
+capped library (`mcp`, `botocore`, `sqlalchemy.dialects.postgresql`, `piper`) loggers, structlog's configuration and the
 stdlib logger class its factory installs. The module imports no test framework.
 
 ```python

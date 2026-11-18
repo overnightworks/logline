@@ -136,6 +136,7 @@ WARNING_CAPPED_LOGGER_NAMES = [
     "httpcore",
     "httpcore2",
     "mcp.client.streamable_http",
+    "botocore.credentials",
     "sqlalchemy.dialects.postgresql",
 ]
 CAPPED_LOGGER_NAMES = [*WARNING_CAPPED_LOGGER_NAMES, "piper.voice"]
