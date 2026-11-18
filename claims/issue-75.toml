@@ -1,8 +1,0 @@
-claim_id = "58bbc325e0eb4eb3bc2e73804336f5c9"
-agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
-role = "builder"
-base = "c0c9cea2a9e9da373e43ee9adee5aadaed5bcf8b"
-branch = "claude/issue-75-checker-gaps"
-scope = [".importlinter", "README.md", "docs/ARCHITECTURE.md", "src/logline/__init__.py", "src/logline/check.py", "tests/test_check.py"]
-opened_commit = "ff7325d44ecc821b7b77e384698b73c205ff25e8"
-whole_reason = "One follow-up to the checker's uvicorn rows and its import contracts."
