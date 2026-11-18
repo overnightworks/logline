@@ -1,7 +1,0 @@
-claim_id = "f792770aa94b46fdb8c2d7ed8d828c1e"
-agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
-role = "builder"
-base = "96e2c3767389c88cd771a633025f69b662b5c91d"
-branch = "claude/issue-77-release-1-0"
-scope = ["README.md", "src/logline/__init__.py"]
-opened_commit = "4165a07f50bfd24718698545efee8d9a5c55865e"
