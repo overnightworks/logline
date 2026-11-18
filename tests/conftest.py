@@ -9,7 +9,6 @@ import pytest
 import structlog
 from structlog.stdlib import ProcessorFormatter
 
-from logline.configuration import TOUCHED_LOGGER_NAMES
 from logline.testing import LoggerState
 
 pytest.register_assert_rewrite("tests.support")
@@ -18,14 +17,16 @@ pytest.register_assert_rewrite("tests.support")
 @pytest.fixture(autouse=True)
 def isolated_logging(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Give each test the process's logging as it was, and no logline environment."""
+    from tests.support.loggers import all_loggers  # noqa: PLC0415 - after register_assert_rewrite
     monkeypatch.delenv("LOG_LEVEL", raising=False)
     monkeypatch.delenv("SERVICE_VERSION", raising=False)
     hooks = (sys.excepthook, threading.excepthook, warnings.showwarning)
-    saved = [LoggerState.of(logging.getLogger(name)) for name in TOUCHED_LOGGER_NAMES]
+    saved = {logger.name: LoggerState.of(logger) for logger in all_loggers()}
     yield
     sys.excepthook, threading.excepthook, warnings.showwarning = hooks
-    for state in saved:
-        if state.logger is logging.getLogger():
+    for logger in all_loggers():
+        state = saved.get(logger.name) or LoggerState(logger, [], [], logging.NOTSET, True)
+        if logger is logging.getLogger():
             # The root's handlers belong to pytest's capture, which swaps them between the phases of
             # a test, so restoring the snapshot would bring back the setup phase's; only the ones
             # `configure` added go.

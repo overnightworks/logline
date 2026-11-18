@@ -5,26 +5,23 @@ import pytest
 import structlog
 
 from logline import configure
-from logline.configuration import TOUCHED_LOGGER_NAMES
 from logline.testing import configured
 from tests.support.lines import json_lines
+from tests.support.loggers import logger_settings
 
 
 @dataclass(frozen=True)
 class _Seen:
     """What a host can observe of the process's logging."""
 
-    loggers: list[tuple[object, ...]]
+    loggers: dict[str, tuple[int, bool, tuple[object, ...], tuple[object, ...]]]
     structlog_is_configured: bool
     structlog_processors: list[object]
 
 
 def _seen() -> _Seen:
     return _Seen(
-        loggers=[
-            (logger.handlers[:], logger.filters[:], logger.level, logger.propagate)
-            for logger in map(logging.getLogger, TOUCHED_LOGGER_NAMES)
-        ],
+        loggers=logger_settings(),
         structlog_is_configured=structlog.is_configured(),
         structlog_processors=list(structlog.get_config()["processors"]),
     )

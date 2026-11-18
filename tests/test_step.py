@@ -1,10 +1,7 @@
-import itertools
 import logging
-from types import SimpleNamespace
 
 import pytest
 
-import logline.step
 from logline import Outcome, StepTimer
 from tests.support.apps import (
     STEP,
@@ -20,6 +17,10 @@ from tests.support.serving import get, serve_requests, serve_requests_answered
 _TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
 _TRACEPARENT = f"00-{_TRACE_ID}-00f067aa0ba902b7-01"
 _INFO, _WARNING, _ERROR = "info", "warning", "error"
+
+
+def _ms(seconds: int) -> int:
+    return seconds * 1000
 
 
 def _step_line(lines: list[Line]) -> Line:
@@ -397,41 +398,28 @@ def test_a_field_added_under_a_log_record_attribute_name_raises_out_of_the_block
     assert STEP.reserved_field in str(answer.json()["caught"])
 
 
-@pytest.fixture
-def one_tick_ms(monkeypatch: pytest.MonkeyPatch) -> float:
-    """Replace the step's clock with one that advances a second on every read."""
-    clock_ticks = itertools.count()
-    monkeypatch.setattr(
-        logline.step,
-        "time",
-        SimpleNamespace(perf_counter=lambda: float(next(clock_ticks))),
-    )
-    return 1000.0
-
-
 def test_a_step_counts_from_its_construction_not_from_the_block(
-    capsys: pytest.CaptureFixture[str], one_tick_ms: float
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     _, lines = serve_requests(capsys, [get("/step/constructed-before-the-block")])
 
     line = _step_line(lines)
-    # Every clock read advances one tick: the timer's construction, the first-output mark and the
-    # block's exit. A start taken when the block is entered would leave one tick less.
-    assert line["first_output_ms"] == one_tick_ms
-    assert line["duration_ms"] == 2 * one_tick_ms
+    assert line["first_output_ms"] == _ms(STEP.seconds_before_first_output)
+    assert line["duration_ms"] == _ms(
+        STEP.seconds_before_first_output + STEP.seconds_after_first_output
+    )
 
 
 def test_the_first_output_mark_keeps_the_time_of_the_first_call_only(
-    capsys: pytest.CaptureFixture[str], one_tick_ms: float
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     _, lines = serve_requests(capsys, [get("/step/first-output")])
 
     line = _step_line(lines)
-    # Every clock read advances one tick, so the first call's mark is one tick after the step's
-    # start; a second call that replaced it would read a later tick.
-    assert line["first_output_ms"] == one_tick_ms
-    assert isinstance(line["duration_ms"], float)
-    assert line["duration_ms"] > one_tick_ms
+    assert line["first_output_ms"] == _ms(STEP.seconds_before_first_output)
+    assert line["duration_ms"] == _ms(
+        STEP.seconds_before_first_output + STEP.seconds_after_first_output
+    )
 
 
 def test_a_step_given_a_past_start_counts_its_durations_from_it(
@@ -440,10 +428,8 @@ def test_a_step_given_a_past_start_counts_its_durations_from_it(
     _, lines = serve_requests(capsys, [get("/step/started-earlier")])
 
     line = _step_line(lines)
-    first_output_ms, duration_ms = line["first_output_ms"], line["duration_ms"]
-    assert isinstance(first_output_ms, float)
-    assert isinstance(duration_ms, float)
-    assert STEP.earlier_start_seconds * 1000 <= first_output_ms <= duration_ms
+    assert line["first_output_ms"] == _ms(STEP.earlier_start_seconds)
+    assert line["duration_ms"] == _ms(STEP.earlier_start_seconds + STEP.seconds_after_first_output)
     assert "started_at" not in line
 
 
