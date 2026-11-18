@@ -1,8 +1,0 @@
-claim_id = "80e366575bf74c0b9f653a4c5c3abc45"
-agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
-role = "builder"
-base = "5aba0f0afb80b3a0bb35a47e418c4a05a378ba95"
-branch = "claude/issue-51-websocket-session-line"
-scope = [".importlinter", "README.md", "docs/ARCHITECTURE.md", "pyproject.toml", "src/logline", "tests", "uv.lock"]
-opened_commit = "1cc0cf5b6439feea6f24bbe836a3b88df9657bd3"
-whole_reason = "One extension of the middleware to WebSocket scopes with its real-server proof, README and architecture lines."
