@@ -17,6 +17,13 @@ dependencies = [
 ]
 ```
 
+A consumer that installs offline pins the release's wheel by URL and sha256, which resolves no tag and builds
+nothing. Put the version in place of `X.Y.Z` and the hash from the release's `.sha256` asset after `#sha256=`:
+
+```sh
+uv pip install "overnightworks-logline @ https://github.com/overnightworks/logline/releases/download/vX.Y.Z/overnightworks_logline-X.Y.Z-py3-none-any.whl#sha256=<hash>"
+```
+
 A host's Dependabot entry for uv ignores `overnightworks-*`, because Dependabot looks the name up on PyPI.
 Tags are never moved; a broken release gets the next patch tag.
 
