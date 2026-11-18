@@ -167,6 +167,19 @@ _HOP_CASES = [
         + 'def note(event, count=0):\n    logger.info(event)\n\nnote("turn.ended", count=2)\n',
     ),
     _case(
+        "positional parameter passed by keyword",
+        _STDLIB + 'def note(event):\n    logger.info(event)\n\nnote(event="turn.ended")\n',
+    ),
+    _case(
+        "positional parameter passed by keyword and position",
+        _STDLIB + 'def note(event):\n    logger.info(event)\n\nnote("Bad", event="turn.ended")\n',
+    ),
+    _case(
+        "parameter passed a message by keyword",
+        _STDLIB + 'def note(event):\n    logger.info(event)\n\nnote(event="Turn ended")\n',
+        Rule.EVENT_NOT_LITERAL,
+    ),
+    _case(
         "positional-only parameter",
         _STDLIB + 'def note(event, /):\n    logger.info(event)\n\nnote("turn.ended")\n',
     ),
@@ -455,6 +468,19 @@ def test_a_crafted_file_of_repeated_functions_is_checked_in_linear_time(definiti
 
     assert not findings
     assert elapsed < 3.0  # quadratic scanning took 15 s here; linear takes well under 1 s
+
+
+def test_alike_functions_with_distinct_parameters_are_checked_in_linear_time() -> None:
+    repeats = 2000
+    definitions = "".join(f"def note(e{n}):\n    logger.info(e{n})\n" for n in range(repeats))
+    source = _STDLIB + definitions + 'note("job.done")\n' * repeats
+
+    started = time.perf_counter()
+    findings = check(source, PurePath("host.py"))
+    elapsed = time.perf_counter() - started
+
+    assert not findings
+    assert elapsed < 1.5  # quadratic scanning took 3.5 s here; linear takes well under 1 s
 
 
 def test_a_finding_names_its_path_and_the_place_of_the_node() -> None:
