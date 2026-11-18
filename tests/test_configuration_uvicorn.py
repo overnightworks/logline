@@ -130,18 +130,6 @@ def test_no_websocket_path_query_header_or_frame_reaches_any_line(
         assert forbidden not in output
 
 
-def test_a_websocket_connection_gets_no_request_line(capsys: pytest.CaptureFixture[str]) -> None:
-    configure("uvicorn-service")
-
-    async def exercise(base_url: str) -> None:
-        async with connect(base_url.replace("http", "ws") + "/ws") as websocket:
-            assert await websocket.recv() == WEBSOCKET_GREETING
-
-    serve(uvicorn.Config(build_app(), log_config=None, ws="websockets-sansio"), exercise)
-
-    assert lines_of(json_lines(capsys.readouterr().out), "logline.request") == []
-
-
 WARNING_CAPPED_LOGGER_NAMES = [
     "httpx",
     "httpx2",

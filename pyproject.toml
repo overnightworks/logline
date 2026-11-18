@@ -27,6 +27,7 @@ dev = [
     "fastapi>=0.123.7,<1",
     "uvicorn>=0.41,<1",
     "websockets>=15,<17",
+    "wsproto>=1.2,<2",
     "httpx>=0.27,<1",
     "ruff>=0.4,<1",
     "pyright>=1.1.414,<2",

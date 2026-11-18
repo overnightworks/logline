@@ -44,6 +44,10 @@ WEBSOCKET_DENIED_PATH = "/ws-denied"
 WEBSOCKET_DENIED_STATUS = 401
 WEBSOCKET_CLOSED_PATH = "/ws-closed-before-accept"
 WEBSOCKET_SILENT_PATH = "/ws-silent"
+WEBSOCKET_SERVER_CLOSES_PATH = "/ws"
+WEBSOCKET_CLIENT_CLOSES_PATH = "/ws-waiting"
+WEBSOCKET_RAISES_PATH = "/ws-boom"
+WEBSOCKET_CANCELLED_PATH = "/ws-cancelled"
 BACKGROUND_LOGGER = "tests.background"
 BACKGROUND_EVENT = "background work after the response"
 CHAIN_CAUSE_MESSAGE = "inner cause message"
@@ -319,7 +323,7 @@ def _add_logging_routes(app: FastAPI) -> None:
 
 
 def _add_websocket_route(app: FastAPI) -> None:
-    @app.websocket("/ws")
+    @app.websocket(WEBSOCKET_SERVER_CLOSES_PATH)
     async def socket(websocket: WebSocket) -> None:
         set_sub(websocket.scope, SUB)
         set_client_ip(websocket.scope, HOST_CLIENT_IP)
@@ -340,10 +344,21 @@ def _add_websocket_route(app: FastAPI) -> None:
     async def silent_socket(_websocket: WebSocket) -> None:
         return
 
-    @app.websocket("/ws-boom")
+    @app.websocket(WEBSOCKET_RAISES_PATH)
     async def failing_socket(websocket: WebSocket) -> None:
         await websocket.accept()
         raise RuntimeError(WEBSOCKET_FAILURE_MESSAGE)
+
+    @app.websocket(WEBSOCKET_CANCELLED_PATH)
+    async def cancelled_socket(websocket: WebSocket) -> None:
+        await websocket.accept()
+        raise asyncio.CancelledError
+
+    @app.websocket(WEBSOCKET_CLIENT_CLOSES_PATH)
+    async def waiting_socket(websocket: WebSocket) -> None:
+        await websocket.accept()
+        async for _ in websocket.iter_text():
+            pass
 
 
 def _add_turn_route(app: FastAPI) -> None:

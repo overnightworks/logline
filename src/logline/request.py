@@ -1,4 +1,5 @@
-"""One request line per HTTP request, and how a host reports the person, address and route.
+"""One line per HTTP request and per WebSocket session, and how a host reports the person, address
+and route.
 
 This module imports no web framework: it speaks ASGI.
 """
@@ -12,6 +13,7 @@ from logline.asgi import ASGIApp, Message, Receive, Scope, Send
 from logline.lifespan import run_lifespan
 from logline.step import Outcome, Stopwatch
 from logline.trace import request_trace
+from logline.websocket import SessionEnd, run_websocket
 
 __all__ = [
     "REQUEST_EVENT",
@@ -24,6 +26,7 @@ __all__ = [
 
 REQUEST_LOGGER_NAME = "logline.request"
 REQUEST_EVENT = "request.ended"
+_SESSION_EVENT = "websocket.ended"
 _STATE_KEY = "logline.request"
 _STATUS_WHEN_NONE_SENT = 500
 _FIRST_SERVER_ERROR_STATUS = 500
@@ -65,22 +68,28 @@ def _record_of(scope: Scope) -> _RequestRecord | None:
     return scope.get("state", {}).get(_STATE_KEY)
 
 
+def _open_record(scope: Scope) -> _RequestRecord:
+    record = _RequestRecord(sub=None, ip=_client_host(scope), route=None)
+    scope.setdefault("state", {})[_STATE_KEY] = record
+    return record
+
+
 def set_sub(scope: Scope, sub: str | None) -> None:
-    """Report the person's `sub` for this request's line; no effect outside an HTTP request."""
+    """Report the person's `sub` for this request's or session's line; no effect elsewhere."""
     record = _record_of(scope)
     if record is not None:
         record.sub = sub
 
 
 def set_client_ip(scope: Scope, ip: str | None) -> None:
-    """Report the client address for this request's line; no effect outside an HTTP request."""
+    """Report the client address for this request's or session's line; no effect elsewhere."""
     record = _record_of(scope)
     if record is not None:
         record.ip = ip
 
 
 def set_route(scope: Scope, template: str) -> None:
-    """Report the route template for this request's line; no effect outside an HTTP request.
+    """Report the route template for this request's or session's line; no effect elsewhere.
 
     The template is a literal pattern such as `/static`, never the raw path or a request value.
     An empty template logs `null` and does not fall back to the framework's route.
@@ -106,10 +115,12 @@ def _outcome_of_status(status: int) -> Outcome:
 
 
 class RequestLineMiddleware:
-    """ASGI middleware that owns two scopes and passes every other through.
+    """ASGI middleware that owns three scopes and passes every other through.
 
-    An `http` scope gets one `logline.request` line and joins its trace. A `lifespan` scope gets
-    the app startup and shutdown lines on `logline.lifespan`, under any ASGI server.
+    An `http` scope gets one `request.ended` line on `logline.request` and joins its trace. A
+    `websocket` scope gets one `websocket.ended` line on the same logger when its session ends. A
+    `lifespan` scope gets the app startup and shutdown lines on `logline.lifespan`, under any ASGI
+    server.
     """
 
     def __init__(self, app: ASGIApp) -> None:
@@ -119,14 +130,15 @@ class RequestLineMiddleware:
         match scope["type"]:
             case "http":
                 await self._write_request_line(scope, receive, send)
+            case "websocket":
+                await self._write_session_line(scope, receive, send)
             case "lifespan":
                 await run_lifespan(self._app, scope, receive, send)
             case _:
                 await self._app(scope, receive, send)
 
     async def _write_request_line(self, scope: Scope, receive: Receive, send: Send) -> None:
-        record = _RequestRecord(sub=None, ip=_client_host(scope), route=None)
-        scope.setdefault("state", {})[_STATE_KEY] = record
+        record = _open_record(scope)
         sent_status: int | None = None
         raised_outcome: Outcome | None = None
         written = False
@@ -167,3 +179,21 @@ class RequestLineMiddleware:
             finally:
                 if not written:
                     write_line()
+
+    async def _write_session_line(self, scope: Scope, receive: Receive, send: Send) -> None:
+        record = _open_record(scope)
+        stopwatch = Stopwatch()
+
+        def write_line(end: SessionEnd) -> None:
+            _request_logger.info(
+                _SESSION_EVENT,
+                outcome=end.outcome,
+                route=_route_template(scope, record),
+                duration_ms=stopwatch.elapsed_ms(),
+                sub=record.sub,
+                ip=record.ip,
+                close_code=end.close_code,
+                **({} if end.status is None else {"status": end.status}),
+            )
+
+        await run_websocket(self._app, scope, receive, send, write_line)

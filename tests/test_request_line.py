@@ -12,6 +12,7 @@ from logline import (
     RequestLineMiddleware,
     configure,
     set_client_ip,
+    set_route,
     set_sub,
 )
 from logline.request import REQUEST_LOGGER_NAME
@@ -317,3 +318,35 @@ def test_an_app_that_sent_no_response_logs_500(capsys: pytest.CaptureFixture[str
 
     (line,) = request_lines(json_lines(capsys.readouterr().out))
     assert (line["status"], line["ip"]) == (500, HOST_CLIENT_IP)
+
+
+@pytest.mark.parametrize(
+    "report",
+    [
+        pytest.param(lambda scope: set_sub(scope, SUB), id="sub"),
+        pytest.param(lambda scope: set_client_ip(scope, HOST_CLIENT_IP), id="client ip"),
+        pytest.param(lambda scope: set_route(scope, HOST_ROUTE), id="route"),
+    ],
+)
+def test_a_host_report_outside_the_middleware_changes_nothing(
+    report: Callable[[dict[str, Any]], None],
+) -> None:
+    scope: dict[str, Any] = {"type": "http"}
+
+    report(scope)
+
+    assert scope == {"type": "http"}
+
+
+def test_a_scope_of_another_type_reaches_the_app_without_a_line(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure("request-service")
+    seen: list[str] = []
+
+    async def app(scope: Any, receive: Any, send: Any) -> None:
+        seen.append(scope["type"])
+
+    _run_http_scope(app, {"type": "unknown"})
+
+    assert (seen, capsys.readouterr().out) == (["unknown"], "")
