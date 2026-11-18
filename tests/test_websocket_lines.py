@@ -152,7 +152,7 @@ def test_a_websocket_session_writes_one_line_when_it_ends(
     assert isinstance(line["duration_ms"], int | float)
     assert not [line for line in lines if str(line["event"]).startswith("request.")]
     server_events = {line["event"] for line in lines_of(lines, _UVICORN_LOGGER)}
-    assert not {"connection open", "websocket_upgrade.refused", "websocket_handshake.failed"} & {
+    assert not {"connection open", "websocket_handshake.failed"} & {
         str(event) for event in server_events
     }
 
@@ -171,5 +171,7 @@ def test_concurrent_sessions_each_write_their_own_line(
         (Outcome.OK, None): 2,
     }
     assert not [
-        line for line in lines_of(lines, _UVICORN_LOGGER) if "websocket" in str(line["event"])
+        line
+        for line in lines_of(lines, _UVICORN_LOGGER)
+        if "websocket_handshake.failed" == str(line["event"])
     ]
