@@ -38,6 +38,7 @@ forbidden_modules =
     logline.testing
     logline.trace
     logline.uvicorn_records
+    logline.websocket
 
 [importlinter:contract:no-runtime-module-imports-logline-check]
 name = no runtime module imports logline.check
@@ -56,5 +57,6 @@ source_modules =
     logline.testing
     logline.trace
     logline.uvicorn_records
+    logline.websocket
 forbidden_modules =
     logline.check

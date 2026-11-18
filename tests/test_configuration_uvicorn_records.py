@@ -3,7 +3,6 @@ import json
 import logging
 import os
 import socket
-from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
 
@@ -17,10 +16,8 @@ from logline import configure
 from logline.lifespan import LIFESPAN_LOGGER_NAME
 from logline.standard import BASE_KEYS
 from tests.support.apps import (
-    WEBSOCKET_CLOSED_PATH,
     WEBSOCKET_DENIED_PATH,
     WEBSOCKET_DENIED_STATUS,
-    WEBSOCKET_SILENT_PATH,
     build_app,
 )
 from tests.support.lines import Line, json_lines, lines_of
@@ -241,121 +238,63 @@ def test_an_unknown_uvicorn_record_passes_unchanged(
     assert not {"reason", "error_type"} & line.keys()
 
 
-async def _refused_upgrade(url: str) -> None:
-    # A refusal reaches the client as InvalidStatus, or as InvalidMessage where the server
-    # writes the denial response with a duplicate Content-Length header.
-    with pytest.raises(InvalidHandshake):
-        await connect(url)
-
-
-def _refuse_upgrades(paths: list[str], implementation: str, *, concurrently: bool = False) -> None:
+def _malformed_upgrade(implementation: str) -> None:
     async def exercise(base_url: str) -> None:
-        urls = [base_url.replace("http", "ws") + path for path in paths]
-        if concurrently:
-            await asyncio.gather(*(_refused_upgrade(url) for url in urls))
-        else:
-            for url in urls:
-                await _refused_upgrade(url)
+        host, port = base_url.removeprefix("http://").split(":")
+        reader, writer = await asyncio.open_connection(host, int(port))
+        # An upgrade without its `Sec-WebSocket-Key`, which websockets answers before any app task.
+        writer.write(
+            f"GET {WEBSOCKET_DENIED_PATH} HTTP/1.1\r\nHost: {host}\r\nConnection: Upgrade\r\n"
+            "Upgrade: websocket\r\nSec-WebSocket-Version: 13\r\n\r\n".encode()
+        )
+        await writer.drain()
+        assert (await reader.readline()).startswith(b"HTTP/1.1 400")
+        writer.close()
 
     serve(uvicorn.Config(build_app(), log_config=None, ws=implementation), exercise)
 
 
 def _websocket_lines(output: str) -> list[tuple[str, str, object]]:
-    """The `(level, event, status or reason)` of each WebSocket line, in the order written."""
+    """The `(level, event, status)` of each WebSocket line of the server, in the order written."""
     return [
-        (str(line["level"]), str(line["event"]), line.get("status", line.get("reason")))
+        (str(line["level"]), str(line["event"]), line.get("status"))
         for line in lines_of(json_lines(output), _UVICORN_LOGGER)
         if str(line["event"]).startswith("websocket_")
     ]
 
 
 _REFUSED = "websocket_upgrade.refused"
-_INCOMPLETE = ("error", "websocket_handshake.failed", "handshake_incomplete")
+_MALFORMED_UPGRADE_STATUS = 400
 
 
-@pytest.mark.parametrize(
-    ("paths", "implementation", "expected"),
-    [
-        pytest.param(
-            [WEBSOCKET_DENIED_PATH],
-            "websockets-sansio",
-            [("info", _REFUSED, WEBSOCKET_DENIED_STATUS)],
-            id="denial response",
-        ),
-        pytest.param(
-            [WEBSOCKET_DENIED_PATH],
-            "websockets",
-            [("info", _REFUSED, WEBSOCKET_DENIED_STATUS)],
-            id="denial response, websockets",
-        ),
-        pytest.param(
-            [WEBSOCKET_CLOSED_PATH],
-            "websockets-sansio",
-            [("info", _REFUSED, 403)],
-            id="closed before accept",
-        ),
-        pytest.param(
-            [WEBSOCKET_SILENT_PATH],
-            "websockets-sansio",
-            [_INCOMPLETE, ("info", _REFUSED, 500)],
-            id="no answer to the upgrade",
-        ),
-        pytest.param(
-            [WEBSOCKET_DENIED_PATH, WEBSOCKET_SILENT_PATH],
-            "websockets-sansio",
-            [
-                ("info", _REFUSED, WEBSOCKET_DENIED_STATUS),
-                _INCOMPLETE,
-                ("info", _REFUSED, 500),
-            ],
-            id="a refusal does not hide a later connection's incomplete handshake",
-        ),
-        pytest.param(
-            [WEBSOCKET_SILENT_PATH, WEBSOCKET_DENIED_PATH],
-            "websockets-sansio",
-            [
-                _INCOMPLETE,
-                ("info", _REFUSED, 500),
-                ("info", _REFUSED, WEBSOCKET_DENIED_STATUS),
-            ],
-            id="a refusal after an incomplete handshake",
-        ),
-    ],
-)
-def test_a_websocket_upgrade_the_app_does_not_accept_logs_literal_events(
+def test_a_malformed_websocket_upgrade_logs_one_literal_refusal(
     capsys: pytest.CaptureFixture[str],
-    paths: list[str],
-    implementation: str,
-    expected: list[tuple[str, str, object]],
 ) -> None:
     configure("uvicorn-service")
 
-    _refuse_upgrades(paths, implementation)
+    _malformed_upgrade("websockets-sansio")
 
     output = capsys.readouterr().out
-    assert _websocket_lines(output) == expected
-    assert [line["event"] for line in _lines_at(output, "error")] == [
-        event for level, event, _ in expected if level == "error"
-    ]
-    for line in _coded_lines(output, "websocket_"):
-        assert line.keys() <= {*BASE_KEYS, "status", "reason"}
-        assert "Unauthorized" not in _content_of(line)
+    assert _websocket_lines(output) == [("info", _REFUSED, _MALFORMED_UPGRADE_STATUS)]
+    (line,) = _coded_lines(output, "websocket_")
+    assert line.keys() <= {*BASE_KEYS, "status"}
+    assert "Bad Request" not in _content_of(line)
 
 
-def test_concurrent_upgrades_each_log_their_own_outcome(
+def test_a_denied_upgrade_of_uvicorns_older_websockets_implementation_logs_its_refusal_too(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     configure("uvicorn-service")
 
-    _refuse_upgrades(
-        [WEBSOCKET_DENIED_PATH, WEBSOCKET_SILENT_PATH] * 2, "websockets-sansio", concurrently=True
-    )
+    async def exercise(base_url: str) -> None:
+        denied_url = base_url.replace("http", "ws") + WEBSOCKET_DENIED_PATH
+        with pytest.raises(InvalidHandshake):
+            await connect(denied_url)
 
-    assert Counter(_websocket_lines(capsys.readouterr().out)) == {
-        ("info", _REFUSED, WEBSOCKET_DENIED_STATUS): 2,
-        _INCOMPLETE: 2,
-        ("info", _REFUSED, 500): 2,
-    }
+    serve(uvicorn.Config(build_app(), log_config=None, ws="websockets"), exercise)
+
+    output = capsys.readouterr().out
+    assert _websocket_lines(output) == [("info", _REFUSED, WEBSOCKET_DENIED_STATUS)]
 
 
 def test_a_websocket_refusal_below_the_root_level_writes_no_line(
@@ -364,7 +303,7 @@ def test_a_websocket_refusal_below_the_root_level_writes_no_line(
     monkeypatch.setenv("LOG_LEVEL", "warning")
     configure("uvicorn-service")
 
-    _refuse_upgrades([WEBSOCKET_DENIED_PATH], "websockets-sansio")
+    _malformed_upgrade("websockets-sansio")
 
     assert lines_of(json_lines(capsys.readouterr().out), _UVICORN_LOGGER) == []
 
@@ -459,7 +398,7 @@ def test_a_second_configure_leaves_the_uvicorn_lines_as_they_were(
     configure("uvicorn-service")
     configure("uvicorn-service")
 
-    _refuse_upgrades([WEBSOCKET_DENIED_PATH], "websockets-sansio")
+    _malformed_upgrade("websockets-sansio")
 
     lines = _uvicorn_lines(capsys.readouterr().out)
     assert [(line["level"], line["event"]) for line in lines] == [
@@ -494,7 +433,7 @@ def test_a_websocket_under_the_debug_level_never_enables_uvicorn_debug_records(
     monkeypatch.setenv("LOG_LEVEL", "debug")
     configure("uvicorn-service")
 
-    _refuse_upgrades([WEBSOCKET_DENIED_PATH], "websockets-sansio")
+    _malformed_upgrade("websockets-sansio")
 
     assert not logging.getLogger("uvicorn.error").isEnabledFor(logging.DEBUG)
     assert _the_one_line(capsys.readouterr().out, _REFUSED)["level"] == "info"

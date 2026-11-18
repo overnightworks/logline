@@ -2,21 +2,17 @@
 
 import errno
 import logging
-from contextvars import ContextVar
 from dataclasses import dataclass
+
+from logline.websocket import in_owned_session
 
 __all__: list[str] = []
 
 _UVICORN_WEBSOCKET_LINE = '"WebSocket %s"'
 _UVICORN_ASGI_EXCEPTION_TEMPLATE = "Exception in ASGI application\n"
 # websockets' template for a refused upgrade, which both of its servers write on the logger
-# uvicorn hands them, and uvicorn's for an app that returned without completing the handshake.
+# uvicorn hands them.
 _WEBSOCKETS_REFUSAL_TEMPLATE = "connection rejected (%d %s)"
-_UVICORN_INCOMPLETE_HANDSHAKE_TEMPLATE = "ASGI callable returned without completing handshake."
-# uvicorn's websockets-sansio protocol writes the refusal and then the incomplete-handshake line
-# from one task, which it creates for the connection; the task's context carries what the first
-# record saw to the second.
-_UPGRADE_REFUSED_IN_TASK: ContextVar[bool] = ContextVar("upgrade_refused_in_task", default=False)
 
 
 def _carries_content(record: logging.LogRecord) -> bool:
@@ -38,16 +34,14 @@ class _CodedEvent:
 _CODED_EVENTS_BY_TEMPLATE = {
     "Invalid HTTP request received.": _CodedEvent("http_request.refused", "invalid_request"),
     "Unsupported upgrade request.": _CodedEvent("http_request.refused", "unsupported_upgrade"),
-    _UVICORN_INCOMPLETE_HANDSHAKE_TEMPLATE: _CodedEvent(
-        "websocket_handshake.failed", "handshake_incomplete"
-    ),
     "Started server process [%d]": _CodedEvent("server_process.started"),
     "Shutting down": _CodedEvent("server_shutdown.started"),
     "Finished server process [%d]": _CodedEvent("server_process.finished"),
 }
-# Each says what another line says: "Waiting for" what the app's lifespan lines report, and the
+# Each says what another line says: "Waiting for" what the app's lifespan lines report, the
 # lifespan's own outcome lines and failure record, which the middleware writes from the ASGI
-# messages with their traceback.
+# messages with their traceback, and websockets' "connection open" and uvicorn's two records for an
+# app that returned without answering an upgrade, which the middleware's session line carries.
 _DROPPED_TEMPLATES = frozenset(
     {
         "Waiting for application startup.",
@@ -57,6 +51,9 @@ _DROPPED_TEMPLATES = frozenset(
         "Application startup failed. Exiting.",
         "Application shutdown failed. Exiting.",
         "Exception in 'lifespan' protocol\n",
+        "connection open",
+        "ASGI callable returned without completing handshake.",
+        "ASGI callable returned without sending handshake.",
     }
 )
 # uvicorn names the address it listens on in several forms (an IPv4 or IPv6 URL, a unix socket, a
@@ -121,9 +118,13 @@ def _name_known_record(record: logging.LogRecord) -> None:
 
 
 def _is_redundant(record: logging.LogRecord) -> bool:
-    """A record whose message another record of uvicorn or websockets already carries."""
-    if record.msg == _UVICORN_INCOMPLETE_HANDSHAKE_TEMPLATE:
-        return _UPGRADE_REFUSED_IN_TASK.get()
+    """A record whose message another line already carries.
+
+    A refusal the app's session line carries is written, in the app's task, while the middleware
+    owns it; a refusal outside any session, such as a malformed upgrade, has no session line.
+    """
+    if record.msg == _WEBSOCKETS_REFUSAL_TEMPLATE:
+        return in_owned_session()
     return isinstance(record.msg, str) and record.msg in _DROPPED_TEMPLATES
 
 
@@ -135,8 +136,6 @@ class _UvicornErrorRecords(logging.Filter):
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
-        if record.msg == _WEBSOCKETS_REFUSAL_TEMPLATE:
-            _UPGRADE_REFUSED_IN_TASK.set(True)
         if not logging.getLogger().isEnabledFor(record.levelno):
             return False
         if _carries_content(record) or _is_redundant(record):

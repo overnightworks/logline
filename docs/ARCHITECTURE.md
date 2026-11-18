@@ -30,8 +30,8 @@ Module owners in `logline`:
   `warnings.showwarning`, and the events they write: `process.crashed`, `thread.crashed` and
   `python_warning.raised`, with an `error_type`.
 - `uvicorn_records` owns the filter `configure` puts on `uvicorn.error`: which uvicorn and websockets records it
-  drops and which it names as `server_bind.failed`, `http_request.refused`, `asgi_app.failed`, `websocket_upgrade.refused`,
-  `websocket_handshake.failed` and the lifecycle events `server_process.started`, `server_listen.started`,
+  drops and which it names as `server_bind.failed`, `http_request.refused`, `asgi_app.failed`, `websocket_upgrade.refused` (a malformed
+  upgrade that never reached the app) and the lifecycle events `server_process.started`, `server_listen.started`,
   `server_shutdown.started` and `server_process.finished`, with a `reason`, `status` or `error_type`. Those names
   and codes are public (README, "Starting uvicorn").
 - `standard` owns the machine rules of the logging standard, read from the package's `standard.json`: the base
@@ -48,7 +48,11 @@ Module owners in `logline`:
 - `lifespan` owns the app startup and shutdown lines (`app_startup.completed`, `app_startup.failed`,
   `app_shutdown.completed`, `app_shutdown.failed`) on `logline.lifespan`: it runs the app's `lifespan` scope and
   writes them from the ASGI messages, under any server. `request`'s middleware dispatches to it.
-- `asgi` owns the ASGI type aliases `request` and `lifespan` share.
+- `websocket` owns how a WebSocket session ended, read from its ASGI messages: `outcome`, the answered `status` of an
+  upgrade the app did not accept and the `close_code`. `request`'s middleware dispatches to it and writes the
+  `websocket.ended` line with the per-scope record. It also marks the app's task, so the `uvicorn.error` filter can
+  tell a refusal the session line carries from one that never reached the app.
+- `asgi` owns the ASGI type aliases `request`, `lifespan` and `websocket` share.
 - `request` owns the request line, the per-request record in `scope["state"]` and the functions that set
   `sub`, `ip` and `route`.
 - `step` owns `Outcome`, the one owner of the `outcome` values, the stopwatch behind every `duration_ms`, and
@@ -60,7 +64,7 @@ Module owners in `logline`:
 - `trace` owns the request's and the unit's trace: it starts or continues it in OpenTelemetry's context,
   reads `trace_id` from it and hands it on as headers or, for a message, as a `traceparent` value.
 
-`record` uses `standard` and `trace`; `request` uses `step`, `lifespan` and `asgi`; `configuration` uses `record`, `uvicorn_records` and
+`record` uses `standard` and `trace`; `request` uses `step`, `lifespan`, `websocket` and `asgi`; `uvicorn_records` uses `websocket`; `configuration` uses `record`, `uvicorn_records` and
 `process_failures` and names the request logger; `testing` uses `configuration`.
 `request` imports no web framework; an import contract keeps `logline` free of frameworks, servers and
 HTTP clients.
@@ -145,12 +149,15 @@ lowest direct dependency floors run the same tests.
   `message` from the `failed` answer it forwards, so no server logs the app's free text. What never reaches the
   app (a bind failure, a refused request, the server process lines, an app exception) stays template-mapped and
   uvicorn-only.
-- A refused WebSocket upgrade and uvicorn's "returned without completing handshake" line come from one task, the one
-  uvicorn's websockets-sansio protocol creates for the connection: the filter sets a context variable when it sees
-  websockets' refusal template and drops the handshake line when it is set, so the link needs no pid, socket or
-  timing. uvicorn's `websockets` implementation writes the refusal but a different
-  handshake line, and `wsproto` writes no refusal line, so neither needs the link; a protocol that wrote the pair
-  from different tasks would not be linked. The refusal is INFO, so `configure` opens `uvicorn.error` to INFO
+- A WebSocket session's line comes from the `websocket` scope the middleware already receives, so wsproto, which
+  writes no refusal record, gets the same line. The middleware sets a context variable in the app's task and never
+  resets it, because the server answers an unanswered or failed upgrade after the app has returned, in the same task.
+  websockets-sansio writes its refusal synchronously in that task, so the filter drops the refusal when the variable is
+  set and keeps it when it is not (a malformed upgrade is answered before any app task exists). uvicorn's older
+  `websockets` implementation writes the refusal from the handler task, which the variable does not reach, so it
+  writes the refusal beside the session line. websockets' `connection open` and uvicorn's two "without completing
+  (or sending) handshake" records are dropped by equality, since the session line says what they said.
+  The refusal is INFO, so `configure` opens `uvicorn.error` to INFO
   under a higher root level and the filter drops what the root level would drop after it has seen the refusal.
   `uvicorn.error` stays at INFO under `LOG_LEVEL=debug` too, so websockets' DEBUG frames never reach the filter.
 - uvicorn's lifecycle records are named by their templates with the process id and address left out; the listening
@@ -179,4 +186,5 @@ lowest direct dependency floors run the same tests.
 - `duration_ms` runs until the last body chunk, so a long streamed response logs when it ends and
   background work after the response is not counted; a client disconnect logs the status already sent, or 500 if none.
 - A public client can choose its `trace_id`; stripping `traceparent` at the edge is the platform's.
-- WebSocket connections get no request line; usage by a host with sockets decides what they get.
+- A WebSocket session gets `websocket.ended` when the app returns, not a request line; it joins no trace, because a
+  turn on the socket runs in its own `unit_trace`.
