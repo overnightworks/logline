@@ -26,7 +26,7 @@ that module's `__all__` lists it. Every other module listed below is internal an
 Module owners in `logline`:
 
 - `configuration` owns `configure`: the root JSON handler on stdout, the root level from `LOG_LEVEL`, the
-  `logline.request` level pin, the capped library loggers' levels (HTTP clients, `mcp` and
+  `logline.request` level pin, the capped library loggers' levels (HTTP clients, `mcp`, `botocore` and
   `sqlalchemy.dialects.postgresql` at WARNING, `piper` at ERROR), the routing of uvicorn's loggers and the
   installing of the `process_failures` hooks.
 - `process_failures` owns the three hooks `configure` installs, `sys.excepthook`, `threading.excepthook` and
@@ -118,7 +118,7 @@ what it is told.
 paths and query strings stay out of every line logline writes or routes. At `LOG_LEVEL=debug`, other libraries'
 DEBUG records pass as those libraries write them; some carry paths, query strings, header values or frames,
 and logline neither masks nor caps them (see the [vision](VISION.md)). The mechanisms are the route template
-instead of the path, text tracebacks without local variables, the HTTP client, `mcp` and
+instead of the path, text tracebacks without local variables, the HTTP client, `mcp`, `botocore` and
 `sqlalchemy.dialects.postgresql` loggers at WARNING, `piper` at ERROR (it writes spoken text at WARNING) and the
 filter on uvicorn's WebSocket lines and DEBUG records, which carry websockets' request headers and frames. An exception
 message is logged as written: the log shows what happened, and a secret in a message is the app's defect.
