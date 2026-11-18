@@ -118,16 +118,17 @@ _SESSIONS = [
 # The legacy implementation runs the handshake outside the app task, so its own refusal line
 # stays; the others run in the app task, where the session line replaces it.
 _REFUSAL_EVENT = "websocket_upgrade.refused"
+_UNCODED_EVENTS = {"connection open", "websocket_handshake.failed", "uvicorn.unknown_record"}
 _IMPLEMENTATIONS = [
     pytest.param(
         "websockets-sansio",
-        {"connection open", "websocket_handshake.failed", _REFUSAL_EVENT},
+        {*_UNCODED_EVENTS, _REFUSAL_EVENT},
         id="sansio",
     ),
     pytest.param(
-        "wsproto", {"connection open", "websocket_handshake.failed", _REFUSAL_EVENT}, id="wsproto"
+        "wsproto", {*_UNCODED_EVENTS, _REFUSAL_EVENT}, id="wsproto"
     ),
-    pytest.param("websockets", {"connection open", "websocket_handshake.failed"}, id="legacy"),
+    pytest.param("websockets", _UNCODED_EVENTS, id="legacy"),
 ]
 
 
