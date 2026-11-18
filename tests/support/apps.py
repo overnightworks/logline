@@ -119,9 +119,22 @@ def build_app(
     app.add_middleware(RequestLineMiddleware)
     if static_directory is not None:
         _add_mounts(app, static_directory)
-    _add_request_routes(app)
+    _add_identity_routes(app)
+    _add_failure_routes(app)
+    _add_streaming_routes(app)
     _add_logging_routes(app)
-    _add_step_routes(app)
+    _add_field_and_trace_routes(app)
+    _add_step_outcome_routes(app)
+    _add_step_reason_routes(app)
+    _add_step_lifetime_routes(app)
+    _add_step_field_routes(app)
+    _add_step_failure_routes(app)
+    _add_step_conflict_routes(app)
+    _add_step_end_routes(app)
+    _add_step_end_cancelled_routes(app)
+    _add_step_end_order_routes(app)
+    _add_step_start_routes(app)
+    _add_step_thread_routes(app)
     _add_websocket_route(app)
     _add_turn_route(app)
     return app
@@ -142,7 +155,9 @@ def _add_mounts(app: FastAPI, static_directory: Path) -> None:
     )
 
 
-def _add_request_routes(app: FastAPI) -> None:
+def _add_identity_routes(app: FastAPI) -> None:
+    """Routes that set the sub, the route template or the client ip."""
+
     @app.get("/items/{item_id}")
     async def item(item_id: int) -> dict[str, int]:
         return {"item_id": item_id}
@@ -193,6 +208,10 @@ def _add_request_routes(app: FastAPI) -> None:
         set_client_ip(request.scope, HOST_CLIENT_IP)
         return {"ok": True}
 
+
+def _add_failure_routes(app: FastAPI) -> None:
+    """Routes that read a body, answer an error status or raise."""
+
     @app.post("/body")
     async def body(request: Request) -> dict[str, int]:
         return {"length": len(await request.body())}
@@ -222,6 +241,10 @@ def _add_request_routes(app: FastAPI) -> None:
     async def group() -> None:
         first, second = GROUP_MEMBER_MESSAGES
         raise ExceptionGroup("group message", [ValueError(first), TypeError(second)])
+
+
+def _add_streaming_routes(app: FastAPI) -> None:
+    """Routes that run work after, or stream, their response."""
 
     @app.get("/background-task-raising")
     async def background_task_raising(tasks: BackgroundTasks) -> dict[str, bool]:
@@ -288,6 +311,10 @@ def _add_logging_routes(app: FastAPI) -> None:
     async def eventless_line() -> dict[str, bool]:
         structlog.get_logger("tests.eventless").info(order_id="o-18")
         return {"ok": True}
+
+
+def _add_field_and_trace_routes(app: FastAPI) -> None:
+    """Routes that log hostile fields or run inside the request's trace."""
 
     @app.get("/hostile-fields")
     async def hostile_fields() -> dict[str, bool]:
@@ -418,8 +445,8 @@ async def _generator_of_a_step() -> AsyncGenerator[int]:
         yield 2
 
 
-def _add_step_routes(app: FastAPI) -> None:
-    """Routes that each run one step; the response says which exception reached the endpoint."""
+def _add_step_outcome_routes(app: FastAPI) -> None:
+    """Routes that run one step to an outcome; the response says which exception got out."""
 
     @app.get("/step/ok")
     async def step_ok() -> _Answer:
@@ -469,6 +496,10 @@ def _add_step_routes(app: FastAPI) -> None:
             step.reason(STEP.ok_reason)
         return {"caught": None}
 
+
+def _add_step_reason_routes(app: FastAPI) -> None:
+    """Routes whose step gives an ok reason and then ends otherwise."""
+
     @app.get("/step/reason-then-refuse")
     async def step_reason_then_refuse() -> _Answer:
         async with _step() as step:
@@ -507,6 +538,10 @@ def _add_step_routes(app: FastAPI) -> None:
             step.refuse(STEP_REFUSAL_REASON)
         return {"caught": None}
 
+
+def _add_step_lifetime_routes(app: FastAPI) -> None:
+    """Routes whose step is cancelled or lives in a generator."""
+
     @app.get("/step/cancelled")
     async def step_cancelled() -> _Answer:
         async def wait_forever() -> None:
@@ -533,6 +568,10 @@ def _add_step_routes(app: FastAPI) -> None:
             async for _ in generator:
                 pass
         return {"caught": None}
+
+
+def _add_step_field_routes(app: FastAPI) -> None:
+    """Routes whose step times and adds fields."""
 
     @app.get("/step/timer-named-fields")
     async def step_timer_named_fields() -> _Answer:
@@ -575,6 +614,10 @@ def _add_step_routes(app: FastAPI) -> None:
         async with _step() as step:
             step.add(**{STEP.reserved_field: "value"})
 
+
+def _add_step_failure_routes(app: FastAPI) -> None:
+    """Routes that fail, refuse or degrade a step, with or without a raise."""
+
     @app.get("/step/refuse-then-raise")
     async def step_refuse_then_raise() -> _Answer:
         failure = ValueError(STEP_FAILURE_MESSAGE)
@@ -604,6 +647,10 @@ def _add_step_routes(app: FastAPI) -> None:
             step.handled()
             step.fail(STEP.failure_reason)
         return {"caught": None}
+
+
+def _add_step_conflict_routes(app: FastAPI) -> None:
+    """Routes that give a step two outcomes in turn."""
 
     @app.get("/step/fail-then-refuse")
     async def step_fail_then_refuse() -> _Answer:
@@ -643,6 +690,10 @@ def _add_step_routes(app: FastAPI) -> None:
             await waiting
         return {"caught": None}
 
+
+def _add_step_end_routes(app: FastAPI) -> None:
+    """Routes that end a step by hand."""
+
     @app.get("/step/end")
     async def step_end() -> _Answer:
         step = _step()
@@ -675,6 +726,10 @@ def _add_step_routes(app: FastAPI) -> None:
     def step_sync_end_cancelled() -> _Answer:
         _step().end_cancelled()
         return {"caught": None}
+
+
+def _add_step_end_cancelled_routes(app: FastAPI) -> None:
+    """Routes that end a step as cancelled after another outcome."""
 
     @app.get("/step/fail-then-end-cancelled")
     async def step_fail_then_end_cancelled() -> _Answer:
@@ -714,6 +769,10 @@ def _add_step_routes(app: FastAPI) -> None:
         except ValueError as caught:
             return _caught(caught, failure)
 
+
+def _add_step_end_order_routes(app: FastAPI) -> None:
+    """Routes that end a step more than once or inside its block."""
+
     @app.get("/step/end-cancelled-then-end")
     async def step_end_cancelled_then_end() -> _Answer:
         step = _step()
@@ -740,6 +799,10 @@ def _add_step_routes(app: FastAPI) -> None:
         async with _step() as step:
             step.end_cancelled()
         return {"caught": None}
+
+
+def _add_step_start_routes(app: FastAPI) -> None:
+    """Routes that build a step apart from its block, start it earlier or end it synchronously."""
 
     @app.get("/step/sync-end")
     def step_sync_end() -> _Answer:
@@ -791,6 +854,10 @@ def _add_step_routes(app: FastAPI) -> None:
                 raise failure
         except ValueError as caught:
             return _caught(caught, failure)
+
+
+def _add_step_thread_routes(app: FastAPI) -> None:
+    """Routes that run a step on a thread."""
 
     @app.get("/step/thread")
     async def step_thread() -> _Answer:
