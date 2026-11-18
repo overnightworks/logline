@@ -69,12 +69,13 @@ class StepTimer:
       timer can be constructed: `duration_ms` and `first_output_ms` count from it. One later than
       `time.perf_counter()` raises `ValueError` at construction. It is no step field name: `add`
       drops a field of that name, and the line never carries it.
-    - A block that ends normally is `ok`, or `refused` after `refuse`, or `failed` with `reason`
-      after `fail`, which wins over `refuse` in either order. An `Exception` makes it `failed`
-      with `error_type` (the class name; never the message or a traceback), beside the `reason`
-      when `fail` named one, and propagates unchanged. Any other `BaseException`, a cancellation
-      or `GeneratorExit`, makes it `cancelled`, without `error_type` and `reason`; the exception
-      propagates too.
+    - A block that ends normally is `ok`, with `reason` when `reason` named one, or `refused`
+      after `refuse`, or `failed` with `reason` after `fail`; the reason of `refuse` or `fail`
+      replaces one given to `reason`, and `fail` wins over `refuse` in either order. An
+      `Exception` makes it `failed` with `error_type` (the class name; never the message or a
+      traceback), beside the `reason` when `fail` named one, and propagates unchanged. Any other
+      `BaseException`, a cancellation or `GeneratorExit`, makes it `cancelled`, without
+      `error_type` and `reason`; the exception propagates too.
     - `end` writes the line now, as a block that ends normally would; `end_cancelled` writes it
       now, as a block that a cancellation leaves would: `cancelled`, without `error_type` and
       `reason`. The line is written once: after either or the block's exit, a later one writes
@@ -98,6 +99,7 @@ class StepTimer:
         self._stopwatch = Stopwatch(started_at)
         self._degraded = False
         self._handled = False
+        self._ok_reason: str | None = None
         self._refusal_reason: str | None = None
         self._failure_reason: str | None = None
         self._first_output_ms: float | None = None
@@ -114,6 +116,10 @@ class StepTimer:
     def handled(self) -> None:
         """If the step fails, its unit goes on: the failed line is a warning, not an error."""
         self._handled = True
+
+    def reason(self, reason: str) -> None:
+        """Give an `ok` end its `reason`, a code from the caller's closed set, such as `silence`."""
+        self._ok_reason = reason
 
     def refuse(self, reason: str) -> None:
         """End the step as `refused` for `reason`, a code from the caller's closed set."""
@@ -170,6 +176,8 @@ class StepTimer:
         }
         if self._first_output_ms is not None:
             fields["first_output_ms"] = self._first_output_ms
+        if outcome is Outcome.OK and self._ok_reason is not None:
+            fields["reason"] = self._ok_reason
         if outcome is Outcome.REFUSED:
             fields["reason"] = self._refusal_reason
         if outcome is Outcome.FAILED:

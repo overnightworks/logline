@@ -65,6 +65,7 @@ class StepScenario:
     """What the step routes add, fail with and collide on, which the step tests read back."""
 
     failure_reason: str = "rate_limited"
+    ok_reason: str = "silence"
     count: int = 42
     later_agent_id: str = "agent-8"
     reserved_field: str = "module"
@@ -460,6 +461,43 @@ def _add_step_routes(app: FastAPI) -> None:
     async def step_refused() -> _Answer:
         async with _step() as step:
             step.refuse(STEP_REFUSAL_REASON)
+        return {"caught": None}
+
+    @app.get("/step/ok-with-reason")
+    async def step_ok_with_reason() -> _Answer:
+        async with _step() as step:
+            step.reason(STEP.ok_reason)
+        return {"caught": None}
+
+    @app.get("/step/reason-then-refuse")
+    async def step_reason_then_refuse() -> _Answer:
+        async with _step() as step:
+            step.reason(STEP.ok_reason)
+            step.refuse(STEP_REFUSAL_REASON)
+        return {"caught": None}
+
+    @app.get("/step/reason-then-fail")
+    async def step_reason_then_fail() -> _Answer:
+        async with _step() as step:
+            step.reason(STEP.ok_reason)
+            step.fail(STEP.failure_reason)
+        return {"caught": None}
+
+    @app.get("/step/reason-then-raise")
+    async def step_reason_then_raise() -> _Answer:
+        failure = ValueError(STEP_FAILURE_MESSAGE)
+        try:
+            async with _step() as step:
+                step.reason(STEP.ok_reason)
+                raise failure
+        except ValueError as caught:
+            return _caught(caught, failure)
+
+    @app.get("/step/reason-then-cancel")
+    async def step_reason_then_cancel() -> _Answer:
+        step = _step()
+        step.reason(STEP.ok_reason)
+        step.end_cancelled()
         return {"caught": None}
 
     @app.get("/step/refused-degraded")
