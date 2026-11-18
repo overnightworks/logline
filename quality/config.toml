@@ -1,7 +1,2 @@
 [gate]
 mandatory_jobs = ["checks", "lowest-direct"]
-
-[[layout.allow]]
-path = "tests/test_public_modules.py"
-rule = "test-layout"
-reason = "The test spans every module of the package, so no single module names it."

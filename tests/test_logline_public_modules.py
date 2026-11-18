@@ -1,4 +1,4 @@
-import ast
+import importlib
 import pkgutil
 import re
 from pathlib import Path
@@ -18,30 +18,19 @@ def _public_modules() -> set[str]:
     return set(re.findall(r"`([\w.]+)`", sentence.group(1)))
 
 
-def _declared_all(module_name: str) -> list[str] | None:
-    source = Path(logline.__path__[0]) / (
-        "__init__.py" if module_name == "logline" else module_name.removeprefix("logline.") + ".py"
-    )
-    for statement in ast.parse(source.read_text(encoding="utf-8")).body:
-        match statement:
-            case (
-                ast.Assign(targets=[ast.Name(id="__all__")], value=value)
-                | ast.AnnAssign(target=ast.Name(id="__all__"), value=value)
-            ) if value is not None:
-                return list(ast.literal_eval(value))
-    return None
-
-
 _MODULE_NAMES = ["logline"] + [
-    module.name for module in pkgutil.iter_modules(logline.__path__, "logline.")
+    module.name for module in pkgutil.walk_packages(logline.__path__, "logline.")
 ]
 
 
 @pytest.mark.parametrize("module_name", _MODULE_NAMES)
 def test_only_a_public_module_lists_names_in_all(module_name: str) -> None:
-    declared = _declared_all(module_name)
+    listed = getattr(importlib.import_module(module_name), "__all__", None)
 
-    assert bool(declared) == (module_name in _public_modules())
+    if module_name in _public_modules():
+        assert listed, f"{module_name} is public and must list its names in __all__"
+    else:
+        assert not listed, f"{module_name} is not public and must not list names in __all__"
 
 
 def test_the_readme_names_modules_that_exist() -> None:
