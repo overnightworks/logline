@@ -1,0 +1,8 @@
+claim_id = "f3d408385769401398ef490a38474775"
+agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
+role = "builder"
+base = "e37b04d720e444db42892fe84ae57e43a8e8e816"
+branch = "claude/issue-58-step-reason-on-ok"
+scope = ["README.md", "src/logline/step.py", "tests"]
+opened_commit = "19215f129a9e3307bbf5071f3579ba2955af3ff6"
+whole_reason = "tests holds the real-server harness and the step tests one change touches"
