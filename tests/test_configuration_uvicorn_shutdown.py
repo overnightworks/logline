@@ -9,11 +9,10 @@ from logline import configure
 from logline.standard import BASE_KEYS
 from tests.support.lines import Line, json_lines, lines_of
 from tests.support.raw_app import HELD_PATH, HELD_SOCKET_PATH, RawApp
-from tests.support.serving import WrittenEvents
+from tests.support.serving import HTTP_IMPLEMENTATIONS, WrittenEvents
 
 _UVICORN_LOGGER = "uvicorn.error"
 _WAITING = "server_shutdown.waiting"
-_HTTP_IMPLEMENTATIONS = ["h11", "httptools"]
 
 
 async def _start_held_request(base_url: str, app: RawApp) -> asyncio.StreamWriter:
@@ -80,7 +79,7 @@ def _server_lines(output: str) -> list[Line]:
     return lines_of(json_lines(output), _UVICORN_LOGGER)
 
 
-@pytest.mark.parametrize("http", _HTTP_IMPLEMENTATIONS)
+@pytest.mark.parametrize("http", HTTP_IMPLEMENTATIONS)
 def test_a_graceful_stop_with_an_open_websocket_and_a_background_task_logs_only_literal_lines(
     capsys: pytest.CaptureFixture[str], http: str
 ) -> None:
@@ -106,7 +105,7 @@ def test_a_graceful_stop_with_an_open_websocket_and_a_background_task_logs_only_
     }
 
 
-@pytest.mark.parametrize("http", _HTTP_IMPLEMENTATIONS)
+@pytest.mark.parametrize("http", HTTP_IMPLEMENTATIONS)
 def test_a_stop_that_outlasts_the_graceful_timeout_logs_the_cancelled_task_count(
     capsys: pytest.CaptureFixture[str], http: str
 ) -> None:

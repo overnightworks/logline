@@ -29,14 +29,13 @@ from tests.support.raw_app import (
     RETURNS_VALUE_PATH,
     RawApp,
 )
-from tests.support.serving import WrittenEvents, serve
+from tests.support.serving import HTTP_IMPLEMENTATIONS, WrittenEvents, serve
 
 _UVICORN_LOGGER = "uvicorn.error"
 _LOCAL_HOST = "127.0.0.1"
 # TEST-NET-1 (RFC 5737): no local interface owns it, so binding fails without any network.
 _UNOWNED_HOST = "203.0.113.1"
 _REQUEST_SECRET = "request-secret"
-_HTTP_IMPLEMENTATIONS = ["h11", "httptools"]
 
 
 def _coded_lines(output: str, event_prefix: str) -> list[Line]:
@@ -199,7 +198,7 @@ def _failure_cases(http: str) -> list[object]:
 @pytest.mark.parametrize(
     ("drive", "level", "expected", "has_traceback"),
     [
-        *[case for http in _HTTP_IMPLEMENTATIONS for case in _failure_cases(http)],
+        *[case for http in HTTP_IMPLEMENTATIONS for case in _failure_cases(http)],
         pytest.param(
             _occupied_port_failure,
             "error",
@@ -513,7 +512,7 @@ def test_a_websocket_under_the_debug_level_never_enables_uvicorn_debug_records(
     assert _the_one_line(capsys.readouterr().out, _REFUSED)["level"] == "info"
 
 
-@pytest.mark.parametrize("http", _HTTP_IMPLEMENTATIONS)
+@pytest.mark.parametrize("http", HTTP_IMPLEMENTATIONS)
 def test_an_upgrade_without_a_websocket_library_logs_both_refusals(
     capsys: pytest.CaptureFixture[str], http: str
 ) -> None:
@@ -554,7 +553,7 @@ async def _no_exercise(_base_url: str) -> None:
     return
 
 
-@pytest.mark.parametrize("http", _HTTP_IMPLEMENTATIONS)
+@pytest.mark.parametrize("http", HTTP_IMPLEMENTATIONS)
 def test_a_server_at_its_request_limit_logs_one_literal_line_before_it_stops(
     capsys: pytest.CaptureFixture[str], http: str
 ) -> None:
