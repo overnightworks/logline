@@ -4,13 +4,7 @@ import json
 import re
 from importlib.resources import files
 
-__all__ = [
-    "BASE_KEYS",
-    "EVENT_NAME_PATTERN",
-    "OWN_SETUP_ASSIGNMENTS",
-    "OWN_SETUP_CALLS",
-    "is_denied_field",
-]
+__all__: list[str] = []
 
 _RULES = json.loads(files("logline").joinpath("standard.json").read_text(encoding="utf-8"))
 

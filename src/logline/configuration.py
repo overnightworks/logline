@@ -13,7 +13,7 @@ from logline.record import record_shape
 from logline.request import REQUEST_LOGGER_NAME
 from logline.uvicorn_records import UVICORN_ERROR_RECORDS
 
-__all__ = ["configure"]
+__all__: list[str] = []
 
 _LEVELS = {
     "debug": logging.DEBUG,

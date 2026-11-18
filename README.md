@@ -669,8 +669,8 @@ The version follows [semantic versioning](https://semver.org/). From 1.0 the pub
 only renaming or removing one, or changing its signature, is a major, and a patch release never breaks one. The one
 semver exception: a change to the record, to an event name or to `configure`'s policy touches hosts only, so it is a
 minor release with a **Breaking** note in the [release pages](https://github.com/overnightworks/logline/releases),
-because hosts pin a tag and take it deliberately. A module's public names are the names its `__all__` lists;
-everything else may change in any release.
+because hosts pin a tag and take it deliberately. The public modules are `logline`, `logline.check`, `logline.testing` and `logline.trace`; a public name is one that a
+public module's `__all__` lists, and everything else may change in any release.
 
 ## Development
 

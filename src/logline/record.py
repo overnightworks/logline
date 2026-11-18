@@ -10,7 +10,7 @@ from structlog.typing import EventDict, Processor, WrappedLogger
 from logline.standard import BASE_KEYS, is_denied_field
 from logline.trace import current_trace_id
 
-__all__ = ["record_shape"]
+__all__: list[str] = []
 
 
 _EXTRA_FIELDS = ExtraAdder()
