@@ -32,10 +32,7 @@ its dev group; the host pins the git tag, so one logline runs in the process and
 refused. A library that pins a tag by git URL forces every host to pin the same tag. quality's fleet package
 standard owns the rule and its check.
 
-The range is `>=1.0,<2`. The names a library imports are the public ones (each module's `__all__`), and they stay
-stable within a major: only a rename or removal of one, or a change to its signature, is a major. A change to the
-record, to an event name or to `configure`'s policy touches hosts only; it is a minor with a **Breaking** note,
-and hosts pin a tag, so they take it deliberately.
+The range is `>=1.0,<2`; [Versioning](#versioning) says what a change to logline means for it.
 
 ```toml
 # the library
@@ -670,6 +667,10 @@ The version follows [semantic versioning](https://semver.org/). While it is 0.x,
 public contract and says so under **Breaking** in the
 [release pages](https://github.com/overnightworks/logline/releases); a patch release never does. A module's
 public names are the names its `__all__` lists; everything else may change in any release.
+
+From 1.0 a public name changes within a major only by a rename or removal, or by a change to its signature; those
+are a major. The one semver exception: a change to the record, to an event name or to `configure`'s policy touches
+hosts only, so it is a minor release with a **Breaking** note, because hosts pin a tag and take it deliberately.
 
 ## Development
 
