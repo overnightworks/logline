@@ -7,7 +7,7 @@ file) is not judged, and neither is a field given through `**fields` or an `extr
 
 import ast
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import Enum, StrEnum
@@ -61,7 +61,7 @@ _ANNOTATION_KINDS = {
 }
 _STEP_TIMERS = frozenset({"logline.StepTimer", "logline.step.StepTimer"})
 _FIELD_BINDERS = frozenset({"structlog.contextvars.bind_contextvars"})
-_UVICORN_STARTS = frozenset({"uvicorn.run", "uvicorn.Config"})
+_UVICORN_STARTS = frozenset({"uvicorn.run", "uvicorn.main.run", "uvicorn.Config"})
 
 _Row = tuple[ast.expr | ast.keyword | ast.stmt, Rule]
 
@@ -107,6 +107,54 @@ def _is_matching_literal(node: ast.expr | None) -> bool:
     )
 
 
+class _CallsOfName:
+    """The calls of one name, indexed once so each parameter's verdict is a lookup."""
+
+    def __init__(self) -> None:
+        self.total = 0
+        self._with_keyword: defaultdict[str, list[ast.keyword]] = defaultdict(list)
+        self._matching_at: dict[bool, Counter[int]] = {False: Counter(), True: Counter()}
+        self._calls_with_keyword: defaultdict[str, list[ast.Call]] = defaultdict(list)
+
+    def add(self, call: ast.Call, *, bound: bool) -> None:
+        self.total += 1
+        for keyword in call.keywords:
+            if keyword.arg is not None:
+                self._with_keyword[keyword.arg].append(keyword)
+                self._calls_with_keyword[keyword.arg].append(call)
+        for index, argument in enumerate(call.args):
+            if isinstance(argument, ast.Starred):
+                break
+            if _is_matching_literal(argument):
+                self._matching_at[bound][index] += 1
+
+    def all_pass_literal(self, parameter: str, position: int | None, *, is_method: bool) -> bool:
+        """Whether every call passes `parameter` a matching literal, by keyword or by position."""
+        if not all(_is_matching_literal(k.value) for k in self._with_keyword[parameter]):
+            return False
+        if position is None:
+            return len(self._calls_with_keyword[parameter]) == self.total
+        matching = self._matching_count(position, is_method=is_method)
+        for call in self._calls_with_keyword[parameter]:
+            matching -= self._matches_by_position(call, position, is_method=is_method)
+        return matching == self.total - len(self._calls_with_keyword[parameter])
+
+    def _matching_count(self, position: int, *, is_method: bool) -> int:
+        return sum(
+            counter[position - 1 if is_method and bound else position]
+            for bound, counter in self._matching_at.items()
+            if position - (1 if is_method and bound else 0) >= 0
+        )
+
+    @staticmethod
+    def _matches_by_position(call: ast.Call, position: int, *, is_method: bool) -> int:
+        index = position - (1 if is_method and isinstance(call.func, ast.Attribute) else 0)
+        leading = call.args[: index + 1]
+        if index < 0 or len(leading) <= index or any(isinstance(a, ast.Starred) for a in leading):
+            return 0
+        return int(_is_matching_literal(leading[index]))
+
+
 class _Judge:
     """The facts one file states about its names, and the rows its calls and assignments break."""
 
@@ -116,7 +164,8 @@ class _Judge:
         self._imports: dict[str, str] = {}
         self._loggers: dict[str, _Kind] = {}
         self._timers: set[str] = set()
-        self._calls_by_name: defaultdict[str, list[ast.Call]] = defaultdict(list)
+        self._calls_by_name: defaultdict[str, _CallsOfName] = defaultdict(_CallsOfName)
+        self._literal_parameters: dict[tuple[str, str, int | None, bool], bool] = {}
         for parent in ast.walk(tree):
             for child in ast.iter_child_nodes(parent):
                 self._parents[child] = parent
@@ -150,9 +199,9 @@ class _Judge:
     def _read_call_name(self, node: ast.AST) -> None:
         if isinstance(node, ast.Call):
             if isinstance(node.func, ast.Name):
-                self._calls_by_name[node.func.id].append(node)
+                self._calls_by_name[node.func.id].add(node, bound=False)
             elif isinstance(node.func, ast.Attribute):
-                self._calls_by_name[node.func.attr].append(node)
+                self._calls_by_name[node.func.attr].add(node, bound=True)
 
     def _read_binding(self, node: ast.AST) -> None:
         if isinstance(node, ast.Assign):
@@ -285,32 +334,15 @@ class _Judge:
         keyword_only = [argument.arg for argument in parameters.kwonlyargs]
         if event.id not in (*positional, *keyword_only):
             return False
-        calls = self._calls_by_name.get(function.name, [])
-        return bool(calls) and all(
-            _is_matching_literal(self._passed(call, event.id, positional, function))
-            for call in calls
-        )
-
-    def _passed(
-        self,
-        call: ast.Call,
-        parameter: str,
-        positional: list[str],
-        function: ast.FunctionDef | ast.AsyncFunctionDef,
-    ) -> ast.expr | None:
-        for keyword in call.keywords:
-            if keyword.arg == parameter:
-                return keyword.value
-        if parameter not in positional:
-            return None
-        is_bound_method = isinstance(call.func, ast.Attribute) and isinstance(
-            self._parents.get(function), ast.ClassDef
-        )
-        index = positional.index(parameter) - (1 if is_bound_method else 0)
-        leading = call.args[: index + 1]
-        if index < 0 or len(leading) <= index or any(isinstance(a, ast.Starred) for a in leading):
-            return None
-        return leading[index]
+        is_method = isinstance(self._parents.get(function), ast.ClassDef)
+        position = positional.index(event.id) if event.id in positional else None
+        key = (function.name, event.id, position, is_method)
+        if key not in self._literal_parameters:
+            calls = self._calls_by_name.get(function.name)
+            self._literal_parameters[key] = calls is not None and calls.all_pass_literal(
+                event.id, position, is_method=is_method
+            )
+        return self._literal_parameters[key]
 
     def _enclosing_function(self, node: ast.AST) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
         parent = self._parents.get(node)
@@ -338,7 +370,11 @@ def _extra_rows(extra: ast.Dict) -> Iterator[_Row]:
 
 
 def _uvicorn_rows(call: ast.Call) -> Iterator[_Row]:
-    options_hidden = any(keyword.arg is None for keyword in call.keywords)
+    options_hidden = (
+        len(call.args) > 1
+        or any(isinstance(a, ast.Starred) for a in call.args)
+        or any(keyword.arg is None for keyword in call.keywords)
+    )
     if options_hidden:
         yield call, Rule.UVICORN_OPTIONS_HIDDEN
     named = {keyword.arg: keyword for keyword in call.keywords if keyword.arg is not None}

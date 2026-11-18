@@ -1,5 +1,6 @@
 import ast
 import sys
+import time
 from pathlib import Path, PurePath
 
 import pytest
@@ -145,6 +146,13 @@ _BINDING_CASES = [
 
 _HOP_CASES = [
     _case(
+        "parameter logged twice with a bad caller",
+        _STDLIB
+        + 'def note(event):\n    logger.info(event)\n    logger.warning(event)\n\nnote("Bad")\n',
+        Rule.EVENT_NOT_LITERAL,
+        Rule.EVENT_NOT_LITERAL,
+    ),
+    _case(
         "parameter with literal callers",
         _STDLIB
         + 'def note(event):\n    logger.info(event)\n\nnote("turn.ended")\nnote("turn.failed")\n',
@@ -157,6 +165,19 @@ _HOP_CASES = [
         "parameter passed by position beside another keyword",
         _STDLIB
         + 'def note(event, count=0):\n    logger.info(event)\n\nnote("turn.ended", count=2)\n',
+    ),
+    _case(
+        "positional parameter passed by keyword",
+        _STDLIB + 'def note(event):\n    logger.info(event)\n\nnote(event="turn.ended")\n',
+    ),
+    _case(
+        "positional parameter passed by keyword and position",
+        _STDLIB + 'def note(event):\n    logger.info(event)\n\nnote("Bad", event="turn.ended")\n',
+    ),
+    _case(
+        "parameter passed a message by keyword",
+        _STDLIB + 'def note(event):\n    logger.info(event)\n\nnote(event="Turn ended")\n',
+        Rule.EVENT_NOT_LITERAL,
     ),
     _case(
         "positional-only parameter",
@@ -356,6 +377,22 @@ _OWN_SETUP_CASES = [
 _UVICORN_CASES = [
     _case("run clean", "import uvicorn\nuvicorn.run(app, log_config=None)\n"),
     _case("Config clean", "import uvicorn\nuvicorn.Config(app, log_config=None)\n"),
+    _case("main.run clean", "import uvicorn.main\nuvicorn.main.run(app, log_config=None)\n"),
+    _case(
+        "main.run without log_config",
+        "import uvicorn.main\nuvicorn.main.run(app)\n",
+        Rule.UVICORN_LOG_CONFIG,
+    ),
+    _case(
+        "positional options hide log_config",
+        'import uvicorn\nuvicorn.run(app, "h", 1, None)\n',
+        Rule.UVICORN_OPTIONS_HIDDEN,
+    ),
+    _case(
+        "starred positional hides options",
+        "import uvicorn\nuvicorn.run(*arguments)\n",
+        Rule.UVICORN_OPTIONS_HIDDEN,
+    ),
     _case(
         "from import",
         "from uvicorn import run\nrun(app, log_config=None)\n",
@@ -411,6 +448,39 @@ _UVICORN_CASES = [
 )
 def test_a_source_breaks_exactly_the_rows_its_rule_names(source: str, expected: list[Rule]) -> None:
     assert _rules(source) == expected
+
+
+@pytest.mark.parametrize(
+    "definition",
+    [
+        "def note(event):\n    logger.info(event)\n",
+        "def note(event):\n    logger.info(event)\n    logger.warning(event)\n",
+    ],
+    ids=["one function logged once", "one function logged twice"],
+)
+def test_a_crafted_file_of_repeated_functions_is_checked_in_linear_time(definition: str) -> None:
+    repeats = 4000
+    source = _STDLIB + (definition + 'note("job.done")\n') * repeats
+
+    started = time.perf_counter()
+    findings = check(source, PurePath("host.py"))
+    elapsed = time.perf_counter() - started
+
+    assert not findings
+    assert elapsed < 3.0  # quadratic scanning took 15 s here; linear takes well under 1 s
+
+
+def test_alike_functions_with_distinct_parameters_are_checked_in_linear_time() -> None:
+    repeats = 2000
+    definitions = "".join(f"def note(e{n}):\n    logger.info(e{n})\n" for n in range(repeats))
+    source = _STDLIB + definitions + 'note("job.done")\n' * repeats
+
+    started = time.perf_counter()
+    findings = check(source, PurePath("host.py"))
+    elapsed = time.perf_counter() - started
+
+    assert not findings
+    assert elapsed < 1.5  # quadratic scanning took 3.5 s here; linear takes well under 1 s
 
 
 def test_a_finding_names_its_path_and_the_place_of_the_node() -> None:
