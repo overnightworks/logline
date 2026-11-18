@@ -3,7 +3,9 @@ import logging
 import pytest
 
 from logline import Outcome, StepTimer
-from tests.support.apps import (
+from tests.support.lines import Line, lines_of, request_lines
+from tests.support.serving import get, serve_requests, serve_requests_answered
+from tests.support.step_routes import (
     STEP,
     STEP_AGENT_ID,
     STEP_EVENT,
@@ -11,8 +13,6 @@ from tests.support.apps import (
     STEP_LOGGER,
     STEP_REFUSAL_REASON,
 )
-from tests.support.lines import Line, lines_of, request_lines
-from tests.support.serving import get, serve_requests, serve_requests_answered
 
 _TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
 _TRACEPARENT = f"00-{_TRACE_ID}-00f067aa0ba902b7-01"

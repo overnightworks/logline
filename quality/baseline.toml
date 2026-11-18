@@ -1,0 +1,4 @@
+# Measured by `quality check --fix`. Entries only ever go down.
+
+[clones."tests/test_configuration_uvicorn_records.py"]
+test_a_websocket_refusal_below_the_root_level_writes_no_line = [["tests/test_lifespan_lines.py", "test_the_completed_lines_follow_the_root_level"]]
