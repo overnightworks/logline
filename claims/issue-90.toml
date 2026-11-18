@@ -1,8 +1,0 @@
-claim_id = "191eb5b5c5f5479ba9f8ed691674542b"
-agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
-role = "builder"
-base = "2c0fc53dced12749c65574c28e7aefffedc13d24"
-branch = "claude/issue-90-public-modules-check"
-scope = ["src/logline/__init__.py", "tests"]
-opened_commit = "f6b4e470a50cd95c25361cf6e342fa3a92e3f581"
-whole_reason = "One structure test plus, if needed, the one owner of the public module list."
