@@ -130,9 +130,35 @@ The middleware writes one line per HTTP request on the logger `logline.request`,
 - `ip` is the ASGI client address until the host calls `set_client_ip`.
 - `duration_ms` runs until the last body chunk is sent, and the line is written then; background work after
   the response is not counted, and a `sub` or `ip` set there is too late.
-- WebSocket connections get no line.
+- A WebSocket session gets its own line, below.
 
 The line is written at INFO whatever `LOG_LEVEL` says: no setting turns it off.
+
+### The WebSocket session line
+
+The middleware writes one line per WebSocket session when the app returns, on the logger `logline.request` at INFO,
+whatever `LOG_LEVEL` says, from the ASGI messages and so under any server. Its `event` is `websocket.ended`, and it
+carries `outcome`, `route`, `duration_ms`, `sub`, `ip` and `close_code`, and `status` when the upgrade was not
+accepted. `set_sub`, `set_client_ip` and `set_route` work in a WebSocket scope as they do in a request, and `route`,
+`sub` and `ip` read as they do there.
+
+- `outcome` is `ok` for an accepted session, `failed` when the app raised an `Exception` and `cancelled` when it
+  raised another `BaseException`. An upgrade the app did not accept is `refused` when the app answered it (a denial
+  response, or a close before accept) and `failed` when it returned without answering.
+- `status` is the HTTP status the client got: the denial response's, 403 for a close before accept, and 500 when the
+  app raised or returned without answering. An accepted session has no `status`.
+- `close_code` is the code of the last close message of either side, and `null` when none was seen, such as when the
+  app raised and the server closed the socket itself, and for an upgrade that was not accepted.
+- `duration_ms` runs from the upgrade to the app's return. The line joins no trace: a turn on the socket has its own
+  (see [A turn on a WebSocket](#a-turn-on-a-websocket)).
+
+A host without the middleware gets no session line.
+
+**Breaking:** websockets' free-text `connection open` record is dropped, because the session line replaces it, and a
+refused upgrade the app answered is the session line with `outcome` `refused` instead of `websocket_upgrade.refused`
+(see [Starting uvicorn](#starting-uvicorn)). A host that counts or alerts on the old records reads the new line;
+`websocket_handshake.failed` is gone too, and an app that returned without answering is a `failed` session line with
+`status` 500.
 
 ### The route of a mount or a plain route
 
@@ -255,8 +281,8 @@ or `uvicorn.Config(app, log_config=None)`. Under the uvicorn command line, call 
 module is imported or in the app factory. `configure` routes uvicorn's loggers to the JSON handler and keeps
 uvicorn's access log silent in every start mode, because the request line replaces it.
 
-`configure` also rewrites uvicorn's own records on `uvicorn.error`, and the refusal line websockets writes there,
-into literal events. Each keeps its level and carries no message text, process id, host, port or path. These events
+`configure` also rewrites uvicorn's own records on `uvicorn.error`, and the refusal line websockets writes there for an
+upgrade that never reaches the app, into literal events. Each keeps its level and carries no message text, process id, host, port or path. These events
 and their `reason`, `status` and `error_type` values are public: renaming one is a breaking change.
 
 | Event | Level | When | `reason` | Other field |
@@ -264,23 +290,20 @@ and their `reason`, `status` and `error_type` values are public: renaming one is
 | `server_bind.failed` | error | the server cannot bind its address | `port_taken` (address in use) or `os_error` | `error_type`: the `OSError` class |
 | `http_request.refused` | warning | uvicorn refuses a request | `invalid_request` (not valid HTTP) or `unsupported_upgrade` | none |
 | `asgi_app.failed` | error | the app raises in an HTTP request or a WebSocket, with the traceback in `exception` | none | `error_type`: the exception class |
-| `websocket_upgrade.refused` | info | websockets answers a WebSocket upgrade with an HTTP status other than 101 | none | `status`: the HTTP status |
-| `websocket_handshake.failed` | error | the app returned without answering the WebSocket upgrade | `handshake_incomplete` | none |
+| `websocket_upgrade.refused` | info | websockets answers a malformed WebSocket upgrade before any app task exists | none | `status`: the HTTP status |
 | `server_process.started`, `server_process.finished` | info | the server process starts and ends | none | none |
 | `server_listen.started` | info | the server listens, whatever the address form | none | none |
 | `server_shutdown.started` | info | the server begins to stop | none | none |
 
-A refused upgrade is one `websocket_upgrade.refused` line and no error line: uvicorn's websockets-sansio protocol
-also reports an upgrade the app answered with a denial response as an app that returned without completing the
-handshake, and `configure` drops that line when the same connection already logged the refusal. An app that
-returns without answering the upgrade gets `websocket_handshake.failed`, and then `websocket_upgrade.refused` with
-status 500, the answer uvicorn sends in its place. The two lines are linked only when they come from one task of
-one connection, which holds for uvicorn's default WebSocket protocol; the refusal line is read at any `LOG_LEVEL`,
-so a root level above INFO drops both. uvicorn's "Waiting for application startup" and "Waiting for application
-shutdown" lines are dropped, because the next line says the same.
-
-Under `ws="wsproto"` uvicorn writes no refusal record: a denial response, a close before accept and an unanswered
-upgrade produce no `websocket_upgrade.refused` line, and `websocket_handshake.failed` is still written.
+An upgrade that reaches the app is never a `websocket_upgrade.refused` line: a denial response, a close before accept
+and an app that returned without answering are `websocket.ended` lines (see
+[The WebSocket session line](#the-websocket-session-line)), under uvicorn's default WebSocket protocol and under
+`ws="wsproto"`, which writes no refusal record of its own. `configure` drops websockets' `connection open`,
+uvicorn's `ASGI callable returned without completing handshake.` and `... without sending handshake.`, and the
+refusal websockets writes in the task of the app, because the session line says the same. uvicorn's older
+`ws="websockets"` implementation writes that refusal from another task, so it still writes
+`websocket_upgrade.refused` beside the session line for a denial. uvicorn's "Waiting for application startup" and
+"Waiting for application shutdown" lines are dropped, because the next line says the same.
 
 Any other uvicorn record passes as uvicorn writes it.
 
@@ -375,7 +398,7 @@ line, the same error at each layer.
 
 `event` is a literal `<noun>.<verb_past>` (the pattern is `event_name_pattern` in `standard.json`), with no service prefix and no values, such as
 `turn.ended`, `hearing.ended` or `sign_in.refused`. The request line is `request.ended` with `outcome`
-(`REQUEST_EVENT`).
+(`REQUEST_EVENT`), and the WebSocket session line is `websocket.ended`.
 
 - `.ended` closes a timed step and always carries `duration_ms` and `outcome`.
 - `.started` is only for a process or for work that runs for minutes.
@@ -407,7 +430,8 @@ from a closed set.
 | `outcome` | `ok`, `refused`, `failed` or `cancelled` | on every `.ended` line |
 | `reason` | code from a closed set in the app | why it was refused, failed or ended |
 | `error_type` | string | the exception's class name |
-| `status` | integer | the HTTP status of an outbound call, or the status an app answered a WebSocket upgrade with |
+| `status` | integer | the HTTP status of an outbound call, or the status the client got for a WebSocket upgrade the app did not accept |
+| `close_code` | integer | the close code of a WebSocket session, from the closed set the protocol defines |
 | `sub` | string | the person; never `subject_id` or `user_id` |
 | `<entity>_id` | string | a durable id |
 | `<noun>_count`, `_bytes`, `_tokens`, `_ms` | number | the unit is in the name |
