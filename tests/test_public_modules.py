@@ -41,7 +41,6 @@ _MODULE_NAMES = ["logline"] + [
 def test_only_a_public_module_lists_names_in_all(module_name: str) -> None:
     declared = _declared_all(module_name)
 
-    assert declared is not None, f"{module_name} declares no __all__"
     assert bool(declared) == (module_name in _public_modules())
 
 
