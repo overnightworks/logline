@@ -32,9 +32,14 @@ its dev group; the host pins the git tag, so one logline runs in the process and
 refused. A library that pins a tag by git URL forces every host to pin the same tag. quality's fleet package
 standard owns the rule and its check.
 
+The range is `>=1.0,<2`. The names a library imports are the public ones (each module's `__all__`), and they stay
+stable within a major: only a rename or removal of one, or a change to its signature, is a major. A change to the
+record, to an event name or to `configure`'s policy touches hosts only; it is a minor with a **Breaking** note,
+and hosts pin a tag, so they take it deliberately.
+
 ```toml
 # the library
-dependencies = ["overnightworks-logline>=0.3,<0.4"]
+dependencies = ["overnightworks-logline>=1.0,<2"]
 
 [dependency-groups]
 dev = ["overnightworks-logline"]
