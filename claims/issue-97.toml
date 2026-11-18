@@ -1,0 +1,8 @@
+claim_id = "30f45131ba8b4a7ab3fb4f92768d88a0"
+agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
+role = "builder"
+base = "e40a3b0d851b5725f7b45ad8eb29ba44465c0e09"
+branch = "claude/issue-97-cap-botocore-loggers"
+scope = ["README.md", "docs/ARCHITECTURE.md", "src/logline/configuration.py", "tests"]
+opened_commit = "f3268d7ea47362cdcc2ce154f0a834d10645dd2f"
+whole_reason = "One entry in the capped-logger list, its real-server test and the README and architecture lines that list the capped loggers."
