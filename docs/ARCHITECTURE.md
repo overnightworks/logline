@@ -118,7 +118,7 @@ what it is told.
 paths and query strings stay out of every line logline writes or routes. At `LOG_LEVEL=debug`, other libraries'
 DEBUG records pass as those libraries write them; some carry paths, query strings, header values or frames,
 and logline neither masks nor caps them (see the [vision](VISION.md)). The mechanisms are the route template
-instead of the path, text tracebacks without local variables, the HTTP client, `mcp` and
+instead of the path, text tracebacks without local variables, the HTTP client, `mcp`, `botocore` and
 `sqlalchemy.dialects.postgresql` loggers at WARNING, `piper` at ERROR (it writes spoken text at WARNING) and the
 filter on uvicorn's WebSocket lines and DEBUG records, which carry websockets' request headers and frames. An exception
 message is logged as written: the log shows what happened, and a secret in a message is the app's defect.
