@@ -1,7 +1,9 @@
 import asyncio
+import logging
 import socket
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from types import TracebackType
 
 import httpx
 import pytest
@@ -34,6 +36,36 @@ def serve(config: uvicorn.Config, exercise: Callable[[str], Awaitable[None]]) ->
             listener.close()
 
     asyncio.run(run())
+
+
+class WrittenEvents(logging.Handler):
+    """Tells a test that the named logger wrote an event, after its filters ran.
+
+    A test that must act once the server has logged something waits on `seen`, so it never sleeps.
+    """
+
+    def __init__(self, logger_name: str) -> None:
+        super().__init__()
+        self._logger = logging.getLogger(logger_name)
+        self._seen: dict[tuple[str, str | None], asyncio.Event] = {}
+
+    def seen(self, event: str, reason: str | None = None) -> asyncio.Event:
+        return self._seen.setdefault((event, reason), asyncio.Event())
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.seen(str(record.msg), record.__dict__.get("reason")).set()
+
+    def __enter__(self) -> WrittenEvents:
+        self._logger.addHandler(self)
+        return self
+
+    def __exit__(
+        self,
+        exception_type: type[BaseException] | None,
+        exception: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self._logger.removeHandler(self)
 
 
 @dataclass(frozen=True)

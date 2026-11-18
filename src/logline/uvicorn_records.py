@@ -1,4 +1,4 @@
-"""The filter on `uvicorn.error` that drops records which carry content and names uvicorn's own."""
+"""The filter on `uvicorn.error` that drops records which carry content and names every other."""
 
 import errno
 import logging
@@ -25,18 +25,58 @@ def _carries_content(record: logging.LogRecord) -> bool:
 
 @dataclass(frozen=True)
 class _CodedEvent:
+    """`number_field` names the unit-named field that carries the template's first argument."""
+
     event: str
     reason: str | None = None
+    number_field: str | None = None
 
 
-# uvicorn's message templates, which carry no argument or only a process id; every protocol
-# implementation shares them.
+_ASGI_APP_BROKEN = "asgi_app.contract_broken"
+_HTTP_REFUSED = "http_request.refused"
+_SERVER_SHUTDOWN_WAITING = "server_shutdown.waiting"
+# The record of a template logline does not name, whatever uvicorn, websockets or a host writes.
+_UNKNOWN_EVENT = _CodedEvent("uvicorn.unknown_record")
+# uvicorn's and websockets' message templates; every protocol implementation shares them. A
+# template that carries a path, a host, a port or an app's value has its arguments left out.
 _CODED_EVENTS_BY_TEMPLATE = {
-    "Invalid HTTP request received.": _CodedEvent("http_request.refused", "invalid_request"),
-    "Unsupported upgrade request.": _CodedEvent("http_request.refused", "unsupported_upgrade"),
+    "Invalid HTTP request received.": _CodedEvent(_HTTP_REFUSED, "invalid_request"),
+    "Invalid HTTP/2 frame received: %s": _CodedEvent(_HTTP_REFUSED, "invalid_request"),
+    "Unsupported upgrade request.": _CodedEvent(_HTTP_REFUSED, "unsupported_upgrade"),
+    "No supported WebSocket library detected. Please use \"pip install 'uvicorn[standard]'\", "
+    "or install 'websockets' or 'wsproto' manually.": _CodedEvent(
+        _HTTP_REFUSED, "websocket_library_missing"
+    ),
+    "Exceeded concurrency limit.": _CodedEvent(_HTTP_REFUSED, "concurrency_limit"),
+    "ASGI callable returned without starting response.": _CodedEvent(
+        _ASGI_APP_BROKEN, "response_not_started"
+    ),
+    "ASGI callable returned without completing response.": _CodedEvent(
+        _ASGI_APP_BROKEN, "response_not_completed"
+    ),
+    "ASGI callable should return None, but returned '%s'.": _CodedEvent(
+        _ASGI_APP_BROKEN, "value_returned"
+    ),
+    "Invalid UTF-8 sequence received from client.": _CodedEvent(
+        "websocket_frame.refused", "invalid_utf8"
+    ),
+    "ASGI 'lifespan' protocol appears unsupported.": _CodedEvent("app_lifespan.unsupported"),
     "Started server process [%d]": _CodedEvent("server_process.started"),
+    "Maximum request limit of %d exceeded. Terminating process.": _CodedEvent(
+        "server_process.limit_reached"
+    ),
     "Shutting down": _CodedEvent("server_shutdown.started"),
+    "Waiting for connections to close. (CTRL+C to force quit)": _CodedEvent(
+        _SERVER_SHUTDOWN_WAITING, "connections"
+    ),
+    "Waiting for background tasks to complete. (CTRL+C to force quit)": _CodedEvent(
+        _SERVER_SHUTDOWN_WAITING, "background_tasks"
+    ),
+    "Cancel %s running task(s), timeout graceful shutdown exceeded": _CodedEvent(
+        "server_shutdown.timed_out", number_field="task_count"
+    ),
     "Finished server process [%d]": _CodedEvent("server_process.finished"),
+    _WEBSOCKETS_REFUSAL_TEMPLATE: _CodedEvent("websocket_upgrade.refused", number_field="status"),
 }
 # Each says what another line says: "Waiting for" what the app's lifespan lines report, the
 # lifespan's own outcome lines and failure record, which the middleware writes from the ASGI
@@ -75,28 +115,28 @@ def _logged_exception_type_name(record: logging.LogRecord) -> str | None:
     return None
 
 
-def _refusal_status(record: logging.LogRecord) -> int | None:
+def _first_integer_argument(record: logging.LogRecord) -> int | None:
     arguments = record.args
     if isinstance(arguments, tuple) and arguments and isinstance(arguments[0], int):
         return arguments[0]
     return None
 
 
-def _coded_event_of_template(template: object) -> _CodedEvent | None:
+def _coded_event_of_template(template: object) -> _CodedEvent:
     if not isinstance(template, str):
-        return None
+        return _UNKNOWN_EVENT
     if template.startswith(_LISTENING_TEMPLATE_PREFIX):
         return _LISTENING_EVENT
-    return _CODED_EVENTS_BY_TEMPLATE.get(template)
+    return _CODED_EVENTS_BY_TEMPLATE.get(template, _UNKNOWN_EVENT)
 
 
-def _name_known_record(record: logging.LogRecord) -> None:
-    """Rewrite a uvicorn or websockets record into a literal event, with a code or a status.
+def _name_record(record: logging.LogRecord) -> None:
+    """Rewrite a uvicorn or websockets record into a literal event, with a code or a number.
 
     A record is known by its message template or by the `OSError` uvicorn logs for a failed bind,
-    never by its formatted text. The rewritten record keeps its level and carries no message text,
-    host, port, pid or path; the ASGI exception keeps its traceback. Any other record stays
-    unchanged.
+    never by its formatted text; any other record becomes `uvicorn.unknown_record`. The rewritten
+    record keeps its level and carries no message text, host, port, pid or path. Only the ASGI
+    exception keeps its traceback.
     """
     fields: dict[str, str | int | None] = {}
     if isinstance(record.msg, OSError):
@@ -105,11 +145,11 @@ def _name_known_record(record: logging.LogRecord) -> None:
     elif record.msg == _UVICORN_ASGI_EXCEPTION_TEMPLATE:
         coded = _CodedEvent("asgi_app.failed")
         fields["error_type"] = _logged_exception_type_name(record)
-    elif record.msg == _WEBSOCKETS_REFUSAL_TEMPLATE:
-        coded = _CodedEvent("websocket_upgrade.refused")
-        fields["status"] = _refusal_status(record)
-    elif not (coded := _coded_event_of_template(record.msg)):
-        return
+    else:
+        coded = _coded_event_of_template(record.msg)
+        record.exc_info = None
+        if coded.number_field:
+            fields[coded.number_field] = _first_integer_argument(record)
     if coded.reason:
         fields["reason"] = coded.reason
     record.msg = coded.event
@@ -140,7 +180,7 @@ class _UvicornErrorRecords(logging.Filter):
             return False
         if _carries_content(record) or _is_redundant(record):
             return False
-        _name_known_record(record)
+        _name_record(record)
         return True
 
 

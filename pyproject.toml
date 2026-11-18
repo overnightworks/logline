@@ -32,6 +32,7 @@ dev = [
     "ruff>=0.4,<1",
     "pyright>=1.1.414,<2",
     "deptry==0.25.1",
+    "httptools>=0.6,<1",
 ]
 
 [project.urls]

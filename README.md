@@ -283,19 +283,26 @@ or `uvicorn.Config(app, log_config=None)`. Under the uvicorn command line, call 
 module is imported or in the app factory. `configure` routes uvicorn's loggers to the JSON handler and keeps
 uvicorn's access log silent in every start mode, because the request line replaces it.
 
-`configure` also rewrites uvicorn's own records on `uvicorn.error`, and the refusal line websockets writes there for an
-upgrade that never reaches the app, into literal events. Each keeps its level and carries no message text, process id, host, port or path. These events
-and their `reason`, `status` and `error_type` values are public: renaming one is a breaking change.
+`configure` also rewrites every record on `uvicorn.error`, and the refusal line websockets writes there for an
+upgrade that never reaches the app, into a literal event. Each keeps its level and carries no message text, process id, host, port or path. These events
+and their `reason`, `status`, `task_count` and `error_type` values are public: renaming one is a breaking change.
 
 | Event | Level | When | `reason` | Other field |
 | --- | --- | --- | --- | --- |
 | `server_bind.failed` | error | the server cannot bind its address | `port_taken` (address in use) or `os_error` | `error_type`: the `OSError` class |
-| `http_request.refused` | warning | uvicorn refuses a request | `invalid_request` (not valid HTTP) or `unsupported_upgrade` | none |
+| `http_request.refused` | warning | uvicorn refuses a request | `invalid_request` (not valid HTTP or HTTP/2), `unsupported_upgrade`, `websocket_library_missing` (an upgrade, and no WebSocket library is installed) or `concurrency_limit` (answered 503) | none |
+| `asgi_app.contract_broken` | error | the app breaks the ASGI contract uvicorn checks | `response_not_started`, `response_not_completed` or `value_returned` (the app returned a value, which is left out) | none |
+| `websocket_frame.refused` | error | a client's text frame is not UTF-8 | `invalid_utf8` | none |
+| `app_lifespan.unsupported` | info | the app does not answer the lifespan scope | none | none |
 | `asgi_app.failed` | error | the app raises in an HTTP request or a WebSocket, with the traceback in `exception` | none | `error_type`: the exception class |
 | `websocket_upgrade.refused` | info | websockets answers a malformed WebSocket upgrade before any app task exists | none | `status`: the HTTP status |
 | `server_process.started`, `server_process.finished` | info | the server process starts and ends | none | none |
+| `server_process.limit_reached` | info | the server hit its request limit and stops | none | none |
 | `server_listen.started` | info | the server listens, whatever the address form | none | none |
 | `server_shutdown.started` | info | the server begins to stop | none | none |
+| `server_shutdown.waiting` | info | the stop waits for work left | `connections` (an open connection) or `background_tasks` (a request the client left) | none |
+| `server_shutdown.timed_out` | error | the graceful timeout ended and the server cancels the tasks left | none | `task_count`: the tasks cancelled |
+| `uvicorn.unknown_record` | the record's level | a record on `uvicorn.error` whose template logline does not know | none | none |
 
 An upgrade that reaches the app is never a `websocket_upgrade.refused` line: a denial response, a close before accept
 and an app that returned without answering are `websocket.ended` lines (see
@@ -307,7 +314,9 @@ refusal websockets writes in the task of the app, because the session line says 
 `websocket_upgrade.refused` beside the session line for a denial. uvicorn's "Waiting for application startup" and
 "Waiting for application shutdown" lines are dropped, because the next line says the same.
 
-Any other uvicorn record passes as uvicorn writes it.
+A record of a template logline does not know, such as one a newer uvicorn adds, is the line
+`uvicorn.unknown_record` at its level, with no text and no traceback: a later release names it. The line the app's
+exception writes keeps its traceback in `exception`; no other `uvicorn.error` line carries one.
 
 ### The app's startup and shutdown lines
 

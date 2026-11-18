@@ -33,10 +33,11 @@ Module owners in `logline`:
   `warnings.showwarning`, and the events they write: `process.crashed`, `thread.crashed` and
   `python_warning.raised`, with an `error_type`.
 - `uvicorn_records` owns the filter `configure` puts on `uvicorn.error`: which uvicorn and websockets records it
-  drops and which it names as `server_bind.failed`, `http_request.refused`, `asgi_app.failed`, `websocket_upgrade.refused` (a malformed
-  upgrade that never reached the app) and the lifecycle events `server_process.started`, `server_listen.started`,
-  `server_shutdown.started` and `server_process.finished`, with a `reason`, `status` or `error_type`. Those names
-  and codes are public (README, "Starting uvicorn").
+  drops and which it names as `server_bind.failed`, `http_request.refused`, `asgi_app.failed`,
+  `asgi_app.contract_broken`, `websocket_upgrade.refused` (a malformed upgrade that never reached the app) and the
+  lifecycle events (`server_process.*`, `server_listen.started`, `server_shutdown.*`), with a `reason`, `status`,
+  `task_count` or `error_type`. Every other record becomes `uvicorn.unknown_record`. Those names and codes are
+  public (README, "Starting uvicorn").
 - `standard` owns the machine rules of the logging standard, read from the package's `standard.json`: the base
   keys, the deny list of field names and suffixes (`is_denied_field`), the event-name pattern and the calls and
   assignments that are a host's own logging setup. No other module holds a copy of them.
@@ -144,8 +145,9 @@ lowest direct dependency floors run the same tests.
   filters, so the access log, which carries the raw path, stays silent in every start mode.
 - The `uvicorn.error` filter knows a record by uvicorn's message template or by the `OSError` it logs for a bind
   failure, never by its formatted text, which carries host, port or the app's message. A record it does not know
-  passes unchanged, and every read it makes of a record (`exc_info`, `args`) is total: a record that lacks what
-  uvicorn normally supplies loses the field, never raises into uvicorn.
+  becomes `uvicorn.unknown_record` at its level, so a uvicorn upgrade that adds a template never leaks free text;
+  only the app's exception keeps its traceback. Every read it makes of a record (`exc_info`, `args`) is total: a
+  record that lacks what uvicorn normally supplies loses the field, never raises into uvicorn.
 - The app startup and shutdown lines come from the `lifespan` scope the middleware already receives, because every
   ASGI server runs that scope through the app: no stack walk, no server-specific state. uvicorn's own four
   `app_*` templates and its "Exception in 'lifespan' protocol" record are dropped by equality, since the middleware

@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -21,13 +22,21 @@ from tests.support.apps import (
     build_app,
 )
 from tests.support.lines import Line, json_lines, lines_of
-from tests.support.serving import serve
+from tests.support.raw_app import (
+    HELD_PATH,
+    NO_COMPLETION_PATH,
+    NO_START_PATH,
+    RETURNS_VALUE_PATH,
+    RawApp,
+)
+from tests.support.serving import WrittenEvents, serve
 
 _UVICORN_LOGGER = "uvicorn.error"
 _LOCAL_HOST = "127.0.0.1"
 # TEST-NET-1 (RFC 5737): no local interface owns it, so binding fails without any network.
 _UNOWNED_HOST = "203.0.113.1"
 _REQUEST_SECRET = "request-secret"
+_HTTP_IMPLEMENTATIONS = ["h11", "httptools"]
 
 
 def _coded_lines(output: str, event_prefix: str) -> list[Line]:
@@ -119,9 +128,78 @@ def _websocket_app_exception(implementation: str) -> Callable[[], tuple[str, ...
     return drive
 
 
+def _raw_app_request(http: str, path: str) -> Callable[[], tuple[str, ...]]:
+    def drive() -> tuple[str, ...]:
+        async def exercise(base_url: str) -> None:
+            async with httpx.AsyncClient(base_url=base_url) as client:
+                with contextlib.suppress(httpx.HTTPError):
+                    await client.get(path)
+
+        config = uvicorn.Config(RawApp(), log_config=None, lifespan="off", http=http)
+        serve(config, exercise)
+        return ()
+
+    return drive
+
+
+def _concurrency_refusal(http: str) -> Callable[[], tuple[str, ...]]:
+    def drive() -> tuple[str, ...]:
+        app = RawApp()
+
+        async def exercise(base_url: str) -> None:
+            async with httpx.AsyncClient(base_url=base_url) as client:
+                held = asyncio.create_task(client.get(HELD_PATH))
+                await app.entered.wait()
+                assert (await client.get("/")).status_code == 503
+                app.release.set()
+                await held
+
+        config = uvicorn.Config(
+            app, log_config=None, lifespan="off", http=http, limit_concurrency=2
+        )
+        serve(config, exercise)
+        return ()
+
+    return drive
+
+
+def _failure_cases(http: str) -> list[object]:
+    return [
+        pytest.param(
+            _raw_app_request(http, NO_START_PATH),
+            "error",
+            {"event": "asgi_app.contract_broken", "reason": "response_not_started"},
+            False,
+            id=f"app returns without a response, {http}",
+        ),
+        pytest.param(
+            _raw_app_request(http, NO_COMPLETION_PATH),
+            "error",
+            {"event": "asgi_app.contract_broken", "reason": "response_not_completed"},
+            False,
+            id=f"app returns before the response is complete, {http}",
+        ),
+        pytest.param(
+            _raw_app_request(http, RETURNS_VALUE_PATH),
+            "error",
+            {"event": "asgi_app.contract_broken", "reason": "value_returned"},
+            False,
+            id=f"app returns a value, {http}",
+        ),
+        pytest.param(
+            _concurrency_refusal(http),
+            "warning",
+            {"event": "http_request.refused", "reason": "concurrency_limit"},
+            False,
+            id=f"concurrency limit exceeded, {http}",
+        ),
+    ]
+
+
 @pytest.mark.parametrize(
     ("drive", "level", "expected", "has_traceback"),
     [
+        *[case for http in _HTTP_IMPLEMENTATIONS for case in _failure_cases(http)],
         pytest.param(
             _occupied_port_failure,
             "error",
@@ -211,20 +289,15 @@ def test_a_uvicorn_failure_logs_one_literal_event_with_its_code(
 
 
 @pytest.mark.parametrize(
-    ("message", "arguments", "event"),
+    ("message", "arguments"),
     [
-        pytest.param(
-            "Something else happened: %s", ("detail",), "Something else happened: detail", id="text"
-        ),
-        pytest.param(ValueError("detail"), (), "detail", id="object"),
-        pytest.param({"detail": "value"}, (), "{'detail': 'value'}", id="unhashable object"),
+        pytest.param("Something else happened: %s", ("detail",), id="text"),
+        pytest.param(ValueError("detail"), (), id="object"),
+        pytest.param({"detail": "value"}, (), id="unhashable object"),
     ],
 )
-def test_an_unknown_uvicorn_record_passes_unchanged(
-    capsys: pytest.CaptureFixture[str],
-    message: object,
-    arguments: tuple[str, ...],
-    event: str,
+def test_an_unknown_uvicorn_record_becomes_one_coded_line_without_its_text(
+    capsys: pytest.CaptureFixture[str], message: object, arguments: tuple[str, ...]
 ) -> None:
     configure("uvicorn-service")
 
@@ -233,9 +306,10 @@ def test_an_unknown_uvicorn_record_passes_unchanged(
 
     serve(uvicorn.Config(build_app(), log_config=None), exercise)
 
-    line = _the_one_line(capsys.readouterr().out, event)
+    line = _the_one_line(capsys.readouterr().out, "uvicorn.unknown_record")
     assert line["level"] == "warning"
-    assert not {"reason", "error_type"} & line.keys()
+    assert line.keys() == BASE_KEYS
+    assert "detail" not in _content_of(line)
 
 
 def _malformed_upgrade(implementation: str) -> None:
@@ -437,3 +511,122 @@ def test_a_websocket_under_the_debug_level_never_enables_uvicorn_debug_records(
 
     assert not logging.getLogger("uvicorn.error").isEnabledFor(logging.DEBUG)
     assert _the_one_line(capsys.readouterr().out, _REFUSED)["level"] == "info"
+
+
+@pytest.mark.parametrize("http", _HTTP_IMPLEMENTATIONS)
+def test_an_upgrade_without_a_websocket_library_logs_both_refusals(
+    capsys: pytest.CaptureFixture[str], http: str
+) -> None:
+    configure("uvicorn-service")
+
+    async def exercise(base_url: str) -> None:
+        async with httpx.AsyncClient(base_url=base_url) as client:
+            await client.get("/", headers={"Connection": "upgrade", "Upgrade": "websocket"})
+
+    serve(uvicorn.Config(RawApp(), log_config=None, lifespan="off", http=http, ws="none"), exercise)
+
+    lines = _coded_lines(capsys.readouterr().out, "http_request.")
+    assert [(line["level"], line["event"], line["reason"]) for line in lines] == [
+        ("warning", "http_request.refused", "unsupported_upgrade"),
+        ("warning", "http_request.refused", "websocket_library_missing"),
+    ]
+
+
+def test_an_app_without_a_lifespan_logs_one_literal_line(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure("uvicorn-service")
+
+    serve(uvicorn.Config(RawApp(), log_config=None), _no_exercise)
+
+    lines = lines_of(json_lines(capsys.readouterr().out), _UVICORN_LOGGER)
+    assert "app_lifespan.unsupported" in [line["event"] for line in lines]
+    assert {line["event"] for line in lines} <= {
+        "server_process.started",
+        "app_lifespan.unsupported",
+        "server_listen.started",
+        "server_shutdown.started",
+        "server_process.finished",
+    }
+
+
+async def _no_exercise(_base_url: str) -> None:
+    return
+
+
+@pytest.mark.parametrize("http", _HTTP_IMPLEMENTATIONS)
+def test_a_server_at_its_request_limit_logs_one_literal_line_before_it_stops(
+    capsys: pytest.CaptureFixture[str], http: str
+) -> None:
+    configure("uvicorn-service")
+
+    with WrittenEvents(_UVICORN_LOGGER) as written:
+
+        async def exercise(base_url: str) -> None:
+            async with httpx.AsyncClient(base_url=base_url) as client:
+                await client.get("/")
+            await written.seen("server_process.limit_reached").wait()
+
+        config = uvicorn.Config(
+            RawApp(), log_config=None, lifespan="off", http=http, limit_max_requests=1
+        )
+        serve(config, exercise)
+
+    lines = lines_of(json_lines(capsys.readouterr().out), _UVICORN_LOGGER)
+    assert [(line["level"], line["event"]) for line in lines] == [
+        ("info", "server_process.started"),
+        ("info", "server_process.limit_reached"),
+        ("info", "server_shutdown.started"),
+        ("info", "server_process.finished"),
+    ]
+    assert all(line.keys() == BASE_KEYS for line in lines)
+
+
+@pytest.mark.parametrize(
+    ("template", "arguments", "exc_info", "expected"),
+    [
+        pytest.param(
+            "Invalid HTTP/2 frame received: %s",
+            ("frame detail",),
+            None,
+            {"event": "http_request.refused", "reason": "invalid_request"},
+            id="invalid http/2 frame",
+        ),
+        pytest.param(
+            "Invalid UTF-8 sequence received from client.",
+            (),
+            "traceback",
+            {"event": "websocket_frame.refused", "reason": "invalid_utf8"},
+            id="invalid utf-8 frame",
+        ),
+        pytest.param(
+            "Something nobody named, for example %s",
+            ("frame detail",),
+            "traceback",
+            {"event": "uvicorn.unknown_record"},
+            id="unknown template with a traceback",
+        ),
+    ],
+)
+def test_a_record_of_a_template_the_real_servers_do_not_reach_in_range_is_coded_without_its_text(
+    capsys: pytest.CaptureFixture[str],
+    template: str,
+    arguments: tuple[str, ...],
+    exc_info: str | None,
+    expected: Line,
+) -> None:
+    configure("uvicorn-service")
+    error = ValueError("frame detail") if exc_info else None
+    record_exc_info = (ValueError, error, error.__traceback__) if error else None
+
+    logging.getLogger(_UVICORN_LOGGER).handle(
+        logging.LogRecord(
+            _UVICORN_LOGGER, logging.WARNING, __file__, 0, template, arguments, record_exc_info
+        )
+    )
+
+    (line,) = lines_of(json_lines(capsys.readouterr().out), _UVICORN_LOGGER)
+    assert line["level"] == "warning"
+    assert expected.items() <= line.items()
+    assert line.keys() <= {*BASE_KEYS, "reason"}
+    assert "frame detail" not in _content_of(line)
