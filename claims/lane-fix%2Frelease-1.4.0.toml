@@ -1,0 +1,7 @@
+claim_id = "9976cc1248b946959c4b87d7a07e698d"
+agent = "Claude 03505beb-4372-4599-bc10-ef5ee09bc037"
+role = "builder"
+base = "027a75352300fcaca4e179884b27fb30fea3ad52"
+branch = "fix/release-1.4.0"
+scope = ["src/logline/__init__.py"]
+opened_commit = "85f94021ce1395f6dc0dd43eb850b85001668ff6"
