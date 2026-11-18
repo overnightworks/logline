@@ -7,6 +7,7 @@ host that never called `configure` gets an ordinary record under its own logging
 
 import logging
 import time
+from collections.abc import Callable
 from enum import StrEnum
 from types import TracebackType
 
@@ -33,14 +34,17 @@ class Outcome(StrEnum):
 class Stopwatch:
     """The monotonic clock and rounding of every `duration_ms` and `first_output_ms`."""
 
-    def __init__(self, started_at: float | None = None) -> None:
-        now = time.perf_counter()
+    def __init__(
+        self, started_at: float | None = None, clock: Callable[[], float] = time.perf_counter
+    ) -> None:
+        self._clock = clock
+        now = clock()
         if started_at is not None and started_at > now:
             raise ValueError("started_at is later than time.perf_counter()")
         self._started = now if started_at is None else started_at
 
     def elapsed_ms(self) -> float:
-        return round((time.perf_counter() - self._started) * 1000, 3)
+        return round((self._clock() - self._started) * 1000, 3)
 
 
 def _step_fields(fields: dict[str, Scalar]) -> dict[str, Scalar]:
@@ -96,7 +100,7 @@ class StepTimer:
         self._event = event
         self._logger = logger
         self._fields = _step_fields(fields)
-        self._stopwatch = Stopwatch(started_at)
+        self._stopwatch = Stopwatch(started_at, self._read_clock)
         self._degraded = False
         self._handled = False
         self._ok_reason: str | None = None
@@ -104,6 +108,10 @@ class StepTimer:
         self._failure_reason: str | None = None
         self._first_output_ms: float | None = None
         self._written = False
+
+    def _read_clock(self) -> float:
+        """The one place a step reads the clock; the tests override it."""
+        return time.perf_counter()
 
     def add(self, **fields: Scalar) -> None:
         """Add id or count fields known only before the step ends; a later value replaces."""

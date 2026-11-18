@@ -1,9 +1,6 @@
 import asyncio
-import contextlib
 import logging
-import time
-from collections.abc import AsyncGenerator, AsyncIterator
-from dataclasses import dataclass
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import structlog
@@ -16,7 +13,6 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from logline import (
     RequestLineMiddleware,
-    StepTimer,
     current_traceparent,
     outgoing_headers,
     set_client_ip,
@@ -24,6 +20,7 @@ from logline import (
     set_sub,
     unit_trace,
 )
+from tests.support.step_routes import add_step_routes
 
 SUB = "sub-of-the-person"
 HOST_CLIENT_IP = "198.51.100.7"
@@ -52,27 +49,7 @@ BACKGROUND_LOGGER = "tests.background"
 BACKGROUND_EVENT = "background work after the response"
 CHAIN_CAUSE_MESSAGE = "inner cause message"
 CHAIN_MESSAGE = "visible message"
-STEP_LOGGER = "tests.steps"
-STEP_EVENT = "gateway_call.ended"
-STEP_AGENT_ID = "agent-7"
-STEP_REFUSAL_REASON = "overloaded"
-STEP_FAILURE_MESSAGE = "failure message that stays out of the line"
 GROUP_MEMBER_MESSAGES = ("first member message", "second member message")
-
-
-@dataclass(frozen=True)
-class StepScenario:
-    """What the step routes add, fail with and collide on, which the step tests read back."""
-
-    failure_reason: str = "rate_limited"
-    ok_reason: str = "silence"
-    count: int = 42
-    later_agent_id: str = "agent-8"
-    reserved_field: str = "module"
-    earlier_start_seconds: int = 5
-
-
-STEP = StepScenario()
 
 
 async def _pass_through(request: Request, call_next: RequestResponseEndpoint) -> Response:
@@ -119,9 +96,12 @@ def build_app(
     app.add_middleware(RequestLineMiddleware)
     if static_directory is not None:
         _add_mounts(app, static_directory)
-    _add_request_routes(app)
+    _add_identity_routes(app)
+    _add_failure_routes(app)
+    _add_streaming_routes(app)
     _add_logging_routes(app)
-    _add_step_routes(app)
+    _add_field_and_trace_routes(app)
+    add_step_routes(app)
     _add_websocket_route(app)
     _add_turn_route(app)
     return app
@@ -142,7 +122,9 @@ def _add_mounts(app: FastAPI, static_directory: Path) -> None:
     )
 
 
-def _add_request_routes(app: FastAPI) -> None:
+def _add_identity_routes(app: FastAPI) -> None:
+    """Routes that set the sub, the route template or the client ip."""
+
     @app.get("/items/{item_id}")
     async def item(item_id: int) -> dict[str, int]:
         return {"item_id": item_id}
@@ -193,6 +175,10 @@ def _add_request_routes(app: FastAPI) -> None:
         set_client_ip(request.scope, HOST_CLIENT_IP)
         return {"ok": True}
 
+
+def _add_failure_routes(app: FastAPI) -> None:
+    """Routes that read a body, answer an error status or raise."""
+
     @app.post("/body")
     async def body(request: Request) -> dict[str, int]:
         return {"length": len(await request.body())}
@@ -222,6 +208,10 @@ def _add_request_routes(app: FastAPI) -> None:
     async def group() -> None:
         first, second = GROUP_MEMBER_MESSAGES
         raise ExceptionGroup("group message", [ValueError(first), TypeError(second)])
+
+
+def _add_streaming_routes(app: FastAPI) -> None:
+    """Routes that run work after, or stream, their response."""
 
     @app.get("/background-task-raising")
     async def background_task_raising(tasks: BackgroundTasks) -> dict[str, bool]:
@@ -288,6 +278,10 @@ def _add_logging_routes(app: FastAPI) -> None:
     async def eventless_line() -> dict[str, bool]:
         structlog.get_logger("tests.eventless").info(order_id="o-18")
         return {"ok": True}
+
+
+def _add_field_and_trace_routes(app: FastAPI) -> None:
+    """Routes that log hostile fields or run inside the request's trace."""
 
     @app.get("/hostile-fields")
     async def hostile_fields() -> dict[str, bool]:
@@ -388,425 +382,3 @@ def _add_turn_route(app: FastAPI) -> None:
                 answer = {"raised": str(caught), "same": caught is failure}
             logger.info("after the turn")
             await websocket.send_json({"traceparent": current_traceparent(), **answer})
-
-
-def _step(*, started_at: float | None = None, **fields: str | float) -> StepTimer:
-    return StepTimer(
-        STEP_EVENT,
-        logging.getLogger(STEP_LOGGER),
-        started_at=started_at,
-        **{"agent_id": STEP_AGENT_ID, **fields},
-    )
-
-
-type _Answer = dict[str, str | bool | None]
-
-
-def _caught(caught: Exception, raised: Exception) -> _Answer:
-    return {"caught": str(caught), "same": caught is raised}
-
-
-def _sync_step(*, failure: Exception | None) -> None:
-    with _step():
-        if failure is not None:
-            raise failure
-
-
-async def _generator_of_a_step() -> AsyncGenerator[int]:
-    async with _step():
-        yield 1
-        yield 2
-
-
-def _add_step_routes(app: FastAPI) -> None:
-    """Routes that each run one step; the response says which exception reached the endpoint."""
-
-    @app.get("/step/ok")
-    async def step_ok() -> _Answer:
-        async with _step():
-            pass
-        return {"caught": None}
-
-    @app.get("/step/failed")
-    async def step_failed() -> _Answer:
-        failure = ValueError(STEP_FAILURE_MESSAGE)
-        try:
-            async with _step():
-                raise failure
-        except ValueError as caught:
-            return _caught(caught, failure)
-
-    @app.get("/step/failed-handled")
-    async def step_failed_handled() -> _Answer:
-        failure = ValueError(STEP_FAILURE_MESSAGE)
-        try:
-            async with _step() as step:
-                step.handled()
-                raise failure
-        except ValueError as caught:
-            return _caught(caught, failure)
-
-    @app.get("/step/failed-escaping")
-    async def step_failed_escaping() -> None:
-        async with _step():
-            raise ValueError(STEP_FAILURE_MESSAGE)
-
-    @app.get("/step/degraded")
-    async def step_degraded() -> _Answer:
-        async with _step() as step:
-            step.degraded()
-        return {"caught": None}
-
-    @app.get("/step/refused")
-    async def step_refused() -> _Answer:
-        async with _step() as step:
-            step.refuse(STEP_REFUSAL_REASON)
-        return {"caught": None}
-
-    @app.get("/step/ok-with-reason")
-    async def step_ok_with_reason() -> _Answer:
-        async with _step() as step:
-            step.reason(STEP.ok_reason)
-        return {"caught": None}
-
-    @app.get("/step/reason-then-refuse")
-    async def step_reason_then_refuse() -> _Answer:
-        async with _step() as step:
-            step.reason(STEP.ok_reason)
-            step.refuse(STEP_REFUSAL_REASON)
-        return {"caught": None}
-
-    @app.get("/step/reason-then-fail")
-    async def step_reason_then_fail() -> _Answer:
-        async with _step() as step:
-            step.reason(STEP.ok_reason)
-            step.fail(STEP.failure_reason)
-        return {"caught": None}
-
-    @app.get("/step/reason-then-raise")
-    async def step_reason_then_raise() -> _Answer:
-        failure = ValueError(STEP_FAILURE_MESSAGE)
-        try:
-            async with _step() as step:
-                step.reason(STEP.ok_reason)
-                raise failure
-        except ValueError as caught:
-            return _caught(caught, failure)
-
-    @app.get("/step/reason-then-cancel")
-    async def step_reason_then_cancel() -> _Answer:
-        step = _step()
-        step.reason(STEP.ok_reason)
-        step.end_cancelled()
-        return {"caught": None}
-
-    @app.get("/step/refused-degraded")
-    async def step_refused_degraded() -> _Answer:
-        async with _step() as step:
-            step.degraded()
-            step.refuse(STEP_REFUSAL_REASON)
-        return {"caught": None}
-
-    @app.get("/step/cancelled")
-    async def step_cancelled() -> _Answer:
-        async def wait_forever() -> None:
-            async with _step():
-                await asyncio.Event().wait()
-
-        waiting = asyncio.create_task(wait_forever())
-        await asyncio.sleep(0)
-        waiting.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await waiting
-        return {"caught": None, "cancelled": waiting.cancelled()}
-
-    @app.get("/step/generator-closed")
-    async def step_generator_closed() -> _Answer:
-        generator = _generator_of_a_step()
-        await anext(generator)
-        await generator.aclose()
-        return {"caught": None}
-
-    @app.get("/step/generator-finished")
-    async def step_generator_finished() -> _Answer:
-        async with contextlib.aclosing(_generator_of_a_step()) as generator:
-            async for _ in generator:
-                pass
-        return {"caught": None}
-
-    @app.get("/step/timer-named-fields")
-    async def step_timer_named_fields() -> _Answer:
-        async with _step(
-            duration_ms=-1,
-            outcome="failed",
-            reason="caller",
-            first_output_ms=-1,
-            error_type="Caller",
-        ):
-            pass
-        return {"caught": None}
-
-    @app.get("/step/first-output")
-    async def step_first_output() -> _Answer:
-        async with _step() as step:
-            step.first_output()
-            step.first_output()
-        return {"caught": None}
-
-    @app.get("/step/add")
-    async def step_add() -> _Answer:
-        async with _step() as step:
-            step.add(input_tokens=1, output_tokens=STEP.count, duration_ms=-1, reason="caller")
-            step.add(input_tokens=STEP.count, agent_id=STEP.later_agent_id, error_type="Caller")
-            step.add(started_at=STEP.earlier_start_seconds)
-        return {"caught": None}
-
-    @app.get("/step/add-reserved")
-    async def step_add_reserved() -> _Answer:
-        try:
-            async with _step() as step:
-                step.add(**{STEP.reserved_field: "value"})
-        except ValueError as caught:
-            return {"caught": str(caught)}
-        return {"caught": None}
-
-    @app.get("/step/add-reserved-escaping")
-    async def step_add_reserved_escaping() -> None:
-        async with _step() as step:
-            step.add(**{STEP.reserved_field: "value"})
-
-    @app.get("/step/refuse-then-raise")
-    async def step_refuse_then_raise() -> _Answer:
-        failure = ValueError(STEP_FAILURE_MESSAGE)
-        try:
-            async with _step() as step:
-                step.refuse(STEP_REFUSAL_REASON)
-                raise failure
-        except ValueError as caught:
-            return _caught(caught, failure)
-
-    @app.get("/step/fail")
-    async def step_fail() -> _Answer:
-        async with _step() as step:
-            step.fail(STEP.failure_reason)
-        return {"caught": None}
-
-    @app.get("/step/degraded-then-fail")
-    async def step_degraded_then_fail() -> _Answer:
-        async with _step() as step:
-            step.degraded()
-            step.fail(STEP.failure_reason)
-        return {"caught": None}
-
-    @app.get("/step/fail-handled")
-    async def step_fail_handled() -> _Answer:
-        async with _step() as step:
-            step.handled()
-            step.fail(STEP.failure_reason)
-        return {"caught": None}
-
-    @app.get("/step/fail-then-refuse")
-    async def step_fail_then_refuse() -> _Answer:
-        async with _step() as step:
-            step.fail(STEP.failure_reason)
-            step.refuse(STEP_REFUSAL_REASON)
-        return {"caught": None}
-
-    @app.get("/step/refuse-then-fail")
-    async def step_refuse_then_fail() -> _Answer:
-        async with _step() as step:
-            step.refuse(STEP_REFUSAL_REASON)
-            step.fail(STEP.failure_reason)
-        return {"caught": None}
-
-    @app.get("/step/fail-then-raise")
-    async def step_fail_then_raise() -> _Answer:
-        failure = ValueError(STEP_FAILURE_MESSAGE)
-        try:
-            async with _step() as step:
-                step.fail(STEP.failure_reason)
-                raise failure
-        except ValueError as caught:
-            return _caught(caught, failure)
-
-    @app.get("/step/fail-then-cancel")
-    async def step_fail_then_cancel() -> _Answer:
-        async def wait_forever() -> None:
-            async with _step() as step:
-                step.fail(STEP.failure_reason)
-                await asyncio.Event().wait()
-
-        waiting = asyncio.create_task(wait_forever())
-        await asyncio.sleep(0)
-        waiting.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await waiting
-        return {"caught": None}
-
-    @app.get("/step/end")
-    async def step_end() -> _Answer:
-        step = _step()
-        step.add(output_tokens=STEP.count)
-        step.end()
-        return {"caught": None}
-
-    @app.get("/step/fail-then-end")
-    async def step_fail_then_end() -> _Answer:
-        step = _step()
-        step.fail(STEP.failure_reason)
-        step.end()
-        return {"caught": None}
-
-    @app.get("/step/refuse-then-end")
-    async def step_refuse_then_end() -> _Answer:
-        step = _step()
-        step.refuse(STEP_REFUSAL_REASON)
-        step.end()
-        return {"caught": None}
-
-    @app.get("/step/end-cancelled")
-    async def step_end_cancelled() -> _Answer:
-        step = _step()
-        step.add(output_tokens=STEP.count)
-        step.end_cancelled()
-        return {"caught": None}
-
-    @app.get("/step/sync-end-cancelled")
-    def step_sync_end_cancelled() -> _Answer:
-        _step().end_cancelled()
-        return {"caught": None}
-
-    @app.get("/step/fail-then-end-cancelled")
-    async def step_fail_then_end_cancelled() -> _Answer:
-        step = _step()
-        step.fail(STEP.failure_reason)
-        step.end_cancelled()
-        return {"caught": None}
-
-    @app.get("/step/refuse-then-end-cancelled")
-    async def step_refuse_then_end_cancelled() -> _Answer:
-        step = _step()
-        step.refuse(STEP_REFUSAL_REASON)
-        step.end_cancelled()
-        return {"caught": None}
-
-    @app.get("/step/handled-then-end-cancelled")
-    async def step_handled_then_end_cancelled() -> _Answer:
-        step = _step()
-        step.handled()
-        step.end_cancelled()
-        return {"caught": None}
-
-    @app.get("/step/degraded-then-end-cancelled")
-    async def step_degraded_then_end_cancelled() -> _Answer:
-        step = _step()
-        step.degraded()
-        step.end_cancelled()
-        return {"caught": None}
-
-    @app.get("/step/end-cancelled-then-raise")
-    async def step_end_cancelled_then_raise() -> _Answer:
-        failure = ValueError(STEP_FAILURE_MESSAGE)
-        try:
-            async with _step() as step:
-                step.end_cancelled()
-                raise failure
-        except ValueError as caught:
-            return _caught(caught, failure)
-
-    @app.get("/step/end-cancelled-then-end")
-    async def step_end_cancelled_then_end() -> _Answer:
-        step = _step()
-        step.end_cancelled()
-        step.end()
-        return {"caught": None}
-
-    @app.get("/step/end-then-end-cancelled")
-    async def step_end_then_end_cancelled() -> _Answer:
-        step = _step()
-        step.end()
-        step.end_cancelled()
-        return {"caught": None}
-
-    @app.get("/step/end-cancelled-twice")
-    async def step_end_cancelled_twice() -> _Answer:
-        step = _step()
-        step.end_cancelled()
-        step.end_cancelled()
-        return {"caught": None}
-
-    @app.get("/step/end-cancelled-in-block")
-    async def step_end_cancelled_in_block() -> _Answer:
-        async with _step() as step:
-            step.end_cancelled()
-        return {"caught": None}
-
-    @app.get("/step/sync-end")
-    def step_sync_end() -> _Answer:
-        _step().end()
-        return {"caught": None}
-
-    @app.get("/step/constructed-before-the-block")
-    async def step_constructed_before_the_block() -> _Answer:
-        step = _step()
-        step.first_output()
-        async with step:
-            pass
-        return {"caught": None}
-
-    @app.get("/step/started-earlier")
-    async def step_started_earlier() -> _Answer:
-        step = _step(started_at=time.perf_counter() - STEP.earlier_start_seconds)
-        step.first_output()
-        step.end()
-        return {"caught": None}
-
-    @app.get("/step/started-in-the-future")
-    async def step_started_in_the_future() -> _Answer:
-        try:
-            _step(started_at=time.perf_counter() + STEP.earlier_start_seconds)
-        except ValueError as caught:
-            return {"caught": str(caught)}
-        return {"caught": None}
-
-    @app.get("/step/end-twice")
-    async def step_end_twice() -> _Answer:
-        step = _step()
-        step.end()
-        step.end()
-        return {"caught": None}
-
-    @app.get("/step/end-in-block")
-    async def step_end_in_block() -> _Answer:
-        async with _step() as step:
-            step.end()
-        return {"caught": None}
-
-    @app.get("/step/end-then-raise")
-    async def step_end_then_raise() -> _Answer:
-        failure = ValueError(STEP_FAILURE_MESSAGE)
-        try:
-            async with _step() as step:
-                step.end()
-                raise failure
-        except ValueError as caught:
-            return _caught(caught, failure)
-
-    @app.get("/step/thread")
-    async def step_thread() -> _Answer:
-        await asyncio.to_thread(_sync_step, failure=None)
-        return {"caught": None}
-
-    @app.get("/step/thread-failed")
-    async def step_thread_failed() -> _Answer:
-        failure = ValueError(STEP_FAILURE_MESSAGE)
-        try:
-            await asyncio.to_thread(_sync_step, failure=failure)
-        except ValueError as caught:
-            return _caught(caught, failure)
-        return {"caught": None}
-
-    @app.get("/step/sync-endpoint")
-    def step_sync_endpoint() -> _Answer:
-        _sync_step(failure=None)
-        return {"caught": None}

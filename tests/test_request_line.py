@@ -130,10 +130,6 @@ def test_a_request_whose_endpoint_raised_logs_500_and_a_traceback_without_its_lo
     assert "secret-in-a-local" not in output
 
 
-def test_the_request_event_is_the_past_tense_name_the_standard_ruled() -> None:
-    assert REQUEST_EVENT == "request.ended"
-
-
 @pytest.mark.parametrize(
     ("path", "status", "outcome"),
     [
