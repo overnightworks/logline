@@ -10,8 +10,8 @@ from websockets.asyncio.client import connect
 from logline import configure, outgoing_headers
 from logline.lifespan import LIFESPAN_LOGGER_NAME
 from tests.support.apps import WEBSOCKET_TRACE_PATH, build_app
-from tests.support.lines import Line, json_lines, lines_of, request_lines
-from tests.support.serving import serve
+from tests.support.lines import Line, json_lines, lines_of, request_lines, session_lines
+from tests.support.serving import WEBSOCKET_IMPLEMENTATIONS, serve
 
 _TRACEPARENT = re.compile(
     r"^00-(?P<trace_id>[0-9a-f]{32})-(?P<span_id>[0-9a-f]{16})-(?P<flags>[0-9a-f]{2})$"
@@ -140,16 +140,15 @@ def test_outside_a_request_there_is_no_trace_to_hand_on(
 
 
 type _Frame = dict[str, str | bool | None]
-_SESSION_EVENT = "websocket.ended"
 
 
-def _session_line(lines: list[Line]) -> Line:
-    (line,) = [line for line in request_lines(lines) if line["event"] == _SESSION_EVENT]
-    return line
+@pytest.fixture(params=WEBSOCKET_IMPLEMENTATIONS)
+def implementation(request: pytest.FixtureRequest) -> str:
+    return str(request.param)
 
 
 def _sessions_upgraded_with(
-    capsys: pytest.CaptureFixture[str], upgrades: list[dict[str, str]]
+    capsys: pytest.CaptureFixture[str], implementation: str, upgrades: list[dict[str, str]]
 ) -> list[tuple[dict[str, str | dict[str, str]], Line]]:
     """Open the trace socket per upgrade's headers; return each one's frame and session line."""
     configure("trace-service")
@@ -162,24 +161,20 @@ def _sessions_upgraded_with(
                 frames.append(json.loads(await websocket.recv()))
                 await websocket.wait_closed()
 
-    serve(uvicorn.Config(build_app(), log_config=None), exercise)
-    session_lines = [
-        line
-        for line in request_lines(json_lines(capsys.readouterr().out))
-        if line["event"] == _SESSION_EVENT
-    ]
-    return list(zip(frames, session_lines, strict=True))
+    serve(uvicorn.Config(build_app(), log_config=None, ws=implementation), exercise)
+    lines = session_lines(json_lines(capsys.readouterr().out))
+    return list(zip(frames, lines, strict=True))
 
 
 def test_an_incoming_traceparent_on_the_upgrade_gives_the_session_its_trace_id(
-    capsys: pytest.CaptureFixture[str],
+    capsys: pytest.CaptureFixture[str], implementation: str
 ) -> None:
     upgrade = {
         "traceparent": f"00-{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}-01",
         "tracestate": _INCOMING_TRACESTATE,
     }
 
-    ((frame, session_line),) = _sessions_upgraded_with(capsys, [upgrade])
+    ((frame, session_line),) = _sessions_upgraded_with(capsys, implementation, [upgrade])
 
     outgoing = _TRACEPARENT.match(str(frame["traceparent"]))
     assert outgoing
@@ -204,9 +199,9 @@ def test_an_incoming_traceparent_on_the_upgrade_gives_the_session_its_trace_id(
     ],
 )
 def test_without_a_valid_traceparent_the_session_starts_a_new_trace_with_flags_00(
-    capsys: pytest.CaptureFixture[str], incoming: dict[str, str]
+    capsys: pytest.CaptureFixture[str], implementation: str, incoming: dict[str, str]
 ) -> None:
-    ((frame, session_line),) = _sessions_upgraded_with(capsys, [incoming])
+    ((frame, session_line),) = _sessions_upgraded_with(capsys, implementation, [incoming])
 
     match = _TRACEPARENT.match(str(frame["traceparent"]))
     assert match
@@ -217,15 +212,15 @@ def test_without_a_valid_traceparent_the_session_starts_a_new_trace_with_flags_0
 
 
 def test_two_sessions_without_a_traceparent_get_different_traces(
-    capsys: pytest.CaptureFixture[str],
+    capsys: pytest.CaptureFixture[str], implementation: str
 ) -> None:
-    (_, first), (_, second) = _sessions_upgraded_with(capsys, [{}, {}])
+    (_, first), (_, second) = _sessions_upgraded_with(capsys, implementation, [{}, {}])
 
     assert first["trace_id"] != second["trace_id"]
 
 
 def _play_turns(
-    capsys: pytest.CaptureFixture[str], turns: list[dict[str, str | None]]
+    capsys: pytest.CaptureFixture[str], implementation: str, turns: list[dict[str, str | None]]
 ) -> tuple[list[tuple[_Frame, _Frame]], list[Line], Line]:
     """Send each turn to the served socket; return its frames, its lines and the session line."""
     configure("trace-service")
@@ -240,9 +235,10 @@ def _play_turns(
                 after = json.loads(await websocket.recv())
                 frames.append((inside, after))
 
-    serve(uvicorn.Config(build_app(), log_config=None), exercise)
+    serve(uvicorn.Config(build_app(), log_config=None, ws=implementation), exercise)
     lines = json_lines(capsys.readouterr().out)
-    return frames, lines_of(lines, logger_name), _session_line(lines)
+    (session_line,) = session_lines(lines)
+    return frames, lines_of(lines, logger_name), session_line
 
 
 def _turn(traceparent: str | None = None, *, failure: str | None = None) -> dict[str, str | None]:
@@ -250,12 +246,12 @@ def _turn(traceparent: str | None = None, *, failure: str | None = None) -> dict
 
 
 def test_a_turn_that_raises_leaves_the_sessions_trace_on_the_sockets_later_lines(
-    capsys: pytest.CaptureFixture[str],
+    capsys: pytest.CaptureFixture[str], implementation: str
 ) -> None:
     incoming = f"00-{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}-01"
 
     frames, lines, session_line = _play_turns(
-        capsys, [_turn(incoming, failure="the turn failed"), _turn()]
+        capsys, implementation, [_turn(incoming, failure="the turn failed"), _turn()]
     )
 
     session_trace_id = session_line["trace_id"]
@@ -277,11 +273,11 @@ def test_a_turn_that_raises_leaves_the_sessions_trace_on_the_sockets_later_lines
 
 
 def test_two_turns_carrying_one_traceparent_log_that_trace_id(
-    capsys: pytest.CaptureFixture[str],
+    capsys: pytest.CaptureFixture[str], implementation: str
 ) -> None:
     incoming = f"00-{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}-01"
 
-    frames, lines, _ = _play_turns(capsys, [_turn(incoming), _turn(incoming)])
+    frames, lines, _ = _play_turns(capsys, implementation, [_turn(incoming), _turn(incoming)])
 
     inside_lines = [line for line in lines if line["event"] == "inside the turn"]
     assert [line["trace_id"] for line in inside_lines] == [_INCOMING_TRACE_ID] * 2
@@ -296,9 +292,9 @@ def test_two_turns_carrying_one_traceparent_log_that_trace_id(
     ids=["absent", "malformed", "all-zero trace id"],
 )
 def test_a_turn_without_a_valid_traceparent_starts_a_new_trace_with_flags_00(
-    capsys: pytest.CaptureFixture[str], incoming: str | None
+    capsys: pytest.CaptureFixture[str], implementation: str, incoming: str | None
 ) -> None:
-    frames, lines, _ = _play_turns(capsys, [_turn(incoming)])
+    frames, lines, _ = _play_turns(capsys, implementation, [_turn(incoming)])
 
     match = _TRACEPARENT.match(str(frames[0][0]["traceparent"]))
     assert match

@@ -9,7 +9,6 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import InvalidHandshake
 
 from logline import Outcome, configure
-from logline.request import REQUEST_LOGGER_NAME
 from logline.standard import BASE_KEYS
 from tests.support.apps import (
     HOST_CLIENT_IP,
@@ -27,10 +26,9 @@ from tests.support.apps import (
     WEBSOCKET_SILENT_PATH,
     build_app,
 )
-from tests.support.lines import Line, json_lines, lines_of
+from tests.support.lines import Line, json_lines, lines_of, session_lines
 from tests.support.serving import serve
 
-_SESSION_EVENT = "websocket.ended"
 _CLIENT_CLOSE_CODE = 4001
 _UVICORN_LOGGER = "uvicorn.error"
 
@@ -150,12 +148,6 @@ def _serve_sessions(sessions: list[Session], implementation: str, *, concurrentl
     serve(uvicorn.Config(build_app(), log_config=None, ws=implementation), exercise)
 
 
-def _session_lines(lines: list[Line]) -> list[Line]:
-    return [
-        line for line in lines_of(lines, REQUEST_LOGGER_NAME) if line["event"] == _SESSION_EVENT
-    ]
-
-
 @pytest.mark.parametrize(("implementation", "absent_events"), _IMPLEMENTATIONS)
 @pytest.mark.parametrize("session", _SESSIONS)
 def test_a_websocket_session_writes_one_line_when_it_ends(
@@ -169,7 +161,7 @@ def test_a_websocket_session_writes_one_line_when_it_ends(
     _serve_sessions([session], implementation, concurrently=False)
 
     lines = json_lines(capsys.readouterr().out)
-    (line,) = _session_lines(lines)
+    (line,) = session_lines(lines)
     assert session.expected.items() <= line.items()
     assert line.keys() <= {*BASE_KEYS, *session.expected, "duration_ms", "route", "sub", "ip"}
     assert isinstance(line["duration_ms"], int | float)
@@ -188,7 +180,7 @@ def test_every_line_of_a_websocket_session_carries_the_sessions_trace_id(
     _serve_sessions([session], implementation, concurrently=False)
 
     lines = json_lines(capsys.readouterr().out)
-    (session_line,) = _session_lines(lines)
+    (session_line,) = session_lines(lines)
     (app_line,) = lines_of(lines, SESSION_LOGGER)
     assert app_line["event"] == SESSION_EVENT_IN_APP
     assert isinstance(session_line["trace_id"], str)
@@ -209,7 +201,7 @@ def test_concurrent_sessions_each_write_their_own_line(
     )
 
     lines = json_lines(capsys.readouterr().out)
-    assert Counter((line["outcome"], line.get("status")) for line in _session_lines(lines)) == {
+    assert Counter((line["outcome"], line.get("status")) for line in session_lines(lines)) == {
         (Outcome.REFUSED, WEBSOCKET_DENIED_STATUS): 2,
         (Outcome.FAILED, 500): 2,
         (Outcome.OK, None): 2,
