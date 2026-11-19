@@ -4,6 +4,7 @@ and route.
 This module imports no web framework: it speaks ASGI, and `RequestLine` serves a host that does not.
 """
 
+from collections.abc import Iterable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from enum import StrEnum
@@ -14,7 +15,7 @@ import structlog
 from logline.asgi import ASGIApp, Message, Receive, Scope, Send
 from logline.lifespan import run_lifespan
 from logline.step import Outcome, Stopwatch
-from logline.trace import HeaderPairs, request_trace
+from logline.trace import request_trace
 from logline.websocket import SessionEnd, run_websocket
 
 __all__: list[str] = []
@@ -135,10 +136,22 @@ class RequestLine:
     connection stacks the next request's trace on it; the standard library closes the connection.
     """
 
-    def __init__(self, method: str, headers: HeaderPairs, *, ip: str | None = None) -> None:
+    def __init__(
+        self, method: str, headers: Iterable[tuple[str, str]], *, ip: str | None = None
+    ) -> None:
+        self._open(method, request_trace(headers), ip)
+
+    @classmethod
+    def _of_scope(cls, scope: Scope) -> RequestLine:
+        """The middleware's line: the scope's byte header pairs are no public parameter."""
+        line = cls.__new__(cls)
+        line._open(scope["method"], request_trace(scope["headers"]), _client_host(scope))
+        return line
+
+    def _open(self, method: str, trace: AbstractContextManager[None], ip: str | None) -> None:
         self._method = _method_code(method)
         self._record = _RequestRecord(sub=None, ip=ip, route=None)
-        self._trace: AbstractContextManager[None] = request_trace(headers)
+        self._trace = trace
         self._status: int | None = None
         self._written = False
         self._stopwatch = Stopwatch()
@@ -223,7 +236,7 @@ class RequestLineMiddleware:
                 await self._app(scope, receive, send)
 
     async def _write_request_line(self, scope: Scope, receive: Receive, send: Send) -> None:
-        line = RequestLine(scope["method"], scope["headers"], ip=_client_host(scope))
+        line = RequestLine._of_scope(scope)
         record = line._record  # the per-scope record is RequestLine's own, shared with the setters
         _share_record(scope, record)
 
