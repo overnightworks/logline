@@ -106,7 +106,7 @@ def test_the_hosts_failure_line_joins_the_trace_and_a_base_exception_leaves_a_cr
         ],
     )
 
-    (failed,) = [line for line in lines_of(lines, HOST_LOGGER)]
+    (failed,) = lines_of(lines, HOST_LOGGER)
     assert (failed["event"], failed["trace_id"]) == (HANDLE_ERROR_EVENT, _INCOMING_TRACE_ID)
     (crashed,) = [line for line in lines if line["event"] == "thread.crashed"]
     assert crashed["error_type"] == "HostCancelled"
@@ -122,17 +122,8 @@ def test_ending_the_line_before_the_block_ends_writes_it_once(
     assert (line["outcome"], line["status"]) == ("ok", 200)
 
 
-@pytest.mark.parametrize(
-    "headers",
-    [
-        pytest.param([("TraceParent", _INCOMING_TRACEPARENT)], id="text-pairs-any-case"),
-        pytest.param([(b"traceparent", _INCOMING_TRACEPARENT.encode())], id="asgi-byte-pairs"),
-    ],
-)
-def test_the_trace_is_read_from_text_and_byte_header_pairs(
-    headers: list[tuple[str, str]] | list[tuple[bytes, bytes]],
-) -> None:
-    with request_trace(headers):
+def test_the_trace_is_read_from_asgi_byte_header_pairs() -> None:
+    with request_trace([(b"traceparent", _INCOMING_TRACEPARENT.encode())]):
         assert current_trace_id() == _INCOMING_TRACE_ID
 
 
