@@ -32,6 +32,16 @@ forbidden_modules =
 ignore_imports =
     logline.check -> logline.standard
 
+[importlinter:contract:logline-standard-imports-only-the-standard-library]
+name = logline.standard imports only the standard library
+type = forbidden
+source_modules =
+    logline.standard
+forbidden_modules =
+    structlog
+    opentelemetry
+    logline.*
+
 [importlinter:contract:no-runtime-module-imports-logline-check]
 name = no runtime module imports logline.check
 type = forbidden
