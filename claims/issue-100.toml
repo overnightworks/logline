@@ -1,8 +1,0 @@
-claim_id = "d5807e9eb4224774b51061d8f6dc7e9a"
-agent = "Claude d9addcd3-0262-4599-8eb8-a2126da8f7e1"
-role = "builder"
-base = "92d4fa45d39ec9d0b1ec949beba317502e5944a2"
-branch = "claude/issue-100-request-line-non-asgi"
-scope = ["AGENTS.md", "README.md", "docs/ARCHITECTURE.md", "src/logline/__init__.py", "src/logline/request.py", "src/logline/trace.py", "tests"]
-opened_commit = "7b1c3bf11fff0663f49893a9aeba96ed2a0714c3"
-whole_reason = "One public object, the middleware's move onto it, their real-server tests and the documents that state the rule."
