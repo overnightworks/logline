@@ -26,10 +26,21 @@ def _non_zero_random(bits: int) -> int:
     return secrets.randbelow(2**bits - 1) + 1
 
 
-def _trace_headers(raw_headers: Iterable[tuple[bytes, bytes]]) -> dict[str, str]:
+type HeaderPairs = Iterable[tuple[str, str]] | Iterable[tuple[bytes, bytes]]
+
+
+def _text(header_part: str | bytes) -> str:
+    return header_part.decode("latin-1") if isinstance(header_part, bytes) else header_part
+
+
+def _trace_headers(headers: HeaderPairs) -> dict[str, str]:
     fields = _PROPAGATOR.fields
-    decoded = ((name.decode("latin-1"), value.decode("latin-1")) for name, value in raw_headers)
-    return {name: value for name, value in decoded if name in fields}
+    carrier: dict[str, str] = {}
+    for name, value in headers:
+        field = _text(name).lower()
+        if field in fields:
+            carrier[field] = _text(value)
+    return carrier
 
 
 def _attach_span(carrier: dict[str, str]) -> Token[context.Context]:
@@ -53,11 +64,12 @@ def _attach_span(carrier: dict[str, str]) -> Token[context.Context]:
 
 
 @contextmanager
-def request_trace(raw_headers: Iterable[tuple[bytes, bytes]]) -> Iterator[None]:
+def request_trace(raw_headers: HeaderPairs) -> Iterator[None]:
     """Run the block inside the request's trace: the incoming one, else a new one.
 
-    `raw_headers` are the ASGI scope's headers, lower-case names as bytes; only `traceparent` and
-    `tracestate` are read. The block gets a fresh span id either way.
+    `raw_headers` are (name, value) pairs of text, as a standard-library server hands them over, or
+    the ASGI scope's byte pairs; names are read case-insensitively and only `traceparent` and
+    `tracestate` are used. The block gets a fresh span id either way.
 
     An exception that leaves the block leaves the trace attached: the server writes its error line
     after the block, in the same task, and that line belongs to this trace.

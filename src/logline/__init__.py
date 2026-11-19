@@ -3,6 +3,7 @@
 from logline.configuration import configure
 from logline.request import (
     REQUEST_EVENT,
+    RequestLine,
     RequestLineMiddleware,
     set_client_ip,
     set_route,
@@ -16,6 +17,7 @@ __version__ = "1.4.0"
 __all__ = [
     "REQUEST_EVENT",
     "Outcome",
+    "RequestLine",
     "RequestLineMiddleware",
     "StepTimer",
     "__version__",
