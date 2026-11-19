@@ -31,6 +31,12 @@ class Outcome(StrEnum):
     CANCELLED = "cancelled"
 
 
+def outcome_of_raised(exception_type: type[BaseException]) -> Outcome:
+    """What an exception that left a unit makes of it: an `Exception` failed it, anything else
+    cancelled it."""
+    return Outcome.FAILED if issubclass(exception_type, Exception) else Outcome.CANCELLED
+
+
 class Stopwatch:
     """The monotonic clock and rounding of every `duration_ms` and `first_output_ms`."""
 
@@ -205,7 +211,7 @@ class StepTimer:
             return Outcome.CANCELLED
         if exc is None:
             return self._outcome_of_a_normal_end()
-        return Outcome.FAILED if isinstance(exc, Exception) else Outcome.CANCELLED
+        return outcome_of_raised(type(exc))
 
     def _outcome_of_a_normal_end(self) -> Outcome:
         if self._failure_reason is not None:

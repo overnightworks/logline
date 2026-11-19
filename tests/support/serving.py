@@ -14,6 +14,8 @@ from tests.support.apps import build_app
 from tests.support.lines import Line, json_lines
 
 HTTP_IMPLEMENTATIONS = ["h11", "httptools"]
+# What uvicorn's default `ws="auto"` resolves to with `websockets` installed, and wsproto.
+WEBSOCKET_IMPLEMENTATIONS = ["websockets-sansio", "wsproto"]
 
 
 def serve(config: uvicorn.Config, exercise: Callable[[str], Awaitable[None]]) -> None:

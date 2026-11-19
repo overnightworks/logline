@@ -62,15 +62,16 @@ Module owners in `logline`:
   outcome rule, the status when none was sent), which the middleware uses for HTTP and a host without ASGI uses
   directly; the per-request record in `scope["state"]`, which `RequestLine` wraps and which also feeds
   `websocket.ended`; and the functions that set `sub`, `ip` and `route`.
-- `step` owns `Outcome`, the one owner of the `outcome` values, the stopwatch behind every `duration_ms`, and
+- `step` owns `Outcome`, the one owner of the `outcome` values and of the rule that an `Exception` reads `failed` and
+  another `BaseException` `cancelled`, the stopwatch behind every `duration_ms`, and
   `StepTimer`, which writes a step's `.ended` line through the standard-library logger the caller names, so
   `record` shapes it like any library's line.
 - `testing` owns `configured`, the host tests' way to run `configure` and restore the logging state it
   changed, the three `process_failures` hooks included; it is the one module that reads
   `configuration`'s list of touched loggers.
-- `trace` owns the request's and the unit's trace: it starts or continues it in OpenTelemetry's context from
-  header pairs (ASGI byte pairs or text pairs, one extraction), reads `trace_id` from it and hands it on as
-  headers or, for a message, as a `traceparent` value.
+- `trace` owns the trace of a request, of a WebSocket session and of a unit within it: it starts or continues it in
+  OpenTelemetry's context from header pairs (ASGI byte pairs or text pairs, one extraction), reads `trace_id` from it
+  and hands it on as headers or, for a message, as a `traceparent` value.
 
 `record` uses `standard` and `trace`; `request` uses `step`, `trace`, `lifespan`, `websocket` and `asgi`; `uvicorn_records` uses `websocket`; `configuration` uses `record`, `uvicorn_records` and
 `process_failures` and names the request logger; `testing` uses `configuration`.
@@ -104,11 +105,13 @@ A host without ASGI, such as one on the standard library's `http.server`, takes 
 it enters `RequestLine` around its handler and calls `set_status` where it sends the status line, and writes its own
 `.failed` line in `handle_error`, which runs after the block and so still inside the trace.
 
-A unit outside a request, such as a turn on a long-lived WebSocket, runs in `unit_trace(traceparent)` instead:
-the same start or continue, but the trace is detached whenever the block ends, an exception included, so no
-later line of the socket carries it. The request's trace stays attached after an exception because the
+A `websocket` scope runs the same way: the middleware enters `request_trace(scope["headers"])` around the whole
+session, so the app's lines, the server's error line and `websocket.ended` carry the session's trace. A turn on that
+socket runs in `unit_trace(traceparent)` inside it: the same start or continue, but the trace is detached whenever
+the block ends, an exception included, so the session's trace is current again and no later line of the socket
+carries the turn's. The request's trace stays attached after an exception because the
 server's error line follows in the same task; a unit has no such line, so a host's handler line for a
-failed turn falls outside the trace unless the host logs it inside the block.
+failed turn carries the session's trace, not the turn's, unless the host logs it inside the block.
 
 ## 4. Deployment View
 
@@ -207,5 +210,7 @@ lowest direct dependency floors run the same tests.
 - An exception that leaves a `RequestLine` block leaves the trace attached, as the middleware's does. A host that
   catches it outside the block and keeps the connection stacks the next request's trace on the stale one; the
   standard library closes the connection after `handle_error`.
-- A WebSocket session gets `websocket.ended` when the app returns, not a request line; it joins no trace, because a
-  turn on the socket runs in its own `unit_trace`.
+- A WebSocket session gets `websocket.ended` when the app returns, not a request line; it runs in one trace from
+  the upgrade to its end, which may last hours, and a call a host makes outside a turn carries that trace into the
+  service it calls. A turn started with `unit_trace(None)` is not linked to the session's trace. uvicorn's legacy
+  `websockets` implementation writes from another task and stays without a trace.

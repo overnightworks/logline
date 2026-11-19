@@ -97,7 +97,10 @@ def unit_trace(traceparent: str | None) -> Iterator[None]:
 
 
 def current_trace_id() -> str | None:
-    """The running request's trace id as 32 hex digits, or None outside a request."""
+    """The running trace's id as 32 hex digits: the request's, the session's or the turn's.
+
+    None outside a trace.
+    """
     span_context = trace.get_current_span().get_span_context()
     if not span_context.is_valid:
         return None
@@ -105,12 +108,18 @@ def current_trace_id() -> str | None:
 
 
 def outgoing_headers() -> dict[str, str]:
-    """The current trace context as headers for an outgoing HTTP call; empty outside a request."""
+    """The current trace context as headers for an outgoing HTTP call.
+
+    Inside a turn the turn's, else the request's or the WebSocket session's; empty outside a trace.
+    """
     headers: dict[str, str] = {}
     _PROPAGATOR.inject(headers)
     return headers
 
 
 def current_traceparent() -> str | None:
-    """The current trace as a `traceparent` value for a message, or None outside a trace."""
+    """The current trace as a `traceparent` value for a message.
+
+    Inside a turn the turn's, outside one the WebSocket session's; None outside a trace.
+    """
     return outgoing_headers().get("traceparent")

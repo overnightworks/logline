@@ -45,6 +45,9 @@ WEBSOCKET_SERVER_CLOSES_PATH = "/ws"
 WEBSOCKET_CLIENT_CLOSES_PATH = "/ws-waiting"
 WEBSOCKET_RAISES_PATH = "/ws-boom"
 WEBSOCKET_CANCELLED_PATH = "/ws-cancelled"
+WEBSOCKET_TRACE_PATH = "/ws-trace"
+SESSION_LOGGER = "tests.session"
+SESSION_EVENT_IN_APP = "inside the session"
 BACKGROUND_LOGGER = "tests.background"
 BACKGROUND_EVENT = "background work after the response"
 CHAIN_CAUSE_MESSAGE = "inner cause message"
@@ -317,9 +320,14 @@ def _add_field_and_trace_routes(app: FastAPI) -> None:
         return {"headers": outgoing_headers()}
 
 
+def _log_inside_the_session() -> None:
+    structlog.get_logger(SESSION_LOGGER).info(SESSION_EVENT_IN_APP)
+
+
 def _add_websocket_route(app: FastAPI) -> None:
     @app.websocket(WEBSOCKET_SERVER_CLOSES_PATH)
     async def socket(websocket: WebSocket) -> None:
+        _log_inside_the_session()
         set_sub(websocket.scope, SUB)
         set_client_ip(websocket.scope, HOST_CLIENT_IP)
         set_route(websocket.scope, HOST_ROUTE)
@@ -329,28 +337,43 @@ def _add_websocket_route(app: FastAPI) -> None:
 
     @app.websocket(WEBSOCKET_DENIED_PATH)
     async def denied_socket(websocket: WebSocket) -> None:
+        _log_inside_the_session()
         await websocket.send_denial_response(Response(status_code=WEBSOCKET_DENIED_STATUS))
 
     @app.websocket(WEBSOCKET_CLOSED_PATH)
     async def closed_socket(websocket: WebSocket) -> None:
+        _log_inside_the_session()
         await websocket.close()
 
     @app.websocket(WEBSOCKET_SILENT_PATH)
     async def silent_socket(_websocket: WebSocket) -> None:
+        _log_inside_the_session()
         return
 
     @app.websocket(WEBSOCKET_RAISES_PATH)
     async def failing_socket(websocket: WebSocket) -> None:
+        _log_inside_the_session()
         await websocket.accept()
         raise RuntimeError(WEBSOCKET_FAILURE_MESSAGE)
 
     @app.websocket(WEBSOCKET_CANCELLED_PATH)
     async def cancelled_socket(websocket: WebSocket) -> None:
+        _log_inside_the_session()
         await websocket.accept()
         raise asyncio.CancelledError
 
+    @app.websocket(WEBSOCKET_TRACE_PATH)
+    async def trace_socket(websocket: WebSocket) -> None:
+        _log_inside_the_session()
+        await websocket.accept()
+        await websocket.send_json(
+            {"traceparent": current_traceparent(), "headers": outgoing_headers()}
+        )
+        await websocket.close()
+
     @app.websocket(WEBSOCKET_CLIENT_CLOSES_PATH)
     async def waiting_socket(websocket: WebSocket) -> None:
+        _log_inside_the_session()
         await websocket.accept()
         async for _ in websocket.iter_text():
             pass
@@ -367,6 +390,7 @@ def _add_turn_route(app: FastAPI) -> None:
 
     @app.websocket("/turns")
     async def socket(websocket: WebSocket) -> None:
+        _log_inside_the_session()
         await websocket.accept()
         async for message in websocket.iter_json():
             logger = structlog.get_logger(message["logger"])

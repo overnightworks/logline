@@ -4,6 +4,8 @@ from logline.request import REQUEST_LOGGER_NAME
 
 type Line = dict[str, object]
 
+SESSION_EVENT = "websocket.ended"
+
 
 def json_lines(output: str) -> list[Line]:
     """Every non-empty line of `output` parsed as one JSON object; a line that is not one fails."""
@@ -21,3 +23,7 @@ def request_lines(lines: list[Line]) -> list[Line]:
 
 def lines_of(lines: list[Line], logger: str) -> list[Line]:
     return [line for line in lines if line["logger"] == logger]
+
+
+def session_lines(lines: list[Line]) -> list[Line]:
+    return [line for line in request_lines(lines) if line["event"] == SESSION_EVENT]
