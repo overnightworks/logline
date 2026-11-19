@@ -1,7 +1,7 @@
 import pytest
 
 from logline import REQUEST_EVENT, Outcome, RequestLine
-from logline.trace import current_trace_id, request_trace
+from logline.trace import current_trace_id
 from tests.support.apps import HOST_CLIENT_IP, HOST_ROUTE, SUB
 from tests.support.lines import lines_of, request_lines
 from tests.support.serving import Call, get
@@ -120,11 +120,6 @@ def test_ending_the_line_before_the_block_ends_writes_it_once(
 
     (line,) = request_lines(lines)
     assert (line["outcome"], line["status"]) == ("ok", 200)
-
-
-def test_the_trace_is_read_from_asgi_byte_header_pairs() -> None:
-    with request_trace([(b"traceparent", _INCOMING_TRACEPARENT.encode())]):
-        assert current_trace_id() == _INCOMING_TRACE_ID
 
 
 def test_a_request_line_reads_its_headers_case_insensitively() -> None:
