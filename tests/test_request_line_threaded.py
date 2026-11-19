@@ -1,6 +1,6 @@
 import pytest
 
-from logline import Outcome, RequestLine
+from logline import REQUEST_EVENT, Outcome, RequestLine
 from logline.trace import current_trace_id, request_trace
 from tests.support.apps import HOST_CLIENT_IP, HOST_ROUTE, SUB
 from tests.support.lines import lines_of, request_lines
@@ -27,39 +27,35 @@ _INCOMING_TRACEPARENT = f"00-{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}-01"
 
 
 @pytest.mark.parametrize(
-    ("path", "status", "outcome"),
+    ("path", "sent", "method", "status", "outcome"),
     [
-        pytest.param(OK_PATH, 200, Outcome.OK, id="ok"),
-        pytest.param(REFUSED_PATH, 404, Outcome.OK, id="a-4xx-is-the-hosts-answer"),
-        pytest.param(UNAVAILABLE_PATH, 503, Outcome.FAILED, id="a-5xx-fails"),
-        pytest.param(RAISES_PATH, 500, Outcome.FAILED, id="an-exception-fails-with-500"),
-        pytest.param(CANCELLED_PATH, 500, Outcome.CANCELLED, id="a-base-exception-cancels"),
-        pytest.param(NO_STATUS_PATH, 500, Outcome.FAILED, id="no-status-set-reads-500"),
+        pytest.param(OK_PATH, "GET", "GET", 200, Outcome.OK, id="ok"),
+        pytest.param(OK_PATH, "DELETE", "DELETE", 200, Outcome.OK, id="a-standard-method"),
+        pytest.param(OK_PATH, "BREW", "_OTHER", 200, Outcome.OK, id="another-method-is-other"),
+        pytest.param(REFUSED_PATH, "GET", "GET", 404, Outcome.OK, id="a-4xx-is-the-hosts-answer"),
+        pytest.param(UNAVAILABLE_PATH, "GET", "GET", 503, Outcome.FAILED, id="a-5xx-fails"),
+        pytest.param(RAISES_PATH, "GET", "GET", 500, Outcome.FAILED, id="an-exception-fails"),
+        pytest.param(CANCELLED_PATH, "GET", "GET", 500, Outcome.CANCELLED, id="a-base-exception"),
+        pytest.param(NO_STATUS_PATH, "GET", "GET", 500, Outcome.FAILED, id="no-status-set"),
     ],
 )
-def test_a_threaded_host_writes_the_requests_outcome_and_status(
-    capsys: pytest.CaptureFixture[str], path: str, status: int, outcome: Outcome
+def test_a_threaded_host_writes_the_requests_method_outcome_and_status(
+    capsys: pytest.CaptureFixture[str],
+    path: str,
+    sent: str,
+    method: str,
+    status: int,
+    outcome: Outcome,
 ) -> None:
-    _, lines = serve_threaded_requests(capsys, [get(path)])
+    _, lines = serve_threaded_requests(capsys, [Call(path, method=sent)])
 
     (line,) = request_lines(lines)
-    assert (line["event"], line["outcome"], line["status"]) == (
-        "request.ended",
+    assert (line["event"], line["method"], line["outcome"], line["status"]) == (
+        REQUEST_EVENT,
+        method,
         outcome.value,
         status,
     )
-
-
-@pytest.mark.parametrize(
-    ("sent", "logged"),
-    [("GET", "GET"), ("DELETE", "DELETE"), ("BREW", "_OTHER")],
-)
-def test_a_threaded_hosts_method_is_a_standard_method_or_other(
-    capsys: pytest.CaptureFixture[str], sent: str, logged: str
-) -> None:
-    _, lines = serve_threaded_requests(capsys, [Call(OK_PATH, method=sent)])
-
-    assert request_lines(lines)[0]["method"] == logged
 
 
 def test_a_threaded_host_reports_the_client_address_until_it_sets_another(
