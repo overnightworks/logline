@@ -58,7 +58,7 @@ def test_a_threaded_host_writes_the_requests_method_outcome_and_status(
     )
 
 
-def test_a_threaded_host_reports_the_client_address_until_it_sets_another(
+def test_a_threaded_host_reports_no_sub_or_route_and_the_client_address_until_it_sets_them(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _, lines = serve_threaded_requests(capsys, [get(OK_PATH), get(IDENTITY_PATH)])
@@ -95,7 +95,7 @@ def test_a_threaded_host_starts_a_new_trace_for_a_request_without_one(
     assert traces[0][0] != traces[1][0]
 
 
-def test_the_failure_line_of_the_host_and_its_crash_line_follow_the_request_line(
+def test_the_hosts_failure_line_joins_the_trace_and_a_base_exception_leaves_a_crash_line(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _, lines = serve_threaded_requests(
