@@ -1,8 +1,0 @@
-claim_id = "0f7b17f69b03484b980b69536e58b65b"
-agent = "Claude d9addcd3-0262-4599-8eb8-a2126da8f7e1"
-role = "builder"
-base = "b7c00890474ce10df2ec4c1106c26700f43c3ae0"
-branch = "claude/issue-102-websocket-session-trace"
-scope = ["README.md", "docs/ARCHITECTURE.md", "src/logline/request.py", "src/logline/step.py", "src/logline/trace.py", "src/logline/websocket.py", "tests"]
-opened_commit = "f6d4a791d7764a12f8be9de93aad4032f76a6dc9"
-whole_reason = "One wrapped call, one owner for the outcome rule, their real-server tests and the documents that state the trace rule."
