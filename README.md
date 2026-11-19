@@ -271,7 +271,8 @@ class Server(ThreadingHTTPServer):
   reads `ok` with the status already set. There is no separate disconnect outcome.
 - The standard library's `handle_error` is reached by an `Exception` only. A `BaseException` that is not one ends the
   handler thread, and `configure`'s hook writes `thread.crashed` beside the `cancelled` request line: read the two
-  together.
+  together. `SystemExit` is the exception: the request line reads `cancelled` and the hook writes no
+  `thread.crashed`, as for any thread that ends with it.
 - Known gap: an exception that leaves the block leaves the trace attached to the thread. A host that catches it
   outside the block and keeps the connection stacks the next request's trace on the stale one. The standard
   library closes the connection after `handle_error`, so a host built as above is not affected.
