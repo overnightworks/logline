@@ -58,18 +58,21 @@ Module owners in `logline`:
   `websocket.ended` line with the per-scope record. It also marks the app's task, so the `uvicorn.error` filter can
   tell a refusal the session line carries from one that never reached the app.
 - `asgi` owns the ASGI type aliases `request`, `lifespan` and `websocket` share.
-- `request` owns the request line, the per-request record in `scope["state"]` and the functions that set
-  `sub`, `ip` and `route`.
+- `request` owns the request line: `RequestLine`, the one writer of `request.ended` (the `method` coding, the
+  outcome rule, the status when none was sent), which the middleware uses for HTTP and a host without ASGI uses
+  directly; the per-request record in `scope["state"]`, which `RequestLine` wraps and which also feeds
+  `websocket.ended`; and the functions that set `sub`, `ip` and `route`.
 - `step` owns `Outcome`, the one owner of the `outcome` values, the stopwatch behind every `duration_ms`, and
   `StepTimer`, which writes a step's `.ended` line through the standard-library logger the caller names, so
   `record` shapes it like any library's line.
 - `testing` owns `configured`, the host tests' way to run `configure` and restore the logging state it
   changed, the three `process_failures` hooks included; it is the one module that reads
   `configuration`'s list of touched loggers.
-- `trace` owns the request's and the unit's trace: it starts or continues it in OpenTelemetry's context,
-  reads `trace_id` from it and hands it on as headers or, for a message, as a `traceparent` value.
+- `trace` owns the request's and the unit's trace: it starts or continues it in OpenTelemetry's context from
+  header pairs (ASGI byte pairs or text pairs, one extraction), reads `trace_id` from it and hands it on as
+  headers or, for a message, as a `traceparent` value.
 
-`record` uses `standard` and `trace`; `request` uses `step`, `lifespan`, `websocket` and `asgi`; `uvicorn_records` uses `websocket`; `configuration` uses `record`, `uvicorn_records` and
+`record` uses `standard` and `trace`; `request` uses `step`, `trace`, `lifespan`, `websocket` and `asgi`; `uvicorn_records` uses `websocket`; `configuration` uses `record`, `uvicorn_records` and
 `process_failures` and names the request logger; `testing` uses `configuration`.
 `request` imports no web framework; an import contract keeps `logline` free of frameworks, servers and
 HTTP clients.
@@ -80,19 +83,26 @@ HTTP clients.
 sequenceDiagram
     participant S as Server (uvicorn)
     participant M as RequestLineMiddleware
+    participant R as RequestLine
     participant T as trace
     participant A as Host app
     participant L as Handler (stdout)
     S->>M: http scope
-    M->>T: request_trace(traceparent, tracestate)
-    T-->>M: fresh span in OpenTelemetry's context
-    M->>A: scope["state"] holds sub=None, ip=client
+    M->>R: RequestLine(method, headers, ip), entered
+    R->>T: request_trace(headers)
+    T-->>R: fresh span in OpenTelemetry's context
+    M->>A: scope["state"] holds R's record: sub=None, ip=client
     A->>M: set_sub / set_client_ip / set_route (same state dict)
     A->>L: any line, trace_id read from the context
     A->>M: last body chunk, or an exception
-    M->>L: the request line (outcome, sub, ip, route, status)
-    M->>T: detach, except on an exception
+    M->>R: end(), or the block ends with the exception
+    R->>L: the request line (outcome, sub, ip, route, status)
+    R->>T: detach, except on an exception
 ```
+
+A host without ASGI, such as one on the standard library's `http.server`, takes the part of the middleware itself:
+it enters `RequestLine` around its handler and calls `set_status` where it sends the status line, and writes its own
+`.failed` line in `handle_error`, which runs after the block and so still inside the trace.
 
 A unit outside a request, such as a turn on a long-lived WebSocket, runs in `unit_trace(traceparent)` instead:
 the same start or continue, but the trace is detached whenever the block ends, an exception included, so no
@@ -124,7 +134,8 @@ filter on uvicorn's WebSocket lines and DEBUG records, which carry websockets' r
 message is logged as written: the log shows what happened, and a secret in a message is the app's defect.
 
 **Proof strategy.** Runtime behaviour is proven through a real FastAPI app driven through the middleware
-under a real `uvicorn.Server`, reading stdout; only the clock and randomness may be faked. Pure logic, such as
+under a real `uvicorn.Server`, and `RequestLine` through a real `http.server.ThreadingHTTPServer` in a thread,
+reading stdout; only the clock and randomness may be faked. Pure logic, such as
 `check`, is proven by unit tests over source strings. Branch coverage is 100 %, measured over all tests. The
 lowest direct dependency floors run the same tests.
 
@@ -193,5 +204,8 @@ lowest direct dependency floors run the same tests.
 - `duration_ms` runs until the last body chunk, so a long streamed response logs when it ends and
   background work after the response is not counted; a client disconnect logs the status already sent, or 500 if none.
 - A public client can choose its `trace_id`; stripping `traceparent` at the edge is the platform's.
+- An exception that leaves a `RequestLine` block leaves the trace attached, as the middleware's does. A host that
+  catches it outside the block and keeps the connection stacks the next request's trace on the stale one; the
+  standard library closes the connection after `handle_error`.
 - A WebSocket session gets `websocket.ended` when the app returns, not a request line; it joins no trace, because a
   turn on the socket runs in its own `unit_trace`.
