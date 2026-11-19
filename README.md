@@ -94,7 +94,7 @@ object with these keys, plus the key-value fields the caller adds:
 | `version` | the environment variable `SERVICE_VERSION` at `configure`, `null` when it is unset or empty |
 | `logger` | the logger's name |
 | `event` | the message |
-| `trace_id` | the running request's trace id as 32 hex digits, `null` outside a request |
+| `trace_id` | the running trace's id as 32 hex digits: the request's, the WebSocket session's or the turn's; `null` outside a trace |
 
 A caller's own field named like one of these keys (`base_keys` in `src/logline/standard.json`) is overwritten. The
 scalar rule holds on both write paths: only text, numbers, booleans and `null` reach the line, so an object or a
@@ -127,7 +127,7 @@ the ASGI scope, the response messages or the server's answer belongs to the midd
   `set_route`. Under the middleware, else what the framework left in `scope["route"]`, which inside a mounted
   FastAPI app is that app's own template, relative to the mount. `null` means neither: no route matched (404), a
   gate answered before the router (401), or a `Mount` (static files, a mounted ASGI app) or a plain Starlette
-  `Route` answered under FastAPI, which leaves the template only for an `APIRoute`, and the host did not call
+  `Route` or `WebSocketRoute` answered under FastAPI, which leaves the template only for an `APIRoute`, and the host did not call
   `set_route`. An exception that reaches the middleware logs 500, or the status already sent.
 - `sub` is `null` until the host calls `set_sub`.
 - `ip` is the client address until the host calls `set_client_ip`: under the middleware the ASGI client address,
@@ -157,10 +157,20 @@ accepted. `set_sub`, `set_client_ip` and `set_route` work in a WebSocket scope a
   app raised or returned without answering. An accepted session has no `status`.
 - `close_code` is the code of the last close message of either side, and `null` when none was seen, such as when the
   app raised and the server closed the socket itself, and for an upgrade that was not accepted.
-- `duration_ms` runs from the upgrade to the app's return. The line joins no trace: a turn on the socket has its own
-  (see [A turn on a WebSocket](#a-turn-on-a-websocket)).
+- `duration_ms` runs from the upgrade to the app's return.
+- `trace_id` is the session's, as for a request: the trace of the upgrade's `traceparent` when it is valid, else a
+  new one, so the app's own lines, `asgi_app.failed` and the session line of a refused or failed upgrade read together
+  by one id. A turn on the socket has its own trace and the session's is current again after it (see
+  [A turn on a WebSocket](#a-turn-on-a-websocket)). Three gaps: one trace spans a whole session, which may last hours,
+  and a turn started with `unit_trace(None)` is not linked to it; a call a host makes outside a turn carries the
+  session's trace into the service it calls; and uvicorn's legacy `ws="websockets"` implementation writes from
+  another task, so its lines stay without a trace.
 
 A host without the middleware gets no session line.
+
+A host that wrapped the whole socket in `unit_trace` drops that wrapper: the session is in a trace already, and a
+second one would give the host's lines another id than the session line. A step that must stay out of the session's
+trace, such as a call made outside a turn, runs in `unit_trace(None)`.
 
 **Breaking:** websockets' free-text `connection open` record is dropped, because the session line replaces it, and a
 refused upgrade the app answered is the session line with `outcome` `refused` instead of `websocket_upgrade.refused`
@@ -170,7 +180,7 @@ refused upgrade the app answered is the session line with `outcome` `refused` in
 
 ### The route of a mount or a plain route
 
-Under FastAPI a `Mount` and a plain Starlette `Route` leave no template, so the host names it where it
+Under FastAPI a `Mount`, a plain Starlette `Route` and a `WebSocketRoute` leave no template, so the host names it where it
 answers. A later call replaces an earlier one, and `set_route` on an `APIRoute` replaces its template. The
 template is a literal pattern such as `/static` or `/mcp`, written in the code, never the raw path or a value
 from the request: a path or a request value in `route` puts personal data and unbounded values into every
@@ -270,9 +280,11 @@ class Server(ThreadingHTTPServer):
   `ConnectionResetError`) leaving the block makes the line `failed`, and one the host catches inside the block
   reads `ok` with the status already set. There is no separate disconnect outcome.
 - The standard library's `handle_error` is reached by an `Exception` only. A `BaseException` that is not one ends the
-  handler thread, and `configure`'s hook writes `thread.crashed` beside the `cancelled` request line: read the two
-  together. `SystemExit` is the exception: the request line reads `cancelled` and the hook writes no
-  `thread.crashed`, as for any thread that ends with it.
+  handler thread, and `configure`'s hook writes `thread.crashed` beside the `cancelled` request line. The
+  `thread.crashed` line carries no `trace_id`, so read the two together by time, not by trace id. Time joins them
+  only approximately, above all with concurrent requests.
+  `SystemExit` is the exception: the request line reads `cancelled` and the hook writes no `thread.crashed`, as for
+  any thread that ends with it.
 - Known gap: an exception that leaves the block leaves the trace attached to the thread. A host that catches it
   outside the block and keeps the connection stacks the next request's trace on the stale one. The standard
   library closes the connection after `handle_error`, so a host built as above is not affected.
@@ -287,16 +299,20 @@ There is no baggage, no SDK and no exporter.
 A host without ASGI gets the same trace from `RequestLine`. `logline.trace.request_trace` takes the pairs a server
 hands over as text or as bytes, in any case.
 
+A WebSocket session runs in a trace the same way, from the upgrade's `traceparent` and `tracestate`
+([The WebSocket session line](#the-websocket-session-line)).
+
 `outgoing_headers()` returns the current context as the headers of an outgoing call, an empty dict outside a
-request: `httpx.get(url, headers=outgoing_headers())`.
+request, a WebSocket session or a turn: `httpx.get(url, headers=outgoing_headers())`. Outside a turn of a session it
+returns the session's trace.
 
 ### A turn on a WebSocket
 
-A WebSocket connection is one long-lived task, so its turns need their own trace, and each must end with
-it. `unit_trace(traceparent)` runs a block, one turn, in the incoming trace or a new one, with a fresh span
-id, and detaches it when the block ends. An exception leaves the block unchanged, and no later line of the
-socket carries the failed turn's `trace_id`. `current_traceparent()` returns the `traceparent` value for a
-message, `None` outside a trace.
+A WebSocket session runs in one trace, and its turns need their own, each ending with it.
+`unit_trace(traceparent)` runs a block, one turn, in the incoming trace or a new one, with a fresh span
+id, and detaches it when the block ends, so the session's trace is current again. An exception leaves the block
+unchanged, and no later line of the socket carries the failed turn's `trace_id`. `current_traceparent()` returns the
+`traceparent` value for a message: the turn's inside a turn, the session's outside one, `None` outside any trace.
 
 The sending side puts the value in the message it sends:
 
@@ -311,8 +327,8 @@ async def speak(websocket, text):
 
 The receiving side runs the turn under the value it received, `None` when the message has none or a
 malformed one, which starts a new trace as a request does. The block's own errors leave it with
-the trace ended, so a handler outside the block logs a line with no `trace_id`; a host that needs the failure
-line on its turn logs it inside the block:
+the trace ended, so a handler outside the block logs a line with the session's `trace_id`, not the turn's; a host that needs the
+failure line on its turn logs it inside the block:
 
 ```python
 async for message in websocket.iter_json():

@@ -14,7 +14,7 @@ import structlog
 
 from logline.asgi import ASGIApp, Message, Receive, Scope, Send
 from logline.lifespan import run_lifespan
-from logline.step import Outcome, Stopwatch
+from logline.step import Outcome, Stopwatch, outcome_of_raised
 from logline.trace import request_trace
 from logline.websocket import SessionEnd, run_websocket
 
@@ -207,16 +207,15 @@ class RequestLine:
 
 
 def _outcome_of_exception(exception_type: type[BaseException] | None) -> Outcome | None:
-    if exception_type is None:
-        return None
-    return Outcome.FAILED if issubclass(exception_type, Exception) else Outcome.CANCELLED
+    return None if exception_type is None else outcome_of_raised(exception_type)
 
 
 class RequestLineMiddleware:
     """ASGI middleware that owns three scopes and passes every other through.
 
     An `http` scope gets one `request.ended` line on `logline.request` and joins its trace. A
-    `websocket` scope gets one `websocket.ended` line on the same logger when its session ends. A
+    `websocket` scope gets one `websocket.ended` line on the same logger when its session ends, and
+    its session runs in a trace of its own, the upgrade's or a new one. A
     `lifespan` scope gets the app startup and shutdown lines on `logline.lifespan`, under any ASGI
     server.
     """
@@ -271,4 +270,5 @@ class RequestLineMiddleware:
                 **({} if end.status is None else {"status": end.status}),
             )
 
-        await run_websocket(self._app, scope, receive, send, write_line)
+        with request_trace(scope["headers"]):
+            await run_websocket(self._app, scope, receive, send, write_line)
