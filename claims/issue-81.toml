@@ -1,8 +1,0 @@
-claim_id = "2773fe6db890493c8f687e1e08dcf7d4"
-agent = "Claude d9addcd3-0262-4599-8eb8-a2126da8f7e1"
-role = "builder"
-base = "b7c00890474ce10df2ec4c1106c26700f43c3ae0"
-branch = "claude/issue-81-derive-import-contracts"
-scope = [".github/workflows/ci.yml", ".github/workflows/code-scanning.yml", ".github/workflows/release.yml", ".importlinter", "quality/baseline.toml", "quality/config.toml"]
-opened_commit = "17481612bb649cedea2eaa8bcce6714303824a13"
-whole_reason = "The pin raise and the contract edit prove each other in one CI run: the wildcard is only no loosening under the new gate."
