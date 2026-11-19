@@ -110,28 +110,34 @@ An image build bakes `SERVICE_VERSION` from the release it builds.
 
 The middleware writes one line per HTTP request on the logger `logline.request`, with `event`
 `logline.REQUEST_EVENT` (`request.ended`) and `outcome`, `method`, `route`, `status`, `duration_ms`, `sub` and
-`ip`:
+`ip`. A host without ASGI writes the same line through `RequestLine` ([below](#a-host-without-asgi)), which the
+middleware uses too, so the `method`, `outcome`, `sub`, `ip` and `error_type` rules hold for both. What reads
+the ASGI scope, the response messages or the server's answer belongs to the middleware alone, and is marked so; a
+`RequestLine` host does that part itself:
 
 - `method` is one of `CONNECT`, `DELETE`, `GET`, `HEAD`, `OPTIONS`, `PATCH`, `POST`, `PUT` and `TRACE`, and any other
   token is `_OTHER`, so the field takes a closed set of values.
 - `outcome` is `failed` when the app raised an `Exception` or the status is 5xx, `cancelled` when the app raised
   another `BaseException` (a cancellation), and `ok` otherwise, a 4xx status included: a refused request is
-  the app's answer, not a failure. Such a `BaseException` still reaches the server, which answers 500 before
-  the response starts, so the line then reads `cancelled` with `status` 500; once the response has started, the
-  line keeps the status already sent, such as 200, with `cancelled`: read the two together. The line is written
-  when the response ends, so an exception raised after that (in a background task) leaves the line's `outcome`
-  and `status` as the response wrote them. A host compares `event` with `REQUEST_EVENT`, never with the literal.
-
+  the app's answer, not a failure. A host compares `event` with `REQUEST_EVENT`, never with the literal.
+  Under the middleware such a `BaseException` still reaches the server, which answers 500 before the response
+  starts, so the line then reads `cancelled` with `status` 500; once the response has started, the line keeps the
+  status already sent, such as 200, with `cancelled`: read the two together.
 - `route` is the route template (`/notes/{note_id}`), never the path: the template the host gave to
-  `set_route`, else what the framework left in `scope["route"]`, which inside a mounted FastAPI app is that
-  app's own template, relative to the mount. `null` means neither: no route matched (404), a gate answered
-  before the router (401), or a `Mount` (static files, a mounted ASGI app) or a plain Starlette `Route`
-  answered under FastAPI, which leaves the template only for an `APIRoute`, and the host did not call
+  `set_route`. Under the middleware, else what the framework left in `scope["route"]`, which inside a mounted
+  FastAPI app is that app's own template, relative to the mount. `null` means neither: no route matched (404), a
+  gate answered before the router (401), or a `Mount` (static files, a mounted ASGI app) or a plain Starlette
+  `Route` answered under FastAPI, which leaves the template only for an `APIRoute`, and the host did not call
   `set_route`. An exception that reaches the middleware logs 500, or the status already sent.
 - `sub` is `null` until the host calls `set_sub`.
-- `ip` is the ASGI client address until the host calls `set_client_ip`.
-- `duration_ms` runs until the last body chunk is sent, and the line is written then; background work after
-  the response is not counted, and a `sub` or `ip` set there is too late.
+- `ip` is the client address until the host calls `set_client_ip`: under the middleware the ASGI client address,
+  for `RequestLine` the `ip` the host passed.
+- `duration_ms` runs until the line is written. Under the middleware that is the last body chunk, so background
+  work after the response is not counted, and a `sub` or `ip` set there is too late; the line is written then, so
+  an exception raised after that leaves the line's `outcome` and `status` as the response wrote them. A
+  `RequestLine` ends where the host ends it, `end()` or the end of the block, [below](#a-host-without-asgi).
+- The line has no `error_type`. The layer where the exception stops writes the one line that carries it: under
+  uvicorn `asgi_app.failed`, for a host without ASGI the host's own failure line.
 - A WebSocket session gets its own line, below.
 
 The line is written at INFO whatever `LOG_LEVEL` says: no setting turns it off.
@@ -212,12 +218,74 @@ A host without one runs uvicorn with proxy headers, trusting only the network of
 uvicorn.run(app, log_config=None, proxy_headers=True, forwarded_allow_ips="<the proxy's network>")
 ```
 
+## A host without ASGI
+
+A host whose server is not ASGI, such as one built on the standard library's `http.server`, writes the request line
+through `RequestLine(method, headers, *, ip=None)` and never rebuilds it: the `method` coding, the `outcome` rule, the
+status when none was sent and the trace are the ones above. `headers` are the request's (name, value) pairs of
+text, read case-insensitively, so a host passes its header items as they are; `ip` is the client address, and
+`null` in the line when the host has none. The object serves one request. Its stopwatch starts when it is
+constructed, and the block runs in the request's trace, the incoming one or a new one, so every line logged inside
+carries its `trace_id`.
+
+```python
+import logging
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from logline import RequestLine
+
+logger = logging.getLogger(__name__)
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        with RequestLine(self.command, self.headers.items(), ip=self.client_address[0]) as line:
+            line.set_route("/notes")
+            line.set_status(200)
+            self.send_response(200)
+            self.end_headers()
+
+
+class Server(ThreadingHTTPServer):
+    daemon_threads = False
+
+    def handle_error(self, request, client_address):
+        logger.exception("request_handling.failed")
+```
+
+- `set_sub(sub)`, `set_client_ip(ip)` and `set_route(template)` set the fields at any point of the block, and
+  `set_route` takes a literal template, never the path. There is no framework route to fall back on: `route` is
+  `null` until the host sets it.
+- `set_status(status)` is called where the host sends the status line, not earlier, so the line reports what the
+  client got. A request that sets none reads 500.
+- The line is written when the block ends. `end()` writes it earlier, for a host whose response ends before the
+  block does, and the end of the block then writes nothing more.
+- An `Exception` that leaves the block makes the line `failed`, and any other `BaseException` makes it
+  `cancelled`, with status 500 in the line when none was set. `RequestLine` sends nothing: what the client gets
+  is the host's, and a standard-library server closes the connection without an answer.
+- The host's `handle_error` writes the failure line, with the traceback (`logger.exception`) and no request
+  value. The exception leaves the block with the trace attached, so that line carries the request's `trace_id`,
+  and `request.ended` has no `error_type`.
+- A client that disconnects reads as under the middleware: the disconnect exception (`BrokenPipeError`,
+  `ConnectionResetError`) leaving the block makes the line `failed`, and one the host catches inside the block
+  reads `ok` with the status already set. There is no separate disconnect outcome.
+- The standard library's `handle_error` is reached by an `Exception` only. A `BaseException` that is not one ends the
+  handler thread, and `configure`'s hook writes `thread.crashed` beside the `cancelled` request line: read the two
+  together. `SystemExit` is the exception: the request line reads `cancelled` and the hook writes no
+  `thread.crashed`, as for any thread that ends with it.
+- Known gap: an exception that leaves the block leaves the trace attached to the thread. A host that catches it
+  outside the block and keeps the connection stacks the next request's trace on the stale one. The standard
+  library closes the connection after `handle_error`, so a host built as above is not affected.
+
 ## Trace context
 
 An incoming `traceparent` continues that trace; `tracestate` and the flags pass through. Without a valid one
 the request starts a new trace with flags `00`. Each request gets a fresh span id. The trace lives in
 OpenTelemetry's context, so `trace_id` reaches lines written from sync endpoints on worker threads too.
 There is no baggage, no SDK and no exporter.
+
+A host without ASGI gets the same trace from `RequestLine`. `logline.trace.request_trace` takes the pairs a server
+hands over as text or as bytes, in any case.
 
 `outgoing_headers()` returns the current context as the headers of an outgoing call, an empty dict outside a
 request: `httpx.get(url, headers=outgoing_headers())`.
