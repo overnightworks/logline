@@ -8,7 +8,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 
 from logline.asgi import ASGIApp, Message, Receive, Scope, Send
-from logline.step import Outcome
+from logline.step import Outcome, outcome_of_raised
 
 __all__: list[str] = []
 
@@ -98,11 +98,8 @@ async def run_websocket(
 
     try:
         await app(scope, receive_noting_close, send_noting_answer)
-    except Exception:
-        session.raised = Outcome.FAILED
-        raise
-    except BaseException:
-        session.raised = Outcome.CANCELLED
+    except BaseException as exception:
+        session.raised = outcome_of_raised(type(exception))
         raise
     finally:
         write_line(session.end())

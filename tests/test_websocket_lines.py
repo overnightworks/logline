@@ -14,6 +14,8 @@ from logline.standard import BASE_KEYS
 from tests.support.apps import (
     HOST_CLIENT_IP,
     HOST_ROUTE,
+    SESSION_EVENT_IN_APP,
+    SESSION_LOGGER,
     SUB,
     WEBSOCKET_CANCELLED_PATH,
     WEBSOCKET_CLIENT_CLOSES_PATH,
@@ -57,6 +59,7 @@ class Session:
     path: str
     client: Client
     expected: Line
+    app_failure_logged: bool = False
 
 
 _OK_BY_SERVER = Session(
@@ -84,11 +87,13 @@ _RAISED = Session(
     WEBSOCKET_RAISES_PATH,
     _read_until_the_server_closes,
     {"outcome": Outcome.FAILED, "close_code": None},
+    app_failure_logged=True,
 )
 _CANCELLED = Session(
     WEBSOCKET_CANCELLED_PATH,
     _read_until_the_server_closes,
     {"outcome": Outcome.CANCELLED, "close_code": None},
+    app_failure_logged=True,
 )
 _DENIED = Session(
     WEBSOCKET_DENIED_PATH,
@@ -130,6 +135,9 @@ _IMPLEMENTATIONS = [
 ]
 
 
+_IMPLEMENTATION_NAMES = [pytest.param(case.values[0], id=case.id) for case in _IMPLEMENTATIONS]
+
+
 def _serve_sessions(sessions: list[Session], implementation: str, *, concurrently: bool) -> None:
     async def exercise(base_url: str) -> None:
         urls = [(base_url.replace("http", "ws") + session.path, session) for session in sessions]
@@ -168,6 +176,27 @@ def test_a_websocket_session_writes_one_line_when_it_ends(
     assert not [line for line in lines if str(line["event"]).startswith("request.")]
     server_events = {line["event"] for line in lines_of(lines, _UVICORN_LOGGER)}
     assert not absent_events & {str(event) for event in server_events}
+
+
+@pytest.mark.parametrize("implementation", _IMPLEMENTATION_NAMES)
+@pytest.mark.parametrize("session", _SESSIONS)
+def test_every_line_of_a_websocket_session_carries_the_sessions_trace_id(
+    capsys: pytest.CaptureFixture[str], session: Session, implementation: str
+) -> None:
+    configure("socket-service")
+
+    _serve_sessions([session], implementation, concurrently=False)
+
+    lines = json_lines(capsys.readouterr().out)
+    (session_line,) = _session_lines(lines)
+    (app_line,) = lines_of(lines, SESSION_LOGGER)
+    assert app_line["event"] == SESSION_EVENT_IN_APP
+    assert isinstance(session_line["trace_id"], str)
+    assert session_line["trace_id"] == app_line["trace_id"]
+    failures = [line for line in lines_of(lines, _UVICORN_LOGGER) if line["level"] == "error"]
+    assert [line["trace_id"] for line in failures] == (
+        [session_line["trace_id"]] if session.app_failure_logged else []
+    )
 
 
 def test_concurrent_sessions_each_write_their_own_line(
