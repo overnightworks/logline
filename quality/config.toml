@@ -1,2 +1,8 @@
 [gate]
 mandatory_jobs = ["checks", "lowest-direct"]
+
+[[gate.loosened]]
+what = 'import contract "logline.check imports only the standard library and logline.standard" ignores logline.check -> logline.standard'
+item = "#81"
+date = 2026-11-19
+reason = "import-linter wildcards match whole segments only, so the wildcard that covers every runtime module also covers logline.standard, which logline.check may import"
