@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Regenerates .github/requirements-build.txt, the hash-pinned build constraints both CI and the
-# release build install, from the setuptools floor in pyproject.toml's [build-system].
+# Regenerates .github/requirements-build.txt, the hash-pinned build constraints CI's build
+# installs, from the setuptools floor in pyproject.toml's [build-system].
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

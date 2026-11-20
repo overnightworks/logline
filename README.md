@@ -17,12 +17,8 @@ dependencies = [
 ]
 ```
 
-A consumer that installs offline pins the release's wheel by URL and sha256, which resolves no tag and builds
-nothing. Put the version in place of `X.Y.Z` and the hash from the release's `.sha256` asset after `#sha256=`:
-
-```sh
-uv pip install "overnightworks-logline @ https://github.com/overnightworks/logline/releases/download/vX.Y.Z/overnightworks_logline-X.Y.Z-py3-none-any.whl#sha256=<hash>"
-```
+A host installed without a lock pins the tag's full commit instead, with the tag in a comment; the standard
+"Depending on a fleet package" in overnightworks/quality `docs/release.md` says which hosts and why.
 
 A host's Dependabot entry for uv ignores `overnightworks-*`, because Dependabot looks the name up on PyPI.
 Tags are never moved; a broken release gets the next patch tag.
@@ -169,8 +165,9 @@ accepted. `set_sub`, `set_client_ip` and `set_route` work in a WebSocket scope a
 A host without the middleware gets no session line.
 
 A host that wrapped the whole socket in `unit_trace` drops that wrapper: the session is in a trace already, and a
-second one would give the host's lines another id than the session line. A step that must stay out of the session's
-trace, such as a call made outside a turn, runs in `unit_trace(None)`.
+second one would, without a valid incoming `traceparent`, give the host's lines another id than the session
+line. A step that must stay out of the session's trace, such as a call made outside a turn, runs in
+`unit_trace(None)`.
 
 **Breaking:** websockets' free-text `connection open` record is dropped, because the session line replaces it, and a
 refused upgrade the app answered is the session line with `outcome` `refused` instead of `websocket_upgrade.refused`
