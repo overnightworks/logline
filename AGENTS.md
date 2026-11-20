@@ -20,7 +20,7 @@
 
 ## Owners
 
-- An agent dispatches `release.yml`, when the Commands line says.
+- An agent dispatches `release.yml` as the Commands line says.
 - logline's README standard owns the record shape, field names and turn rule. The platform owns collection, retention, the format cell (reading logline's README, never restating it), Traefik and LiteLLM lines and the dashboard.
 
 ## Documents
