@@ -166,8 +166,8 @@ A host without the middleware gets no session line.
 
 A host that wrapped the whole socket in `unit_trace` drops that wrapper: the session is in a trace already, and a
 second one would, without a valid incoming `traceparent`, give the host's lines another id than the session
-line. A step that must stay out of the session's
-trace, such as a call made outside a turn, runs in `unit_trace(None)`.
+line. A step that must stay out of the session's trace, such as a call made outside a turn, runs in
+`unit_trace(None)`.
 
 **Breaking:** websockets' free-text `connection open` record is dropped, because the session line replaces it, and a
 refused upgrade the app answered is the session line with `outcome` `refused` instead of `websocket_upgrade.refused`
