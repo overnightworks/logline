@@ -6,7 +6,7 @@
 - `uvx --from "git+https://github.com/overnightworks/quality@<sha>" quality check`, with the sha `.github/workflows/ci.yml` pins: the quality gate's local check.
 - `uv run pytest <test module>`: a targeted run of the tests that prove a change; CI runs the suite.
 - `scripts/regenerate_build_constraints.sh`: regenerates `.github/requirements-build.txt` after a change to the setuptools floor in `[build-system]` of `pyproject.toml`.
-- `gh workflow run release.yml -R overnightworks/logline -f version=X.Y.Z`: an agent dispatches the release once the review and CI of the release pull request are green on `main`; `main` must carry X.Y.Z in `logline.__version__`.
+- `gh workflow run release.yml -R overnightworks/logline -f version=X.Y.Z`: an agent dispatches the release once the release pull request's review is done and CI's push run on `main` for its merge has finished green; `main` must carry X.Y.Z in `logline.__version__`.
 
 ## Rules
 
