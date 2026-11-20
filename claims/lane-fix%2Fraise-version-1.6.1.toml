@@ -1,7 +1,0 @@
-claim_id = "e4873d77570147f0be5f2cb2411de9ef"
-agent = "Claude f124f58d-0ac1-4588-b5c0-95e4601fda6e"
-role = "builder"
-base = "ae7834d9087a30ae937af8f86f9b1e9a959d8309"
-branch = "fix/raise-version-1.6.1"
-scope = ["src/logline/__init__.py"]
-opened_commit = "6fb70003c5b9647ee1ddb051e5a847107ed9f7ee"
