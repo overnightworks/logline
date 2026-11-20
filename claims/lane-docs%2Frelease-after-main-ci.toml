@@ -1,7 +1,0 @@
-claim_id = "90bec144e8774d1da85f9a13e5063bdb"
-agent = "Claude f124f58d-0ac1-4588-b5c0-95e4601fda6e"
-role = "builder"
-base = "64ba34b6ab7b7d7b3d7ec845d2d52db9467d0a0c"
-branch = "docs/release-after-main-ci"
-scope = ["AGENTS.md"]
-opened_commit = "fae66a170da70601bc0942435dad1fccfc879cf5"
