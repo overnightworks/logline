@@ -3,5 +3,6 @@ agent = "Claude f124f58d-0ac1-4588-b5c0-95e4601fda6e"
 role = "builder"
 base = "6f533651ba1157c5713c7b3ee1858ea191913017"
 branch = "claude/issue-106-git-tag-only-dependency"
-scope = [".github/workflows/release.yml", "AGENTS.md", "README.md"]
+scope = [".github/workflows/release.yml", "AGENTS.md", "README.md", "scripts/regenerate_build_constraints.sh"]
 opened_commit = "fd2b755c884afa700ab32e6484277da640b6da49"
+whole_reason = "One release path: the README's install form, the release workflow and the build-constraint comment that names it."
