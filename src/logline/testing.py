@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import structlog
+from opentelemetry.propagate import get_global_textmap, set_global_textmap
 
 from logline.configuration import TOUCHED_LOGGER_NAMES, configure
 
@@ -48,7 +49,7 @@ def configured(service: str) -> Iterator[None]:
     Restored are the handlers, filters, level and propagation of the root logger, uvicorn's, the
     HTTP clients', the request and the capped library loggers, structlog's configuration and the
     stdlib logger class structlog's factory installs, the process's and the threads' exception hooks
-    and the warning display, as they were on entry.
+    and the warning display, and OpenTelemetry's global propagator, as they were on entry.
     """
     logger_states = [LoggerState.of(logging.getLogger(name)) for name in TOUCHED_LOGGER_NAMES]
     logger_class = logging.getLoggerClass()
@@ -57,6 +58,7 @@ def configured(service: str) -> Iterator[None]:
     process_hook = sys.excepthook
     thread_hook = threading.excepthook
     warning_hook = warnings.showwarning
+    propagator = get_global_textmap()
     try:
         configure(service)
         yield
@@ -64,6 +66,7 @@ def configured(service: str) -> Iterator[None]:
         sys.excepthook = process_hook
         threading.excepthook = thread_hook
         warnings.showwarning = warning_hook
+        set_global_textmap(propagator)
         logging.setLoggerClass(logger_class)
         for state in logger_states:
             state.restore()

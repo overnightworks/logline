@@ -291,7 +291,17 @@ class Server(ThreadingHTTPServer):
 An incoming `traceparent` continues that trace; `tracestate` and the flags pass through. Without a valid one
 the request starts a new trace with flags `00`. Each request gets a fresh span id. The trace lives in
 OpenTelemetry's context, so `trace_id` reaches lines written from sync endpoints on worker threads too.
-There is no baggage, no SDK and no exporter.
+There is no SDK and no exporter.
+
+The headers logline reads and writes are the ones of OpenTelemetry's global propagator. While `OTEL_PROPAGATORS`
+is unset or empty, `configure` sets it to W3C trace context alone: `traceparent` and `tracestate`, and no
+`baggage`, continued or forwarded by logline or by any other OpenTelemetry user in the process, FastAPI's own
+extraction included. A library that only asks OpenTelemetry to inject headers (`opentelemetry.propagate.inject`)
+sends the same trace context as `outgoing_headers()`. A set `OTEL_PROPAGATORS` is the host's deliberate choice:
+`configure` leaves the global as OpenTelemetry built it from the variable and `request_trace`, `unit_trace` and
+`outgoing_headers()` follow it. With `none` every request and turn starts a new trace and `outgoing_headers()` is
+empty; with `tracecontext,baggage` baggage a handler set is forwarded, while logline continues no incoming
+baggage itself. A host that never calls `configure` keeps OpenTelemetry's default, trace context and baggage.
 
 A host without ASGI gets the same trace from `RequestLine`. `logline.trace.request_trace` takes the pairs a server
 hands over as text or as bytes, in any case.
@@ -315,6 +325,7 @@ The sending side puts the value in the message it sends:
 
 ```python
 from logline import current_traceparent, unit_trace
+
 
 async def speak(websocket, text):
     with unit_trace(None):
@@ -345,6 +356,7 @@ async for message in websocket.iter_json():
 |---|---|
 | `LOG_LEVEL` | the root level: `debug`, `info`, `warning`, `error` or `critical`, case-insensitive; `info` when unset. Anything else, an empty value included, makes `configure` raise `ValueError` |
 | `SERVICE_VERSION` | the `version` of every line; unset or empty makes it `null` |
+| `OTEL_PROPAGATORS` | read by OpenTelemetry; unset or empty lets `configure` set the global propagator to W3C trace context, anything else leaves it as OpenTelemetry built it ([Trace context](#trace-context)) |
 
 ## The host's duties
 
@@ -686,7 +698,7 @@ Why this log is the target:
 `configure(service)` and on exit restores the process's logging as it was before: the root logger's handlers
 and level, the handlers, filters, levels and propagation of the uvicorn, HTTP client, `logline.request` and
 capped library (`mcp`, `botocore`, `sqlalchemy.dialects.postgresql`, `piper`) loggers, structlog's configuration and the
-stdlib logger class its factory installs. The module imports no test framework.
+stdlib logger class its factory installs, and OpenTelemetry's global propagator. The module imports no test framework.
 
 ```python
 import json

@@ -130,3 +130,15 @@ def test_a_request_line_reads_its_headers_case_insensitively() -> None:
 def _pairs(lines: list[dict[str, object]]) -> list[tuple[dict[str, object], dict[str, object]]]:
     inside = lines_of(lines, HOST_LOGGER)
     return list(zip(inside, request_lines(lines), strict=True))
+
+
+@pytest.mark.usefixtures("host_with_otel_propagators_none")
+def test_a_threaded_host_follows_the_global_propagator_when_otel_propagators_is_set(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, lines = serve_threaded_requests(
+        capsys, [Call(LOGGING_PATH, headers={"traceparent": _INCOMING_TRACEPARENT})]
+    )
+
+    (line,) = request_lines(lines)
+    assert line["trace_id"] not in {None, _INCOMING_TRACE_ID}

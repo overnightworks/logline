@@ -5,12 +5,18 @@ import httpx
 import pytest
 import structlog
 import uvicorn
+from opentelemetry.baggage.propagation import W3CBaggagePropagator
+from opentelemetry.propagate import get_global_textmap, set_global_textmap
+from opentelemetry.propagators.composite import CompositePropagator
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from websockets.asyncio.client import connect
 
 from logline import configure, outgoing_headers
 from logline.lifespan import LIFESPAN_LOGGER_NAME
-from tests.support.apps import WEBSOCKET_TRACE_PATH, build_app
+from logline.trace import current_trace_id, current_traceparent, unit_trace
+from tests.support.apps import BAGGAGE_PATH, HANDLER_BAGGAGE_KEY, WEBSOCKET_TRACE_PATH, build_app
 from tests.support.lines import Line, json_lines, lines_of, request_lines, session_lines
+from tests.support.propagators import SPAN_HEADER, SingleHeaderPropagator
 from tests.support.serving import WEBSOCKET_IMPLEMENTATIONS, serve
 
 _TRACEPARENT = re.compile(
@@ -137,6 +143,97 @@ def test_outside_a_request_there_is_no_trace_to_hand_on(
     assert outgoing_headers() == {}
     (line,) = json_lines(capsys.readouterr().out)
     assert line["trace_id"] is None
+
+
+_INCOMING_BAGGAGE = "incoming-key=incoming-value"
+_WITHOUT_PROPAGATORS = CompositePropagator([])
+
+
+@pytest.mark.parametrize("unset", [None, ""], ids=["unset", "empty"])
+def test_with_otel_propagators_unset_no_baggage_is_forwarded_or_continued(
+    monkeypatch: pytest.MonkeyPatch, unset: str | None
+) -> None:
+    if unset is not None:
+        monkeypatch.setenv("OTEL_PROPAGATORS", unset)
+    configure("trace-service")
+
+    body = _call(BAGGAGE_PATH, baggage=_INCOMING_BAGGAGE)
+
+    assert set(body["outgoing"]) == {"traceparent"}
+    assert set(body["injected"]) == {"traceparent"}
+    assert body["extracted"] == {}
+
+
+def test_with_trace_context_and_baggage_in_otel_propagators_handler_set_baggage_is_forwarded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OTEL_PROPAGATORS", "tracecontext,baggage")
+    set_global_textmap(
+        CompositePropagator([TraceContextTextMapPropagator(), W3CBaggagePropagator()])
+    )
+    configure("trace-service")
+
+    body = _call(BAGGAGE_PATH)
+
+    for headers in (body["outgoing"], body["injected"]):
+        assert HANDLER_BAGGAGE_KEY in headers["baggage"]
+
+
+@pytest.mark.parametrize("propagators", ["none", "b3", "tracecontext,baggage"])
+def test_with_otel_propagators_set_configure_leaves_the_global_propagator_as_it_was(
+    monkeypatch: pytest.MonkeyPatch, propagators: str
+) -> None:
+    monkeypatch.setenv("OTEL_PROPAGATORS", propagators)
+    set_global_textmap(_WITHOUT_PROPAGATORS)
+
+    configure("trace-service")
+
+    assert get_global_textmap() is _WITHOUT_PROPAGATORS
+
+
+def test_configure_takes_the_global_propagator_over_from_another_library_and_twice() -> None:
+    set_global_textmap(_WITHOUT_PROPAGATORS)
+
+    configure("trace-service")
+    configure("trace-service")
+
+    assert isinstance(get_global_textmap(), TraceContextTextMapPropagator)
+
+
+@pytest.mark.usefixtures("host_with_otel_propagators_none")
+def test_with_otel_propagators_none_a_request_starts_a_new_trace_and_hands_nothing_on(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure("trace-service")
+
+    body = _call("/trace", traceparent=f"00-{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}-01")
+
+    (request_line,) = request_lines(json_lines(capsys.readouterr().out))
+    assert request_line["trace_id"] not in {None, _INCOMING_TRACE_ID}
+    assert body["headers"] == {}
+
+
+def test_a_global_propagator_reading_another_header_than_traceparent_continues_the_trace(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("OTEL_PROPAGATORS", "host-propagator")
+    set_global_textmap(SingleHeaderPropagator())
+    configure("trace-service")
+
+    body = _call("/trace", **{SPAN_HEADER: f"{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}"})
+
+    (request_line,) = request_lines(json_lines(capsys.readouterr().out))
+    assert request_line["trace_id"] == _INCOMING_TRACE_ID
+    assert body["headers"][SPAN_HEADER].startswith(f"{_INCOMING_TRACE_ID}-")
+
+
+@pytest.mark.usefixtures("host_with_otel_propagators_none")
+def test_with_otel_propagators_none_a_unit_starts_a_new_trace_and_hands_nothing_on() -> None:
+    configure("trace-service")
+
+    with unit_trace(f"00-{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}-01"):
+        assert current_trace_id() not in {None, _INCOMING_TRACE_ID}
+        assert current_traceparent() is None
 
 
 type _Frame = dict[str, str | bool | None]

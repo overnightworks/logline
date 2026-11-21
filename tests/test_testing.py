@@ -1,8 +1,12 @@
+import contextlib
 import logging
 from dataclasses import dataclass
 
 import pytest
 import structlog
+from opentelemetry.propagate import get_global_textmap, set_global_textmap
+from opentelemetry.propagators.composite import CompositePropagator
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from logline import configure
 from logline.testing import configured
@@ -111,3 +115,16 @@ def test_a_block_inside_a_process_configured_earlier_restores_that_configuration
 
     services = {line["event"]: line["service"] for line in json_lines(capsys.readouterr().out)}
     assert services == {"inner line": "inner", "outer line": "outer"}
+
+
+@pytest.mark.parametrize("block_raises", [False, True], ids=["returns", "raises"])
+def test_leaving_the_block_restores_the_global_propagator_the_host_had(block_raises: bool) -> None:
+    host_propagator = CompositePropagator([])
+    set_global_textmap(host_propagator)
+
+    with contextlib.suppress(RuntimeError), configured("propagator"):
+        assert isinstance(get_global_textmap(), TraceContextTextMapPropagator)
+        if block_raises:
+            raise RuntimeError
+
+    assert get_global_textmap() is host_propagator
