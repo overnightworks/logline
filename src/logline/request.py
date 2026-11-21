@@ -121,8 +121,9 @@ class RequestLine:
     constructed, and the object serves one request.
 
     - `method` is the request's method; any token outside the standard set reads `_OTHER`.
-    - `headers` are the request's (name, value) pairs of text, read case-insensitively; only
-      `traceparent` and `tracestate` are used.
+    - `headers` are the request's (name, value) pairs of text, read case-insensitively; only the
+      fields of OpenTelemetry's global propagator are used (`traceparent` and `tracestate` under
+      `configure`'s default).
     - `ip` is the client address, `None` when the host has none to report.
 
     `set_status` sets the status the host sends, where it sends it, not earlier. `set_sub`,

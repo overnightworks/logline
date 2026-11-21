@@ -109,7 +109,9 @@ def current_trace_id() -> str | None:
 def outgoing_headers() -> dict[str, str]:
     """The current context as headers for an outgoing HTTP call, as the global propagator gives it.
 
-    Inside a turn the turn's, else the request's or the WebSocket session's; empty outside a trace.
+    Inside a turn the turn's, else the request's or the WebSocket session's. Outside a trace there
+    is no span to hand on: the result is empty under `configure`'s default, and holds only what the
+    global propagator carries beyond a span, such as baggage, under one that carries more.
     """
     headers: dict[str, str] = {}
     propagate.inject(headers)

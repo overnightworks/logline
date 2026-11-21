@@ -1,4 +1,4 @@
-"""A propagator whose span header is not `traceparent`, standing in for a host's OTEL_PROPAGATORS."""
+"""A propagator with a span header other than `traceparent`, as a host's OTEL_PROPAGATORS names."""
 
 from collections.abc import Set
 
