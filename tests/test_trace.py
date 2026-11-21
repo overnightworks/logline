@@ -5,6 +5,7 @@ import httpx
 import pytest
 import structlog
 import uvicorn
+from opentelemetry.baggage.propagation import W3CBaggagePropagator
 from opentelemetry.propagate import get_global_textmap, set_global_textmap
 from opentelemetry.propagators.composite import CompositePropagator
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
@@ -167,6 +168,9 @@ def test_with_trace_context_and_baggage_in_otel_propagators_handler_set_baggage_
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("OTEL_PROPAGATORS", "tracecontext,baggage")
+    set_global_textmap(
+        CompositePropagator([TraceContextTextMapPropagator(), W3CBaggagePropagator()])
+    )
     configure("trace-service")
 
     body = _call(BAGGAGE_PATH)
