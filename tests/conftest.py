@@ -8,6 +8,7 @@ from dataclasses import replace
 import pytest
 import structlog
 from opentelemetry.propagate import get_global_textmap, set_global_textmap
+from opentelemetry.propagators.composite import CompositePropagator
 from structlog.stdlib import ProcessorFormatter
 
 from logline.testing import LoggerState
@@ -41,3 +42,10 @@ def isolated_logging(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
             state = replace(state, handlers=state.logger.handlers[:])
         state.restore()
     structlog.reset_defaults()
+
+
+@pytest.fixture
+def host_with_otel_propagators_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Give the test the environment and propagator of a host that set `OTEL_PROPAGATORS=none`."""
+    monkeypatch.setenv("OTEL_PROPAGATORS", "none")
+    set_global_textmap(CompositePropagator([]))

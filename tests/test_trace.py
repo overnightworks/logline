@@ -200,11 +200,10 @@ def test_configure_takes_the_global_propagator_over_from_another_library_and_twi
     assert isinstance(get_global_textmap(), TraceContextTextMapPropagator)
 
 
+@pytest.mark.usefixtures("host_with_otel_propagators_none")
 def test_with_otel_propagators_none_a_request_starts_a_new_trace_and_hands_nothing_on(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setenv("OTEL_PROPAGATORS", "none")
-    set_global_textmap(_WITHOUT_PROPAGATORS)
     configure("trace-service")
 
     body = _call("/trace", traceparent=f"00-{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}-01")
@@ -228,11 +227,8 @@ def test_a_global_propagator_reading_another_header_than_traceparent_continues_t
     assert body["headers"][SPAN_HEADER].startswith(f"{_INCOMING_TRACE_ID}-")
 
 
-def test_with_otel_propagators_none_a_unit_starts_a_new_trace_and_hands_nothing_on(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("OTEL_PROPAGATORS", "none")
-    set_global_textmap(_WITHOUT_PROPAGATORS)
+@pytest.mark.usefixtures("host_with_otel_propagators_none")
+def test_with_otel_propagators_none_a_unit_starts_a_new_trace_and_hands_nothing_on() -> None:
     configure("trace-service")
 
     with unit_trace(f"00-{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}-01"):

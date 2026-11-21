@@ -1,6 +1,4 @@
 import pytest
-from opentelemetry.propagate import set_global_textmap
-from opentelemetry.propagators.composite import CompositePropagator
 
 from logline import REQUEST_EVENT, Outcome, RequestLine
 from logline.trace import current_trace_id
@@ -134,12 +132,10 @@ def _pairs(lines: list[dict[str, object]]) -> list[tuple[dict[str, object], dict
     return list(zip(inside, request_lines(lines), strict=True))
 
 
+@pytest.mark.usefixtures("host_with_otel_propagators_none")
 def test_a_threaded_host_follows_the_global_propagator_when_otel_propagators_is_set(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setenv("OTEL_PROPAGATORS", "none")
-    set_global_textmap(CompositePropagator([]))
-
     _, lines = serve_threaded_requests(
         capsys, [Call(LOGGING_PATH, headers={"traceparent": _INCOMING_TRACEPARENT})]
     )
