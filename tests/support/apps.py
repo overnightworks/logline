@@ -5,6 +5,7 @@ from pathlib import Path
 
 import structlog
 from fastapi import BackgroundTasks, FastAPI, Request, WebSocket
+from opentelemetry import baggage, context, propagate
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
@@ -46,6 +47,8 @@ WEBSOCKET_CLIENT_CLOSES_PATH = "/ws-waiting"
 WEBSOCKET_RAISES_PATH = "/ws-boom"
 WEBSOCKET_CANCELLED_PATH = "/ws-cancelled"
 WEBSOCKET_TRACE_PATH = "/ws-trace"
+BAGGAGE_PATH = "/baggage"
+HANDLER_BAGGAGE_KEY = "handler-key"
 SESSION_LOGGER = "tests.session"
 SESSION_EVENT_IN_APP = "inside the session"
 BACKGROUND_LOGGER = "tests.background"
@@ -312,6 +315,22 @@ def _add_field_and_trace_routes(app: FastAPI) -> None:
     async def trace() -> dict[str, dict[str, str]]:
         structlog.get_logger("tests.app").info("inside the request")
         return {"headers": outgoing_headers()}
+
+    @app.get(BAGGAGE_PATH)
+    async def handler_baggage(request: Request) -> dict[str, dict[str, str]]:
+        """What a handler that sets baggage hands on, and what extracting the headers gives."""
+        token = context.attach(baggage.set_baggage(HANDLER_BAGGAGE_KEY, "handler-value"))
+        try:
+            injected: dict[str, str] = {}
+            propagate.inject(injected)
+            extracted = baggage.get_all(propagate.extract(dict(request.headers)))
+            return {
+                "outgoing": outgoing_headers(),
+                "injected": injected,
+                "extracted": {key: str(value) for key, value in extracted.items()},
+            }
+        finally:
+            context.detach(token)
 
     @app.get("/trace-sync")
     def trace_sync() -> dict[str, dict[str, str]]:

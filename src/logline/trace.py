@@ -5,8 +5,7 @@ from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from contextvars import Token
 
-from opentelemetry import context, trace
-from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+from opentelemetry import context, propagate, trace
 
 __all__ = [
     "current_trace_id",
@@ -16,8 +15,6 @@ __all__ = [
     "unit_trace",
 ]
 
-# Used directly, never through opentelemetry.propagate: no baggage and no OTEL_PROPAGATORS switch.
-_PROPAGATOR = TraceContextTextMapPropagator()
 _TRACE_ID_BITS = 128
 _SPAN_ID_BITS = 64
 
@@ -34,7 +31,7 @@ def _text(header_part: str | bytes) -> str:
 
 
 def _trace_headers(headers: HeaderPairs) -> dict[str, str]:
-    fields = _PROPAGATOR.fields
+    fields = propagate.get_global_textmap().fields
     carrier: dict[str, str] = {}
     for name, value in headers:
         field = _text(name).lower()
@@ -45,7 +42,7 @@ def _trace_headers(headers: HeaderPairs) -> dict[str, str]:
 
 def _attach_span(carrier: dict[str, str]) -> Token[context.Context]:
     """Attach a fresh span of the trace `carrier` continues, else of a new one; return the token."""
-    parent_context = _PROPAGATOR.extract(carrier, context=context.Context())
+    parent_context = propagate.extract(carrier, context=context.Context())
     parent = trace.get_current_span(parent_context).get_span_context()
     if parent.is_valid:
         trace_id, trace_flags, trace_state = parent.trace_id, parent.trace_flags, parent.trace_state
@@ -68,8 +65,9 @@ def request_trace(raw_headers: HeaderPairs) -> Iterator[None]:
     """Run the block inside the request's trace: the incoming one, else a new one.
 
     `raw_headers` are (name, value) pairs of text, as a standard-library server hands them over, or
-    the ASGI scope's byte pairs; names are read case-insensitively and only `traceparent` and
-    `tracestate` are used. The block gets a fresh span id either way.
+    the ASGI scope's byte pairs; names are read case-insensitively and only the fields of
+    OpenTelemetry's global propagator are used (`traceparent` and `tracestate` under `configure`'s
+    default). The block gets a fresh span id either way.
 
     An exception that leaves the block leaves the trace attached: the server writes its error line
     after the block, in the same task, and that line belongs to this trace.
@@ -83,8 +81,9 @@ def request_trace(raw_headers: HeaderPairs) -> Iterator[None]:
 def unit_trace(traceparent: str | None) -> Iterator[None]:
     """Run the block inside a unit's trace, such as a WebSocket turn: the incoming one or a new one.
 
-    `traceparent` is the incoming message's value, or None. A malformed one starts a new trace, as
-    it does for a request. The block gets a fresh span id either way.
+    `traceparent` is the incoming message's value, or None. A malformed one, or any under a global
+    propagator that does not read `traceparent`, starts a new trace, as it does for a request. The
+    block gets a fresh span id either way.
 
     The trace is detached when the block ends, an exception included, which propagates unchanged: a
     later line of a long-lived task must not carry this unit's trace.
@@ -108,12 +107,12 @@ def current_trace_id() -> str | None:
 
 
 def outgoing_headers() -> dict[str, str]:
-    """The current trace context as headers for an outgoing HTTP call.
+    """The current context as headers for an outgoing HTTP call, as the global propagator gives it.
 
     Inside a turn the turn's, else the request's or the WebSocket session's; empty outside a trace.
     """
     headers: dict[str, str] = {}
-    _PROPAGATOR.inject(headers)
+    propagate.inject(headers)
     return headers
 
 

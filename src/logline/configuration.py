@@ -5,6 +5,9 @@ import os
 import sys
 
 import structlog
+from opentelemetry.environment_variables import OTEL_PROPAGATORS
+from opentelemetry.propagate import set_global_textmap
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from structlog.processors import JSONRenderer
 from structlog.stdlib import BoundLogger, LoggerFactory, ProcessorFormatter, filter_by_level
 
@@ -68,6 +71,12 @@ def _root_level() -> int:
         raise ValueError(f"LOG_LEVEL is {name!r}; accepted names are {accepted}") from None
 
 
+def _set_global_propagator() -> None:
+    # OpenTelemetry's own loader reads the variable the same way: empty counts as unset.
+    if not os.environ.get(OTEL_PROPAGATORS):
+        set_global_textmap(TraceContextTextMapPropagator())
+
+
 def _json_stdout_handler(processors: list[structlog.typing.Processor]) -> logging.Handler:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(
@@ -99,6 +108,10 @@ def configure(service: str) -> None:
     `service` names the app or service. `SERVICE_VERSION` is read here and `LOG_LEVEL` sets the
     root level; a malformed `LOG_LEVEL` raises `ValueError` before anything changes. It also writes
     an uncaught exception, a thread's uncaught exception and a Python warning as record lines.
+
+    While `OTEL_PROPAGATORS` is unset or empty it also sets OpenTelemetry's global propagator to
+    W3C trace context alone, so no baggage is continued or forwarded by any library of the process;
+    a set variable leaves the global as OpenTelemetry built it from it.
     """
     root_level = _root_level()
     processors = record_shape(service, os.environ.get("SERVICE_VERSION") or None)
@@ -116,4 +129,5 @@ def configure(service: str) -> None:
     for name, level in _CAPPED_LOGGER_LEVELS.items():
         logging.getLogger(name).setLevel(max(level, root_level))
     _route_uvicorn_through_root()
+    _set_global_propagator()
     install_process_failure_hooks()
