@@ -15,6 +15,7 @@ from logline.lifespan import LIFESPAN_LOGGER_NAME
 from logline.trace import current_trace_id, current_traceparent, unit_trace
 from tests.support.apps import BAGGAGE_PATH, HANDLER_BAGGAGE_KEY, WEBSOCKET_TRACE_PATH, build_app
 from tests.support.lines import Line, json_lines, lines_of, request_lines, session_lines
+from tests.support.propagators import SPAN_HEADER, SingleHeaderPropagator
 from tests.support.serving import WEBSOCKET_IMPLEMENTATIONS, serve
 
 _TRACEPARENT = re.compile(
@@ -207,6 +208,20 @@ def test_with_otel_propagators_none_a_request_starts_a_new_trace_and_hands_nothi
     (request_line,) = request_lines(json_lines(capsys.readouterr().out))
     assert request_line["trace_id"] not in {None, _INCOMING_TRACE_ID}
     assert body["headers"] == {}
+
+
+def test_a_global_propagator_reading_another_header_than_traceparent_continues_the_trace(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("OTEL_PROPAGATORS", "host-propagator")
+    set_global_textmap(SingleHeaderPropagator())
+    configure("trace-service")
+
+    body = _call("/trace", **{SPAN_HEADER: f"{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}"})
+
+    (request_line,) = request_lines(json_lines(capsys.readouterr().out))
+    assert request_line["trace_id"] == _INCOMING_TRACE_ID
+    assert body["headers"][SPAN_HEADER].startswith(f"{_INCOMING_TRACE_ID}-")
 
 
 def test_with_otel_propagators_none_a_unit_starts_a_new_trace_and_hands_nothing_on(
