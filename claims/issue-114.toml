@@ -1,0 +1,8 @@
+claim_id = "0759d9f9f6f045cf8a7f793f578a2507"
+agent = "Claude 1cb5438d-4e37-4502-96cf-2caace08ca1f"
+role = "builder"
+base = "4cbc68c011a696650f9d49cff8388041322d08b7"
+branch = "claude/issue-114-export-the-websocket-session-line-s-even"
+scope = ["README.md", "src/logline/__init__.py", "src/logline/request.py", "tests/support/lines.py"]
+opened_commit = "5c08f9d48ce1a7014a8ecd36291fe5a457de7121"
+whole_reason = "One public name, its one test import and its README sentences change together."
