@@ -3,6 +3,7 @@
 from logline.configuration import configure
 from logline.request import (
     REQUEST_EVENT,
+    WEBSOCKET_EVENT,
     RequestLine,
     RequestLineMiddleware,
     set_client_ip,
@@ -16,6 +17,7 @@ __version__ = "1.7.0"
 
 __all__ = [
     "REQUEST_EVENT",
+    "WEBSOCKET_EVENT",
     "Outcome",
     "RequestLine",
     "RequestLineMiddleware",
