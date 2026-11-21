@@ -1,7 +1,5 @@
 """A propagator with a span header other than `traceparent`, as a host's OTEL_PROPAGATORS names."""
 
-from collections.abc import Set
-
 from opentelemetry import trace
 from opentelemetry.context import Context
 from opentelemetry.propagators.textmap import (
@@ -20,7 +18,7 @@ class SingleHeaderPropagator(TextMapPropagator):
     """Carries the span as `<trace id hex>-<span id hex>` in one header, `SPAN_HEADER`."""
 
     @property
-    def fields(self) -> Set[str]:
+    def fields(self) -> set[str]:
         return {SPAN_HEADER}
 
     def extract(
