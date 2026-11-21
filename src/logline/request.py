@@ -22,7 +22,7 @@ __all__: list[str] = []
 
 REQUEST_LOGGER_NAME = "logline.request"
 REQUEST_EVENT = "request.ended"
-_SESSION_EVENT = "websocket.ended"
+WEBSOCKET_EVENT = "websocket.ended"
 _STATE_KEY = "logline.request"
 _STATUS_WHEN_NONE_SENT = 500
 _FIRST_SERVER_ERROR_STATUS = 500
@@ -261,7 +261,7 @@ class RequestLineMiddleware:
         def write_line(end: SessionEnd) -> None:
             _note_framework_route(scope, record)
             _request_logger.info(
-                _SESSION_EVENT,
+                WEBSOCKET_EVENT,
                 outcome=end.outcome,
                 route=record.route or None,
                 duration_ms=stopwatch.elapsed_ms(),

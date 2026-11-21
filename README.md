@@ -141,8 +141,8 @@ The line is written at INFO whatever `LOG_LEVEL` says: no setting turns it off.
 ### The WebSocket session line
 
 The middleware writes one line per WebSocket session when the app returns, on the logger `logline.request` at INFO,
-whatever `LOG_LEVEL` says, from the ASGI messages and so under any server. Its `event` is `websocket.ended`, and it
-carries `outcome`, `route`, `duration_ms`, `sub`, `ip` and `close_code`, and `status` when the upgrade was not
+whatever `LOG_LEVEL` says, from the ASGI messages and so under any server. Its `event` is `logline.WEBSOCKET_EVENT` (`websocket.ended`), and a host compares `event` with
+`WEBSOCKET_EVENT`, never with the literal. It carries `outcome`, `route`, `duration_ms`, `sub`, `ip` and `close_code`, and `status` when the upgrade was not
 accepted. `set_sub`, `set_client_ip` and `set_route` work in a WebSocket scope as they do in a request, and `route`,
 `sub` and `ip` read as they do there.
 
@@ -504,7 +504,7 @@ line, the same error at each layer.
 
 `event` is a literal `<noun>.<verb_past>` (the pattern is `event_name_pattern` in `standard.json`), with no service prefix and no values, such as
 `turn.ended`, `hearing.ended` or `sign_in.refused`. The request line is `request.ended` with `outcome`
-(`REQUEST_EVENT`), and the WebSocket session line is `websocket.ended`.
+(`REQUEST_EVENT`), and the WebSocket session line is `websocket.ended` (`WEBSOCKET_EVENT`).
 
 - `.ended` closes a timed step and always carries `duration_ms` and `outcome`.
 - `.started` is only for a process or for work that runs for minutes.
