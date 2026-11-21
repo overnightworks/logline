@@ -1,8 +1,0 @@
-claim_id = "ed9db61bc0ff474a813ef2958bd4d69e"
-agent = "Claude f124f58d-0ac1-4588-b5c0-95e4601fda6e"
-role = "builder"
-base = "019c1716974bf1eb6808ba6d17408bbe4920eba8"
-branch = "claude/issue-8-global-propagator"
-scope = ["README.md", "docs/ARCHITECTURE.md", "src/logline", "tests"]
-opened_commit = "1a5c4fe907e8daf7f2aece749db4774c396b4d13"
-whole_reason = "One owner change: the propagator moves from logline's private copy to OpenTelemetry's global, with its tests and its two documents."
