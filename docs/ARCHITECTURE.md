@@ -28,7 +28,7 @@ Module owners in `logline`:
 - `configuration` owns `configure`: the root JSON handler on stdout, the root level from `LOG_LEVEL`, the
   `logline.request` level pin, the capped library loggers' levels (HTTP clients, `mcp`, `botocore` and
   `sqlalchemy.dialects.postgresql` at WARNING, `piper` at ERROR), the routing of uvicorn's loggers and the
-  installing of the `process_failures` hooks.
+  installing of the `process_failures` hooks, and OpenTelemetry's global propagator (see Constraints and reasons).
 - `process_failures` owns the three hooks `configure` installs, `sys.excepthook`, `threading.excepthook` and
   `warnings.showwarning`, and the events they write: `process.crashed`, `thread.crashed` and
   `python_warning.raised`, with an `error_type`.
@@ -67,10 +67,11 @@ Module owners in `logline`:
   `StepTimer`, which writes a step's `.ended` line through the standard-library logger the caller names, so
   `record` shapes it like any library's line.
 - `testing` owns `configured`, the host tests' way to run `configure` and restore the logging state it
-  changed, the three `process_failures` hooks included; it is the one module that reads
+  changed, the three `process_failures` hooks and OpenTelemetry's global propagator included; it is the one module that reads
   `configuration`'s list of touched loggers.
 - `trace` owns the trace of a request, of a WebSocket session and of a unit within it: it starts or continues it in
-  OpenTelemetry's context from header pairs (ASGI byte pairs or text pairs, one extraction), reads `trace_id` from it
+  OpenTelemetry's context from header pairs (ASGI byte pairs or text pairs, one extraction through the global
+  propagator), reads `trace_id` from it
   and hands it on as headers or, for a message, as a `traceparent` value.
 
 `record` uses `standard` and `trace`; `request` uses `step`, `trace`, `lifespan`, `websocket` and `asgi`; `uvicorn_records` uses `websocket`; `configuration` uses `record`, `uvicorn_records` and
@@ -153,8 +154,13 @@ lowest direct dependency floors run the same tests.
   could disagree with the first, and a worker thread inherits the one the framework copies.
 - `sub`, `ip` and `route` live in `scope["state"]`: the same dict reaches `BaseHTTPMiddleware`, Starlette's routing
   and the threadpool, where a contextvar set below `BaseHTTPMiddleware` would not reach the middleware.
-- `TraceContextTextMapPropagator` is used directly, never `opentelemetry.propagate`, so baggage and the
-  `OTEL_PROPAGATORS` switch cannot change what the fleet propagates.
+- OpenTelemetry's global propagator is the one owner of the header rule. `configure` sets it to
+  `TraceContextTextMapPropagator` while `OTEL_PROPAGATORS` is unset or empty, so a library that only calls
+  `opentelemetry.propagate.inject` sends the same trace context as logline and no baggage is continued or
+  forwarded anywhere in the process. A set variable is the operator's choice and `configure` leaves the global as
+  OpenTelemetry built it; `trace` reads it on every call and follows it, so `none` gives every request and turn a
+  new trace and no outgoing headers. A host that never calls `configure` keeps OpenTelemetry's default, trace
+  context and baggage.
 - `configure` puts a drop-all filter on `uvicorn.access`: a later `dictConfig` removes handlers but never
   filters, so the access log, which carries the raw path, stays silent in every start mode.
 - The `uvicorn.error` filter knows a record by uvicorn's message template or by the `OSError` it logs for a bind
