@@ -167,13 +167,13 @@ def test_a_threaded_host_follows_the_global_propagator_when_otel_propagators_is_
     assert line["trace_id"] not in {None, _INCOMING_TRACE_ID}
 
 
-def test_a_step_entered_outside_a_trace_keeps_null_span_ids_when_it_ends_inside_a_trace(
+def test_a_step_entered_outside_a_trace_keeps_no_trace_when_it_ends_inside_a_trace(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _, lines = serve_threaded_requests(capsys, [get(STEP_ENTERED_OUTSIDE_A_TRACE_PATH)])
 
     (step,) = lines_of(lines, HOST_LOGGER)
-    assert (step["span_id"], step["parent_span_id"]) == (None, None)
+    assert (step["trace_id"], step["span_id"], step["parent_span_id"]) == (None, None, None)
 
 
 def test_a_request_line_ended_inside_another_trace_keeps_its_own_trace_and_span(

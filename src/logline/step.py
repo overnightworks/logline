@@ -12,7 +12,7 @@ from collections.abc import Callable
 from enum import StrEnum
 from types import TracebackType
 
-from opentelemetry.context import Context
+from opentelemetry.context import Context, get_current
 
 from logline.standard import CLOSING_LINE_KEYS
 from logline.trace import attached, enter_span, leave_span, open_step_span, span_fields
@@ -134,6 +134,7 @@ class StepTimer:
         self._entered = False
         self._span: Context | None = None
         self._previous: Context | None = None
+        self._entry_context: Context | None = None
 
     def _read_clock(self) -> float:
         """The one place a step reads the clock; the tests override it."""
@@ -202,6 +203,7 @@ class StepTimer:
 
     def _enter_span(self) -> None:
         self._entered = True
+        self._entry_context = get_current()
         self._span = open_step_span()
         if self._span is not None:
             self._previous = enter_span(self._span)
@@ -233,10 +235,12 @@ class StepTimer:
             fields["reason"] = self._refusal_reason
         if outcome is Outcome.FAILED:
             fields.update(self._failure_fields(exc))
-        if span is None:
+        # A step entered outside a trace logs in the context it was entered in, not the closing one.
+        line_context = self._entry_context if span is None else span
+        if line_context is None:
             self._logger.log(self._level(outcome), self._event, extra=fields)
             return
-        with attached(span):
+        with attached(line_context):
             self._logger.log(self._level(outcome), self._event, extra=fields)
 
     def _failure_fields(self, exc: BaseException | None) -> dict[str, Scalar]:
