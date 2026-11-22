@@ -184,7 +184,7 @@ def test_a_step_in_a_turn_names_the_senders_span_as_its_parent(
 
 
 @pytest.mark.parametrize("implementation", WEBSOCKET_IMPLEMENTATIONS)
-def test_a_step_in_a_turn_without_a_valid_traceparent_starts_a_new_trace(
+def test_a_step_in_a_turn_without_a_valid_traceparent_names_the_turns_fresh_span_as_its_parent(
     capsys: pytest.CaptureFixture[str], implementation: str
 ) -> None:
     answers, lines = _play(capsys, implementation, [_turn("step", None)])
