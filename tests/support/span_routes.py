@@ -94,7 +94,8 @@ def _add_turn_route(app: FastAPI) -> None:
     """A socket that answers each JSON message `{"traceparent": str | null, "do": str}`.
 
     A message is a turn. `step` runs a step in it and answers the traceparent of the step's span;
-    `enter` enters a step the socket keeps, and `exit` ends it in a later turn.
+    `enter` enters a step the socket keeps, `exit` ends it in a later turn, and `exit-then-step`
+    ends it and then runs a step in that same turn.
     """
 
     @app.websocket(TURNS_PATH)
@@ -111,9 +112,14 @@ def _add_turn_route(app: FastAPI) -> None:
                     case "enter":
                         kept = _step()
                         await kept.__aenter__()
+                    case "exit":
+                        assert kept is not None
+                        await kept.__aexit__(None, None, None)
                     case _:
                         assert kept is not None
                         await kept.__aexit__(None, None, None)
+                        async with _step():
+                            answer = {"traceparent": current_traceparent()}
             await websocket.send_json(answer)
 
 

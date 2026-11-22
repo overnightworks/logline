@@ -219,6 +219,27 @@ def test_a_step_closed_in_another_turn_keeps_its_own_trace(
 
 
 @pytest.mark.parametrize("implementation", WEBSOCKET_IMPLEMENTATIONS)
+def test_a_step_run_after_one_closed_in_another_turn_belongs_to_the_current_turn(
+    capsys: pytest.CaptureFixture[str], implementation: str
+) -> None:
+    other_trace = "0af7651916cd43dd8448eb211c80319c"
+    other_span = "b7ad6b7169203331"
+
+    _, lines = _play(
+        capsys,
+        implementation,
+        [
+            _turn("enter", _TRACEPARENT),
+            _turn("exit-then-step", f"00-{other_trace}-{other_span}-01"),
+        ],
+    )
+
+    closed, later = lines_of(lines, STEP_LOGGER)
+    assert (closed["trace_id"], closed["parent_span_id"]) == (_TRACE_ID, _SPAN_ID)
+    assert (later["trace_id"], later["parent_span_id"]) == (other_trace, other_span)
+
+
+@pytest.mark.parametrize("implementation", WEBSOCKET_IMPLEMENTATIONS)
 def test_a_session_line_names_its_span_and_the_upgrades_span_as_parent_or_null(
     capsys: pytest.CaptureFixture[str], implementation: str
 ) -> None:
