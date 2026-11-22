@@ -131,6 +131,7 @@ class StepTimer:
         self._failure_reason: str | None = None
         self._first_output_ms: float | None = None
         self._written = False
+        self._entered = False
         self._span: Context | None = None
         self._previous: Context | None = None
 
@@ -200,6 +201,7 @@ class StepTimer:
         self._end_block(exc)
 
     def _enter_span(self) -> None:
+        self._entered = True
         self._span = open_step_span()
         if self._span is not None:
             self._previous = enter_span(self._span)
@@ -216,7 +218,7 @@ class StepTimer:
             return
         self._written = True
         outcome = self._outcome(exc, cancelled)
-        span = open_step_span() if self._span is None else self._span
+        span = self._span if self._entered else open_step_span()
         fields: dict[str, Scalar] = {
             **self._fields,
             **span_fields(span),
