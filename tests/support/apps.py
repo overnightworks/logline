@@ -21,6 +21,7 @@ from logline import (
     set_sub,
     unit_trace,
 )
+from tests.support.span_routes import add_span_routes
 from tests.support.step_routes import add_step_routes
 
 SUB = "sub-of-the-person"
@@ -108,6 +109,7 @@ def build_app(
     _add_logging_routes(app)
     _add_field_and_trace_routes(app)
     add_step_routes(app)
+    add_span_routes(app)
     _add_websocket_route(app)
     _add_turn_route(app)
     return app

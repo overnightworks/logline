@@ -15,15 +15,16 @@ from logline import configure, outgoing_headers
 from logline.lifespan import LIFESPAN_LOGGER_NAME
 from logline.trace import current_trace_id, current_traceparent, unit_trace
 from tests.support.apps import BAGGAGE_PATH, HANDLER_BAGGAGE_KEY, WEBSOCKET_TRACE_PATH, build_app
+from tests.support.incoming_trace import (
+    INCOMING_SPAN_ID,
+    INCOMING_TRACE_ID,
+    INCOMING_TRACEPARENT,
+    TRACEPARENT_PATTERN,
+)
 from tests.support.lines import Line, json_lines, lines_of, request_lines, session_lines
 from tests.support.propagators import SPAN_HEADER, SingleHeaderPropagator
 from tests.support.serving import WEBSOCKET_IMPLEMENTATIONS, serve
 
-_TRACEPARENT = re.compile(
-    r"^00-(?P<trace_id>[0-9a-f]{32})-(?P<span_id>[0-9a-f]{16})-(?P<flags>[0-9a-f]{2})$"
-)
-_INCOMING_TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
-_INCOMING_SPAN_ID = "00f067aa0ba902b7"
 _INCOMING_TRACESTATE = "vendor=opaque,other=value"
 
 
@@ -41,7 +42,7 @@ def _call(path: str, **headers: str) -> dict[str, dict[str, str]]:
 
 
 def _traceparent(body: dict[str, dict[str, str]]) -> re.Match[str]:
-    match = _TRACEPARENT.match(body["headers"]["traceparent"])
+    match = TRACEPARENT_PATTERN.match(body["headers"]["traceparent"])
     assert match
     return match
 
@@ -54,7 +55,7 @@ def test_an_incoming_traceparent_gives_every_line_of_the_request_its_trace_id(
     capsys: pytest.CaptureFixture[str], path: str, lines_in_the_request: int
 ) -> None:
     configure("trace-service")
-    traceparent = f"00-{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}-01"
+    traceparent = INCOMING_TRACEPARENT
 
     body = _call(path, traceparent=traceparent, tracestate=_INCOMING_TRACESTATE)
 
@@ -63,10 +64,10 @@ def test_an_incoming_traceparent_gives_every_line_of_the_request_its_trace_id(
         line for line in lines if line["logger"] not in {"uvicorn.error", LIFESPAN_LOGGER_NAME}
     ]
     assert len(in_request) == lines_in_the_request
-    assert {line["trace_id"] for line in in_request} == {_INCOMING_TRACE_ID}
+    assert {line["trace_id"] for line in in_request} == {INCOMING_TRACE_ID}
     outgoing = _traceparent(body)
-    assert outgoing["trace_id"] == _INCOMING_TRACE_ID
-    assert outgoing["span_id"] != _INCOMING_SPAN_ID
+    assert outgoing["trace_id"] == INCOMING_TRACE_ID
+    assert outgoing["span_id"] != INCOMING_SPAN_ID
     assert outgoing["flags"] == "01"
     assert body["headers"]["tracestate"] == _INCOMING_TRACESTATE
 
@@ -77,7 +78,7 @@ def test_an_incoming_traceparent_gives_every_line_of_the_request_its_trace_id(
         pytest.param({}, id="absent"),
         pytest.param({"traceparent": "garbage"}, id="malformed"),
         pytest.param(
-            {"traceparent": f"00-{'0' * 32}-{_INCOMING_SPAN_ID}-01"}, id="all-zero trace id"
+            {"traceparent": f"00-{'0' * 32}-{INCOMING_SPAN_ID}-01"}, id="all-zero trace id"
         ),
     ],
 )
@@ -108,7 +109,7 @@ def test_the_error_line_of_an_unhandled_exception_carries_the_requests_trace_id(
                 "/boom",
                 headers={
                     "x-secret": "a value",
-                    "traceparent": f"00-{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}-01",
+                    "traceparent": INCOMING_TRACEPARENT,
                 },
             )
 
@@ -117,8 +118,8 @@ def test_the_error_line_of_an_unhandled_exception_carries_the_requests_trace_id(
     lines = json_lines(capsys.readouterr().out)
     failures = [line for line in lines_of(lines, "uvicorn.error") if line["level"] == "error"]
     assert [line["trace_id"] for line in [*failures, *request_lines(lines)]] == [
-        _INCOMING_TRACE_ID,
-        _INCOMING_TRACE_ID,
+        INCOMING_TRACE_ID,
+        INCOMING_TRACE_ID,
     ]
 
 
@@ -206,10 +207,10 @@ def test_with_otel_propagators_none_a_request_starts_a_new_trace_and_hands_nothi
 ) -> None:
     configure("trace-service")
 
-    body = _call("/trace", traceparent=f"00-{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}-01")
+    body = _call("/trace", traceparent=INCOMING_TRACEPARENT)
 
     (request_line,) = request_lines(json_lines(capsys.readouterr().out))
-    assert request_line["trace_id"] not in {None, _INCOMING_TRACE_ID}
+    assert request_line["trace_id"] not in {None, INCOMING_TRACE_ID}
     assert body["headers"] == {}
 
 
@@ -220,19 +221,19 @@ def test_a_global_propagator_reading_another_header_than_traceparent_continues_t
     set_global_textmap(SingleHeaderPropagator())
     configure("trace-service")
 
-    body = _call("/trace", **{SPAN_HEADER: f"{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}"})
+    body = _call("/trace", **{SPAN_HEADER: f"{INCOMING_TRACE_ID}-{INCOMING_SPAN_ID}"})
 
     (request_line,) = request_lines(json_lines(capsys.readouterr().out))
-    assert request_line["trace_id"] == _INCOMING_TRACE_ID
-    assert body["headers"][SPAN_HEADER].startswith(f"{_INCOMING_TRACE_ID}-")
+    assert request_line["trace_id"] == INCOMING_TRACE_ID
+    assert body["headers"][SPAN_HEADER].startswith(f"{INCOMING_TRACE_ID}-")
 
 
 @pytest.mark.usefixtures("host_with_otel_propagators_none")
 def test_with_otel_propagators_none_a_unit_starts_a_new_trace_and_hands_nothing_on() -> None:
     configure("trace-service")
 
-    with unit_trace(f"00-{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}-01"):
-        assert current_trace_id() not in {None, _INCOMING_TRACE_ID}
+    with unit_trace(INCOMING_TRACEPARENT):
+        assert current_trace_id() not in {None, INCOMING_TRACE_ID}
         assert current_traceparent() is None
 
 
@@ -263,26 +264,28 @@ def _sessions_upgraded_with(
     return list(zip(frames, lines, strict=True))
 
 
-def test_an_incoming_traceparent_on_the_upgrade_gives_the_session_its_trace_id(
+def test_an_incoming_traceparent_on_the_upgrade_gives_the_session_its_trace_id_and_parent_span(
     capsys: pytest.CaptureFixture[str], implementation: str
 ) -> None:
     upgrade = {
-        "traceparent": f"00-{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}-01",
+        "traceparent": INCOMING_TRACEPARENT,
         "tracestate": _INCOMING_TRACESTATE,
     }
 
     ((frame, session_line),) = _sessions_upgraded_with(capsys, implementation, [upgrade])
 
-    outgoing = _TRACEPARENT.match(str(frame["traceparent"]))
+    outgoing = TRACEPARENT_PATTERN.match(str(frame["traceparent"]))
     assert outgoing
-    assert outgoing["trace_id"] == _INCOMING_TRACE_ID
-    assert outgoing["span_id"] != _INCOMING_SPAN_ID
+    assert outgoing["trace_id"] == INCOMING_TRACE_ID
+    assert outgoing["span_id"] != INCOMING_SPAN_ID
     assert outgoing["flags"] == "01"
     assert frame["headers"] == {
         "traceparent": frame["traceparent"],
         "tracestate": _INCOMING_TRACESTATE,
     }
-    assert session_line["trace_id"] == _INCOMING_TRACE_ID
+    assert session_line["trace_id"] == INCOMING_TRACE_ID
+    assert session_line["span_id"] == outgoing["span_id"]
+    assert session_line["parent_span_id"] == INCOMING_SPAN_ID
 
 
 @pytest.mark.parametrize(
@@ -291,7 +294,7 @@ def test_an_incoming_traceparent_on_the_upgrade_gives_the_session_its_trace_id(
         pytest.param({}, id="absent"),
         pytest.param({"traceparent": "garbage"}, id="malformed"),
         pytest.param(
-            {"traceparent": f"00-{'0' * 32}-{_INCOMING_SPAN_ID}-01"}, id="all-zero trace id"
+            {"traceparent": f"00-{'0' * 32}-{INCOMING_SPAN_ID}-01"}, id="all-zero trace id"
         ),
     ],
 )
@@ -300,7 +303,7 @@ def test_without_a_valid_traceparent_the_session_starts_a_new_trace_with_flags_0
 ) -> None:
     ((frame, session_line),) = _sessions_upgraded_with(capsys, implementation, [incoming])
 
-    match = _TRACEPARENT.match(str(frame["traceparent"]))
+    match = TRACEPARENT_PATTERN.match(str(frame["traceparent"]))
     assert match
     assert match["trace_id"] == session_line["trace_id"]
     assert int(match["trace_id"], 16) != 0
@@ -345,7 +348,7 @@ def _turn(traceparent: str | None = None, *, failure: str | None = None) -> dict
 def test_a_turn_that_raises_leaves_the_sessions_trace_on_the_sockets_later_lines(
     capsys: pytest.CaptureFixture[str], implementation: str
 ) -> None:
-    incoming = f"00-{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}-01"
+    incoming = INCOMING_TRACEPARENT
 
     frames, lines, session_line = _play_turns(
         capsys, implementation, [_turn(incoming, failure="the turn failed"), _turn()]
@@ -353,39 +356,40 @@ def test_a_turn_that_raises_leaves_the_sessions_trace_on_the_sockets_later_lines
 
     session_trace_id = session_line["trace_id"]
     assert isinstance(session_trace_id, str)
-    assert session_trace_id != _INCOMING_TRACE_ID
+    assert session_trace_id != INCOMING_TRACE_ID
     (_, failed_after), (_, later_after) = frames
     assert failed_after["raised"] == "the turn failed"
     assert failed_after["same"] is True
     assert later_after["raised"] is None
     after_traceparents = [
-        _TRACEPARENT.match(str(after["traceparent"])) for after in (failed_after, later_after)
+        TRACEPARENT_PATTERN.match(str(after["traceparent"]))
+        for after in (failed_after, later_after)
     ]
     assert [match and match["trace_id"] for match in after_traceparents] == [session_trace_id] * 2
     failed_inside, failed_after_line, later_inside, later_after_line = lines
-    assert failed_inside["trace_id"] == _INCOMING_TRACE_ID
+    assert failed_inside["trace_id"] == INCOMING_TRACE_ID
     assert failed_after_line["trace_id"] == session_trace_id
-    assert later_inside["trace_id"] not in (None, _INCOMING_TRACE_ID, session_trace_id)
+    assert later_inside["trace_id"] not in (None, INCOMING_TRACE_ID, session_trace_id)
     assert later_after_line["trace_id"] == session_trace_id
 
 
-def test_two_turns_carrying_one_traceparent_log_that_trace_id(
+def test_two_turns_carrying_one_traceparent_log_that_trace_id_and_hand_on_the_senders_span(
     capsys: pytest.CaptureFixture[str], implementation: str
 ) -> None:
-    incoming = f"00-{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}-01"
+    incoming = INCOMING_TRACEPARENT
 
     frames, lines, _ = _play_turns(capsys, implementation, [_turn(incoming), _turn(incoming)])
 
     inside_lines = [line for line in lines if line["event"] == "inside the turn"]
-    assert [line["trace_id"] for line in inside_lines] == [_INCOMING_TRACE_ID] * 2
-    outgoing = [_TRACEPARENT.match(str(inside["traceparent"])) for inside, _ in frames]
-    assert [match and match["trace_id"] for match in outgoing] == [_INCOMING_TRACE_ID] * 2
-    assert {match and match["span_id"] for match in outgoing}.isdisjoint({_INCOMING_SPAN_ID})
+    assert [line["trace_id"] for line in inside_lines] == [INCOMING_TRACE_ID] * 2
+    outgoing = [TRACEPARENT_PATTERN.match(str(inside["traceparent"])) for inside, _ in frames]
+    assert [match and match["trace_id"] for match in outgoing] == [INCOMING_TRACE_ID] * 2
+    assert {match and match["span_id"] for match in outgoing} == {INCOMING_SPAN_ID}
 
 
 @pytest.mark.parametrize(
     "incoming",
-    [None, "garbage", f"00-{'0' * 32}-{_INCOMING_SPAN_ID}-01"],
+    [None, "garbage", f"00-{'0' * 32}-{INCOMING_SPAN_ID}-01"],
     ids=["absent", "malformed", "all-zero trace id"],
 )
 def test_a_turn_without_a_valid_traceparent_starts_a_new_trace_with_flags_00(
@@ -393,7 +397,7 @@ def test_a_turn_without_a_valid_traceparent_starts_a_new_trace_with_flags_00(
 ) -> None:
     frames, lines, _ = _play_turns(capsys, implementation, [_turn(incoming)])
 
-    match = _TRACEPARENT.match(str(frames[0][0]["traceparent"]))
+    match = TRACEPARENT_PATTERN.match(str(frames[0][0]["traceparent"]))
     assert match
     assert lines[0]["trace_id"] == match["trace_id"]
     assert int(match["trace_id"], 16) != 0

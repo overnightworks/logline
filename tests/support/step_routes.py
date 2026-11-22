@@ -227,6 +227,8 @@ def _add_step_field_routes(app: FastAPI, steps: Steps) -> None:
             reason="caller",
             first_output_ms=-1,
             error_type="Caller",
+            span_id="caller",
+            parent_span_id="caller",
         ):
             pass
         return {"caught": None}

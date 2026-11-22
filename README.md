@@ -92,6 +92,11 @@ object with these keys, plus the key-value fields the caller adds:
 | `event` | the message |
 | `trace_id` | the running trace's id as 32 hex digits: the request's, the WebSocket session's or the turn's; `null` outside a trace |
 
+A line that closes a piece of work also names it: `span_id`, 16 hex digits, is the span the line closes, and
+`parent_span_id` the span that started it, `null` for a trace's first span or outside a trace. Those are the lines
+the middleware writes for a request and a WebSocket session and every `StepTimer` line; no other line carries
+them ([Spans](#spans)). The two names are `closing_line_keys` in `src/logline/standard.json`.
+
 A caller's own field named like one of these keys (`base_keys` in `src/logline/standard.json`) is overwritten. The
 scalar rule holds on both write paths: only text, numbers, booleans and `null` reach the line, so an object or a
 nested value is dropped from a structlog event as from a standard-library record's `extra=` fields. A caller's field
@@ -105,8 +110,8 @@ An image build bakes `SERVICE_VERSION` from the release it builds.
 ## The request line
 
 The middleware writes one line per HTTP request on the logger `logline.request`, with `event`
-`logline.REQUEST_EVENT` (`request.ended`) and `outcome`, `method`, `route`, `status`, `duration_ms`, `sub` and
-`ip`. A host without ASGI writes the same line through `RequestLine` ([below](#a-host-without-asgi)), which the
+`logline.REQUEST_EVENT` (`request.ended`) and `outcome`, `method`, `route`, `status`, `duration_ms`, `sub`, `ip`,
+`span_id` and `parent_span_id`. A host without ASGI writes the same line through `RequestLine` ([below](#a-host-without-asgi)), which the
 middleware uses too, so the `method`, `outcome`, `sub`, `ip` and `error_type` rules hold for both. What reads
 the ASGI scope, the response messages or the server's answer belongs to the middleware alone, and is marked so; a
 `RequestLine` host does that part itself:
@@ -134,6 +139,8 @@ the ASGI scope, the response messages or the server's answer belongs to the midd
   `RequestLine` ends where the host ends it, `end()` or the end of the block, [below](#a-host-without-asgi).
 - The line has no `error_type`. The layer where the exception stops writes the one line that carries it: under
   uvicorn `asgi_app.failed`, for a host without ASGI the host's own failure line.
+- `span_id` is the request's span, the one `outgoing_headers()` hands on outside a step, and `parent_span_id` is the
+  span id of the incoming `traceparent`, `null` for a request that starts a trace.
 - A WebSocket session gets its own line, below.
 
 The line is written at INFO whatever `LOG_LEVEL` says: no setting turns it off.
@@ -142,8 +149,8 @@ The line is written at INFO whatever `LOG_LEVEL` says: no setting turns it off.
 
 The middleware writes one line per WebSocket session when the app returns, on the logger `logline.request` at INFO,
 whatever `LOG_LEVEL` says, from the ASGI messages and so under any server. Its `event` is `logline.WEBSOCKET_EVENT` (`websocket.ended`), and a host compares `event` with
-`WEBSOCKET_EVENT`, never with the literal. It carries `outcome`, `route`, `duration_ms`, `sub`, `ip` and `close_code`, and `status` when the upgrade was not
-accepted. `set_sub`, `set_client_ip` and `set_route` work in a WebSocket scope as they do in a request, and `route`,
+`WEBSOCKET_EVENT`, never with the literal. It carries `outcome`, `route`, `duration_ms`, `sub`, `ip`, `close_code`, `span_id` and `parent_span_id`, and `status`
+when the upgrade was not accepted. `set_sub`, `set_client_ip` and `set_route` work in a WebSocket scope as they do in a request, and `route`,
 `sub` and `ip` read as they do there.
 
 - `outcome` is `ok` for an accepted session, `failed` when the app raised an `Exception` and `cancelled` when it
@@ -154,6 +161,8 @@ accepted. `set_sub`, `set_client_ip` and `set_route` work in a WebSocket scope a
 - `close_code` is the code of the last close message of either side, and `null` when none was seen, such as when the
   app raised and the server closed the socket itself, and for an upgrade that was not accepted.
 - `duration_ms` runs from the upgrade to the app's return.
+- `span_id` is the session's span, `parent_span_id` the span id of the upgrade's `traceparent`, `null` without a
+  valid one.
 - `trace_id` is the session's, as for a request: the trace of the upgrade's `traceparent` when it is valid, else a
   new one, so the app's own lines, `asgi_app.failed` and the session line of a refused or failed upgrade read together
   by one id. A turn on the socket has its own trace and the session's is current again after it (see
@@ -233,7 +242,7 @@ status when none was sent and the trace are the ones above. `headers` are the re
 text, read case-insensitively, so a host passes its header items as they are; `ip` is the client address, and
 `null` in the line when the host has none. The object serves one request. Its stopwatch starts when it is
 constructed, and the block runs in the request's trace, the incoming one or a new one, so every line logged inside
-carries its `trace_id`.
+carries its `trace_id`. The line carries the request's `span_id` and `parent_span_id` like the middleware's.
 
 ```python
 import logging
@@ -289,7 +298,8 @@ class Server(ThreadingHTTPServer):
 ## Trace context
 
 An incoming `traceparent` continues that trace; `tracestate` and the flags pass through. Without a valid one
-the request starts a new trace with flags `00`. Each request gets a fresh span id. The trace lives in
+the request starts a new trace with flags `00`. Each request gets a fresh span id, and its line names it
+([Spans](#spans)). The trace lives in
 OpenTelemetry's context, so `trace_id` reaches lines written from sync endpoints on worker threads too.
 There is no SDK and no exporter.
 
@@ -310,16 +320,37 @@ A WebSocket session runs in a trace the same way, from the upgrade's `traceparen
 ([The WebSocket session line](#the-websocket-session-line)).
 
 `outgoing_headers()` returns the current context as the headers of an outgoing call, an empty dict outside a
-request, a WebSocket session or a turn: `httpx.get(url, headers=outgoing_headers())`. Outside a turn of a session it
-returns the session's trace.
+request, a WebSocket session or a turn: `httpx.get(url, headers=outgoing_headers())`. Inside a `StepTimer` block it
+names the step's span, inside a turn that carries a valid `traceparent` the sender's, and else the request's or the
+session's.
+
+### Spans
+
+A line that closes a piece of work is also its span: it names itself and the span that started it, so the lines of
+one `trace_id` rebuild the tree of what called what and where the time went, with no tracing library in the host
+and no span store. The closing lines are the request line, the WebSocket session line and every `StepTimer` line;
+each carries `span_id` and `parent_span_id`, 16 lowercase hex digits. Every other line, the lifespan lines, the
+crash lines and uvicorn's lines among them, carries neither.
+
+| Line | `span_id` | `parent_span_id` |
+|---|---|---|
+| request, session | the span logline opens for it, the one `traceparent` hands on | the incoming `traceparent`'s span id, `null` for a new trace |
+| step | the span its block opened | the span current when the block was entered: the request's, the session's, the sender's inside a turn, or an outer step's |
+
+The current span lives in OpenTelemetry's context, as the trace does; logline keeps no copy of it. A call a host
+makes inside a step, through `outgoing_headers()` or `opentelemetry.propagate.inject`, carries the step's span, so the
+callee's request line has the step's `span_id` as its `parent_span_id`.
 
 ### A turn on a WebSocket
 
 A WebSocket session runs in one trace, and its turns need their own, each ending with it.
-`unit_trace(traceparent)` runs a block, one turn, in the incoming trace or a new one, with a fresh span
-id, and detaches it when the block ends, so the session's trace is current again. An exception leaves the block
+`unit_trace(traceparent)` runs a block, one turn, in the incoming trace or a new one, and detaches it when the
+block ends, so the session's trace is current again. A valid `traceparent` is continued as it is: the turn has no
+line of its own, so inside it, outside a step, the current span is the sender's. Without a valid one the turn starts
+a new trace with a fresh span. An exception leaves the block
 unchanged, and no later line of the socket carries the failed turn's `trace_id`. `current_traceparent()` returns the
-`traceparent` value for a message: the turn's inside a turn, the session's outside one, `None` outside any trace.
+`traceparent` value for a message: the step's inside a `StepTimer` block, else the turn's (the sender's span for a
+valid incoming value), the session's outside a turn, `None` outside any trace.
 
 The sending side puts the value in the message it sends:
 
@@ -479,8 +510,8 @@ The rules for what a covered host logs and how. What a line never carries is [Ne
   value formatted into a message, no field from the deny list, and no logging setup of the
   host's own. `logline.check` judges them (see [Checking a host's source](#checking-a-hosts-source)). The
   record drops a field on the deny list.
-- The deny list, the event-name pattern, the calls and assignments that are a host's own logging setup and
-  the record's base keys are the data file `src/logline/standard.json` in the logline package, which owns
+- The deny list, the event-name pattern, the calls and assignments that are a host's own logging setup, the
+  record's base keys and the keys of a closing line are the data file `src/logline/standard.json` in the logline package, which owns
   them; `logline.standard` reads it.
 - Whether the log points, levels and single errors are right is judged by a scheduled audit.
 
@@ -506,7 +537,8 @@ line, the same error at each layer.
 `turn.ended`, `hearing.ended` or `sign_in.refused`. The request line is `request.ended` with `outcome`
 (`REQUEST_EVENT`), and the WebSocket session line is `websocket.ended` (`WEBSOCKET_EVENT`).
 
-- `.ended` closes a timed step and always carries `duration_ms` and `outcome`.
+- `.ended` closes a timed step and always carries `duration_ms`, `outcome`, `span_id` and `parent_span_id`; a
+  hand-written `.ended` line carries no span, so a step is written by `StepTimer`.
 - `.started` is only for a process or for work that runs for minutes.
 - `.failed` is an error outside a timed step.
 
@@ -534,6 +566,7 @@ from a closed set.
 | `duration_ms` | number | the step's start to the line's `ts`, on a monotonic clock, each process measuring its own |
 | `first_output_ms` | number | the time to the first output, streaming steps only |
 | `outcome` | `ok`, `refused`, `failed` or `cancelled` | on every `.ended` line |
+| `span_id`, `parent_span_id` | 16 hex digits, `null` for none | the span a closing line is and the span that started it ([Spans](#spans)) |
 | `reason` | code from a closed set in the app | why it was refused, failed or ended |
 | `error_type` | string | the exception's class name |
 | `status` | integer | the HTTP status of an outbound call, or the status the client got for a WebSocket upgrade the app did not accept |
@@ -580,8 +613,8 @@ async def ask_model(client, request):
   `ValueError` at construction. `started_at` is no step field name: `add` drops it. The line carries the
   step's id fields (scalars), `duration_ms` on the request line's clock and rounding, and `outcome`; it is
   written in `finally`, so a failed or cancelled step still leaves it.
-- The timer owns the keys `duration_ms`, `outcome`, `reason`, `first_output_ms`, `error_type` and
-  `started_at`: a field of one of those names is dropped. A field named like an attribute of `logging.LogRecord` (`name`, `module`,
+- The timer owns the keys `duration_ms`, `outcome`, `reason`, `first_output_ms`, `error_type`, `started_at`,
+  `span_id` and `parent_span_id`: a field of one of those names is dropped. A field named like an attribute of `logging.LogRecord` (`name`, `module`,
   `process`, `thread`, `args`, `message`, ...) raises `ValueError` when the timer is constructed, because the
   standard library refuses it as an `extra` key.
 - A block that ends normally is `ok`. `step.reason(code)` gives that `ok` line a `reason`, such as `silence` for
@@ -607,12 +640,24 @@ async def ask_model(client, request):
   at INFO, without `error_type` and `reason`, as a block that a cancellation leaves would: for a step whose
   task is cancelled before a block surrounds it, ended from the task's done callback. The line is written
   once: after either, a later `end()`, `end_cancelled()` or block exit writes nothing more.
+- Entering the block opens the step's span under the current one, and it stays current until the block ends: a step
+  inside it, `outgoing_headers()` and `current_traceparent()` name it. The line carries its `span_id` and
+  `parent_span_id` and the `trace_id` of the trace it was opened in, wherever it is written, so a block that ends in
+  another task or turn still writes all three from one trace. When the block ends, the previous span is current
+  again, unless the block ends in another context than it began in, whose current span stays as it is. A step no
+  block surrounds takes a fresh span when `end()` or `end_cancelled()` writes its line, under the current span; one
+  that ends inside its block writes the block's span. A step whose line `end()` or `end_cancelled()` already
+  wrote opens no span when it is then entered as a block: a call or step inside names the span the block ran under.
+  A step outside any trace has no span: `span_id` and `parent_span_id` are `null`, and it starts no trace.
 - The line is at INFO. `step.degraded()` makes it a warning, such as a `refused` call the unit retried. A
   `failed` step is at ERROR, or at WARNING after `step.handled()` when its unit goes on; a step that is
   degraded and failed unhandled stays at ERROR.
-- An async generator that is dropped without `aclose()` runs its `finally` at garbage collection, under
-  whatever trace is current then, so its step line can carry another unit's `trace_id`. A host wraps such a
-  generator in `contextlib.aclosing` so the line is written where the generator is used:
+- A step inside an async generator keeps its span current between two `yield`s, so a call the generator makes
+  names the step. The cost is on the consumer: its steps between two `yield`s name the generator's step as their
+  parent, and after a `break` without `aclosing` the dropped step stays the parent of the consumer's later steps
+  until the unit ends. The dropped step's own line is still written with its own trace and span at garbage
+  collection. A host wraps such a generator in `contextlib.aclosing` so the line is written where the generator is
+  used:
 
 ```python
 from contextlib import aclosing

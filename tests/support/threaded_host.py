@@ -7,7 +7,7 @@ from typing import Any
 import httpx
 import pytest
 
-from logline import RequestLine, configure
+from logline import RequestLine, StepTimer, configure, unit_trace
 from tests.support.apps import HOST_CLIENT_IP, HOST_ROUTE, SUB
 from tests.support.lines import Line, json_lines
 from tests.support.serving import Call
@@ -25,6 +25,11 @@ NO_STATUS_PATH = "/no-status"
 IDENTITY_PATH = "/identity"
 LOGGING_PATH = "/logging"
 ENDED_EARLY_PATH = "/ended-early"
+STEP_PATH = "/step"
+ENDED_IN_ANOTHER_TRACE_PATH = "/ended-in-another-trace"
+STEP_ENTERED_OUTSIDE_A_TRACE_PATH = "/step-entered-outside-a-trace"
+
+_OTHER_TRACEPARENT = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
 
 _STATUS_REFUSED = 404
 _STATUS_UNAVAILABLE = 503
@@ -87,6 +92,33 @@ def _ended_early(handler: BaseHTTPRequestHandler, line: RequestLine) -> None:
     _reply(handler, 200)
 
 
+def _step(handler: BaseHTTPRequestHandler, line: RequestLine) -> None:
+    with StepTimer(HANDLED_EVENT, logging.getLogger(HOST_LOGGER)):
+        pass
+    _answer(handler, line, 200)
+
+
+def _ended_in_another_trace(handler: BaseHTTPRequestHandler, line: RequestLine) -> None:
+    line.set_status(200)
+    with unit_trace(_OTHER_TRACEPARENT):
+        line.end()
+    _reply(handler, 200)
+
+
+def _step_entered_outside_a_trace(handler: BaseHTTPRequestHandler, line: RequestLine) -> None:
+    def run() -> None:
+        # A new thread starts with an empty context: this step begins outside any trace.
+        timer = StepTimer(HANDLED_EVENT, logging.getLogger(HOST_LOGGER))
+        timer.__enter__()
+        with unit_trace(_OTHER_TRACEPARENT):
+            timer.__exit__(None, None, None)
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    thread.join()
+    _answer(handler, line, 200)
+
+
 _ROUTES: dict[str, Callable[[BaseHTTPRequestHandler, RequestLine], None]] = {
     OK_PATH: _ok,
     REFUSED_PATH: _refused,
@@ -97,6 +129,9 @@ _ROUTES: dict[str, Callable[[BaseHTTPRequestHandler, RequestLine], None]] = {
     IDENTITY_PATH: _identity,
     LOGGING_PATH: _logging,
     ENDED_EARLY_PATH: _ended_early,
+    STEP_PATH: _step,
+    ENDED_IN_ANOTHER_TRACE_PATH: _ended_in_another_trace,
+    STEP_ENTERED_OUTSIDE_A_TRACE_PATH: _step_entered_outside_a_trace,
 }
 
 

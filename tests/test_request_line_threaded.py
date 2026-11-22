@@ -3,11 +3,13 @@ import pytest
 from logline import REQUEST_EVENT, Outcome, RequestLine
 from logline.trace import current_trace_id
 from tests.support.apps import HOST_CLIENT_IP, HOST_ROUTE, SUB
+from tests.support.incoming_trace import INCOMING_SPAN_ID, INCOMING_TRACE_ID, INCOMING_TRACEPARENT
 from tests.support.lines import lines_of, request_lines
 from tests.support.serving import Call, get
 from tests.support.threaded_host import (
     CANCELLED_PATH,
     ENDED_EARLY_PATH,
+    ENDED_IN_ANOTHER_TRACE_PATH,
     HANDLE_ERROR_EVENT,
     HANDLED_EVENT,
     HOST_LOGGER,
@@ -17,13 +19,11 @@ from tests.support.threaded_host import (
     OK_PATH,
     RAISES_PATH,
     REFUSED_PATH,
+    STEP_ENTERED_OUTSIDE_A_TRACE_PATH,
+    STEP_PATH,
     UNAVAILABLE_PATH,
     serve_threaded_requests,
 )
-
-_INCOMING_TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
-_INCOMING_SPAN_ID = "00f067aa0ba902b7"
-_INCOMING_TRACEPARENT = f"00-{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}-01"
 
 
 @pytest.mark.parametrize(
@@ -76,13 +76,13 @@ def test_a_threaded_host_continues_the_incoming_trace_on_every_line_of_the_reque
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _, lines = serve_threaded_requests(
-        capsys, [Call(LOGGING_PATH, headers={"traceparent": _INCOMING_TRACEPARENT})]
+        capsys, [Call(LOGGING_PATH, headers={"traceparent": INCOMING_TRACEPARENT})]
     )
 
     (inside,) = lines_of(lines, HOST_LOGGER)
     (line,) = request_lines(lines)
     assert inside["event"] == HANDLED_EVENT
-    assert {inside["trace_id"], line["trace_id"]} == {_INCOMING_TRACE_ID}
+    assert {inside["trace_id"], line["trace_id"]} == {INCOMING_TRACE_ID}
 
 
 def test_a_threaded_host_starts_a_new_trace_for_a_request_without_one(
@@ -101,13 +101,13 @@ def test_the_hosts_failure_line_joins_the_trace_and_a_base_exception_leaves_a_cr
     _, lines = serve_threaded_requests(
         capsys,
         [
-            Call(RAISES_PATH, headers={"traceparent": _INCOMING_TRACEPARENT}),
+            Call(RAISES_PATH, headers={"traceparent": INCOMING_TRACEPARENT}),
             get(CANCELLED_PATH),
         ],
     )
 
     (failed,) = lines_of(lines, HOST_LOGGER)
-    assert (failed["event"], failed["trace_id"]) == (HANDLE_ERROR_EVENT, _INCOMING_TRACE_ID)
+    assert (failed["event"], failed["trace_id"]) == (HANDLE_ERROR_EVENT, INCOMING_TRACE_ID)
     (crashed,) = [line for line in lines if line["event"] == "thread.crashed"]
     assert crashed["error_type"] == "HostCancelled"
     assert [line["outcome"] for line in request_lines(lines)] == ["failed", "cancelled"]
@@ -122,9 +122,29 @@ def test_ending_the_line_before_the_block_ends_writes_it_once(
     assert (line["outcome"], line["status"]) == ("ok", 200)
 
 
+@pytest.mark.parametrize(
+    ("headers", "parent_span_id"),
+    [
+        pytest.param({"traceparent": INCOMING_TRACEPARENT}, INCOMING_SPAN_ID, id="incoming"),
+        pytest.param({}, None, id="new-trace"),
+    ],
+)
+def test_a_threaded_hosts_step_names_the_request_as_its_parent_and_the_line_its_own_span(
+    capsys: pytest.CaptureFixture[str], headers: dict[str, str], parent_span_id: str | None
+) -> None:
+    _, lines = serve_threaded_requests(capsys, [Call(STEP_PATH, headers=headers)])
+
+    (step,) = lines_of(lines, HOST_LOGGER)
+    (line,) = request_lines(lines)
+    assert line["parent_span_id"] == parent_span_id
+    assert step["parent_span_id"] == line["span_id"]
+    assert step["span_id"] != line["span_id"]
+    assert step["trace_id"] == line["trace_id"]
+
+
 def test_a_request_line_reads_its_headers_case_insensitively() -> None:
-    with RequestLine("GET", [("TRACEPARENT", _INCOMING_TRACEPARENT)]):
-        assert current_trace_id() == _INCOMING_TRACE_ID
+    with RequestLine("GET", [("TRACEPARENT", INCOMING_TRACEPARENT)]):
+        assert current_trace_id() == INCOMING_TRACE_ID
 
 
 def _pairs(lines: list[dict[str, object]]) -> list[tuple[dict[str, object], dict[str, object]]]:
@@ -137,8 +157,28 @@ def test_a_threaded_host_follows_the_global_propagator_when_otel_propagators_is_
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _, lines = serve_threaded_requests(
-        capsys, [Call(LOGGING_PATH, headers={"traceparent": _INCOMING_TRACEPARENT})]
+        capsys, [Call(LOGGING_PATH, headers={"traceparent": INCOMING_TRACEPARENT})]
     )
 
     (line,) = request_lines(lines)
-    assert line["trace_id"] not in {None, _INCOMING_TRACE_ID}
+    assert line["trace_id"] not in {None, INCOMING_TRACE_ID}
+
+
+def test_a_step_entered_outside_a_trace_keeps_no_trace_when_it_ends_inside_a_trace(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, lines = serve_threaded_requests(capsys, [get(STEP_ENTERED_OUTSIDE_A_TRACE_PATH)])
+
+    (step,) = lines_of(lines, HOST_LOGGER)
+    assert (step["trace_id"], step["span_id"], step["parent_span_id"]) == (None, None, None)
+
+
+def test_a_request_line_ended_inside_another_trace_keeps_its_own_trace_and_span(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, lines = serve_threaded_requests(
+        capsys, [Call(ENDED_IN_ANOTHER_TRACE_PATH, headers={"traceparent": INCOMING_TRACEPARENT})]
+    )
+
+    (line,) = request_lines(lines)
+    assert (line["trace_id"], line["parent_span_id"]) == (INCOMING_TRACE_ID, INCOMING_SPAN_ID)

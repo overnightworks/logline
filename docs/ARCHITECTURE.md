@@ -65,16 +65,20 @@ Module owners in `logline`:
 - `step` owns `Outcome`, the one owner of the `outcome` values and of the rule that an `Exception` reads `failed` and
   another `BaseException` `cancelled`, the stopwatch behind every `duration_ms`, and
   `StepTimer`, which writes a step's `.ended` line through the standard-library logger the caller names, so
-  `record` shapes it like any library's line.
+  `record` shapes it like any library's line. `StepTimer` is also the one writer of a step's span: it asks `trace` for
+  a child span when its block is entered, keeps that context for its line and drops a caller's `span_id` and
+  `parent_span_id`.
 - `testing` owns `configured`, the host tests' way to run `configure` and restore the logging state it
   changed, the three `process_failures` hooks and OpenTelemetry's global propagator included; it is the one module that reads
   `configuration`'s list of touched loggers.
 - `trace` owns the trace of a request, of a WebSocket session and of a unit within it: it starts or continues it in
   OpenTelemetry's context from header pairs (ASGI byte pairs or text pairs, one extraction through the global
   propagator), reads `trace_id` from it
-  and hands it on as headers or, for a message, as a `traceparent` value.
+  and hands it on as headers or, for a message, as a `traceparent` value. It opens every span (request, session, a
+  step's child span; a unit continues the sender's) and renders a span as the `span_id` and `parent_span_id` of
+  a closing line, the one function every writer uses, with the key names `standard` reads from `standard.json`.
 
-`record` uses `standard` and `trace`; `request` uses `step`, `trace`, `lifespan`, `websocket` and `asgi`; `uvicorn_records` uses `websocket`; `configuration` uses `record`, `uvicorn_records` and
+`record` uses `standard` and `trace`; `step` uses `standard` and `trace`; `trace` uses `standard`; `request` uses `step`, `trace`, `lifespan`, `websocket` and `asgi`; `uvicorn_records` uses `websocket`; `configuration` uses `record`, `uvicorn_records` and
 `process_failures` and names the request logger; `testing` uses `configuration`.
 `request` imports no web framework; an import contract keeps `logline` free of frameworks, servers and
 HTTP clients.
@@ -98,9 +102,15 @@ sequenceDiagram
     A->>L: any line, trace_id read from the context
     A->>M: last body chunk, or an exception
     M->>R: end(), or the block ends with the exception
-    R->>L: the request line (outcome, sub, ip, route, status)
+    R->>L: the request line (outcome, sub, ip, route, status, span_id, parent_span_id)
     R->>T: detach, except on an exception
 ```
+
+A step inside the request runs the same way: `StepTimer` asks `trace` for a child span when its block is entered and
+makes it current, so a nested step and an outgoing call name it; its line is written with that span attached, then
+the previous span is put back, only if the step's span is still current. A callee that receives the call writes a
+request line whose `parent_span_id` is the step's `span_id`, which is how the lines of one `trace_id` rebuild the
+tree.
 
 A host without ASGI, such as one on the standard library's `http.server`, takes the part of the middleware itself:
 it enters `RequestLine` around its handler and calls `set_status` where it sends the status line, and writes its own
@@ -110,7 +120,8 @@ A `websocket` scope runs the same way: the middleware enters `request_trace(scop
 session, so the app's lines, the server's error line and `websocket.ended` carry the session's trace. A turn on that
 socket runs in `unit_trace(traceparent)` inside it: the same start or continue, but the trace is detached whenever
 the block ends, an exception included, so the session's trace is current again and no later line of the socket
-carries the turn's. The request's trace stays attached after an exception because the
+carries the turn's. A turn with a valid `traceparent` continues the sender's span instead of opening one, since
+a unit has no line of its own to carry a fresh id. The request's trace stays attached after an exception because the
 server's error line follows in the same task; a unit has no such line, so a host's handler line for a
 failed turn carries the session's trace, not the turn's, unless the host logs it inside the block.
 
@@ -150,8 +161,19 @@ lowest direct dependency floors run the same tests.
   a traceback; the layer where the exception stops writes those.
 - The request line is written on its own logger at INFO, whatever `LOG_LEVEL` says: a quiet root must not
   hide the line that audits every request.
-- The trace lives only in OpenTelemetry's context, read through `opentelemetry-api`: a second contextvar
-  could disagree with the first, and a worker thread inherits the one the framework copies.
+- The trace and the current span live only in OpenTelemetry's context, read through `opentelemetry-api`: a second
+  contextvar could disagree with the first, and a worker thread inherits the one the framework copies. The span's
+  parent id sits beside the span in that context, not in a store of logline's own.
+- A step's line is written with the step's own context attached around the log call, so its `trace_id`,
+  `span_id` and `parent_span_id` come from one trace wherever the block ends. The previous context is put back with
+  `context.attach` only while the step's span is still current, never by detaching a token: a token from another
+  context makes OpenTelemetry log "Failed to detach context" at ERROR.
+- Steps inside an async generator keep their attach between two `yield`s, so a call the generator makes names the
+  step; the consumer's steps between two `yield`s name it as parent, and a dropped generator's step stays the
+  parent of the consumer's later steps until the unit ends. A consumer step around one `anext`, while the
+  generator's step ends inside it, leaves the consumer's span stale until its own block ends.
+- The lifespan lines, the crash lines and the `uvicorn_records` lines carry no span; the span keys belong to the
+  lines that close a piece of work.
 - `sub`, `ip` and `route` live in `scope["state"]`: the same dict reaches `BaseHTTPMiddleware`, Starlette's routing
   and the threadpool, where a contextvar set below `BaseHTTPMiddleware` would not reach the middleware.
 - OpenTelemetry's global propagator is the one owner of the header rule. `configure` sets it to
