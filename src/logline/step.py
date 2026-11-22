@@ -190,8 +190,7 @@ class StepTimer:
         self._end_block(exc)
 
     async def __aenter__(self) -> StepTimer:
-        self._enter_span()
-        return self
+        return self.__enter__()
 
     async def __aexit__(
         self,
