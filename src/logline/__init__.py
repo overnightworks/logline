@@ -13,7 +13,7 @@ from logline.request import (
 from logline.step import Outcome, StepTimer
 from logline.trace import current_traceparent, outgoing_headers, unit_trace
 
-__version__ = "1.8.0"
+__version__ = "1.9.0"
 
 __all__ = [
     "REQUEST_EVENT",
