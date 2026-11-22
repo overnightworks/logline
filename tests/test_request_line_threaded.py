@@ -17,6 +17,7 @@ from tests.support.threaded_host import (
     OK_PATH,
     RAISES_PATH,
     REFUSED_PATH,
+    STEP_PATH,
     UNAVAILABLE_PATH,
     serve_threaded_requests,
 )
@@ -120,6 +121,26 @@ def test_ending_the_line_before_the_block_ends_writes_it_once(
 
     (line,) = request_lines(lines)
     assert (line["outcome"], line["status"]) == ("ok", 200)
+
+
+@pytest.mark.parametrize(
+    ("headers", "parent_span_id"),
+    [
+        pytest.param({"traceparent": _INCOMING_TRACEPARENT}, _INCOMING_SPAN_ID, id="incoming"),
+        pytest.param({}, None, id="new-trace"),
+    ],
+)
+def test_a_threaded_hosts_step_names_the_request_as_its_parent_and_the_line_its_own_span(
+    capsys: pytest.CaptureFixture[str], headers: dict[str, str], parent_span_id: str | None
+) -> None:
+    _, lines = serve_threaded_requests(capsys, [Call(STEP_PATH, headers=headers)])
+
+    (step,) = lines_of(lines, HOST_LOGGER)
+    (line,) = request_lines(lines)
+    assert line["parent_span_id"] == parent_span_id
+    assert step["parent_span_id"] == line["span_id"]
+    assert step["span_id"] != line["span_id"]
+    assert step["trace_id"] == line["trace_id"]
 
 
 def test_a_request_line_reads_its_headers_case_insensitively() -> None:

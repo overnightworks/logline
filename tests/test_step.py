@@ -2,8 +2,9 @@ import logging
 
 import pytest
 
-from logline import Outcome, StepTimer
-from tests.support.lines import Line, lines_of, request_lines
+from logline import Outcome, StepTimer, configure
+from logline.trace import current_trace_id
+from tests.support.lines import Line, json_lines, lines_of, request_lines
 from tests.support.serving import get, serve_requests, serve_requests_answered
 from tests.support.step_routes import (
     STEP,
@@ -485,6 +486,24 @@ def test_a_step_line_is_written_through_the_logger_the_caller_names_without_conf
     )
     assert vars(record)["outcome"] == Outcome.OK.value
     assert vars(record)["agent_id"] == STEP_AGENT_ID
+
+
+@pytest.mark.parametrize("enters_a_block", [True, False], ids=["block", "end"])
+def test_a_step_outside_any_trace_writes_null_span_ids_and_starts_no_trace(
+    capsys: pytest.CaptureFixture[str], enters_a_block: bool
+) -> None:
+    configure("step-service")
+    step = StepTimer(STEP_EVENT, logging.getLogger(STEP_LOGGER))
+
+    if enters_a_block:
+        with step:
+            assert current_trace_id() is None
+    else:
+        step.end()
+
+    (line,) = json_lines(capsys.readouterr().out)
+    assert (line["span_id"], line["parent_span_id"], line["trace_id"]) == (None, None, None)
+    assert current_trace_id() is None
 
 
 @pytest.mark.parametrize("field", ["name", "module", "process", "args", "message", "asctime"])

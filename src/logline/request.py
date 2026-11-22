@@ -11,11 +11,12 @@ from enum import StrEnum
 from types import TracebackType
 
 import structlog
+from opentelemetry.context import Context
 
 from logline.asgi import ASGIApp, Message, Receive, Scope, Send
 from logline.lifespan import run_lifespan
 from logline.step import Outcome, Stopwatch, outcome_of_raised
-from logline.trace import request_trace
+from logline.trace import request_trace, span_fields
 from logline.websocket import SessionEnd, run_websocket
 
 __all__: list[str] = []
@@ -149,16 +150,17 @@ class RequestLine:
         line._open(scope["method"], request_trace(scope["headers"]), _client_host(scope))
         return line
 
-    def _open(self, method: str, trace: AbstractContextManager[None], ip: str | None) -> None:
+    def _open(self, method: str, trace: AbstractContextManager[Context], ip: str | None) -> None:
         self._method = _method_code(method)
         self._record = _RequestRecord(sub=None, ip=ip, route=None)
         self._trace = trace
+        self._span: Context | None = None
         self._status: int | None = None
         self._written = False
         self._stopwatch = Stopwatch()
 
     def __enter__(self) -> RequestLine:
-        self._trace.__enter__()
+        self._span = self._trace.__enter__()
         return self
 
     def __exit__(
@@ -204,6 +206,7 @@ class RequestLine:
             duration_ms=self._stopwatch.elapsed_ms(),
             sub=self._record.sub,
             ip=self._record.ip,
+            **span_fields(self._span),
         )
 
 
@@ -258,18 +261,20 @@ class RequestLineMiddleware:
         record = _open_record(scope)
         stopwatch = Stopwatch()
 
-        def write_line(end: SessionEnd) -> None:
-            _note_framework_route(scope, record)
-            _request_logger.info(
-                WEBSOCKET_EVENT,
-                outcome=end.outcome,
-                route=record.route or None,
-                duration_ms=stopwatch.elapsed_ms(),
-                sub=record.sub,
-                ip=record.ip,
-                close_code=end.close_code,
-                **({} if end.status is None else {"status": end.status}),
-            )
+        with request_trace(scope["headers"]) as span:
 
-        with request_trace(scope["headers"]):
+            def write_line(end: SessionEnd) -> None:
+                _note_framework_route(scope, record)
+                _request_logger.info(
+                    WEBSOCKET_EVENT,
+                    outcome=end.outcome,
+                    route=record.route or None,
+                    duration_ms=stopwatch.elapsed_ms(),
+                    sub=record.sub,
+                    ip=record.ip,
+                    close_code=end.close_code,
+                    **span_fields(span),
+                    **({} if end.status is None else {"status": end.status}),
+                )
+
             await run_websocket(self._app, scope, receive, send, write_line)

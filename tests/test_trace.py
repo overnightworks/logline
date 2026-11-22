@@ -263,7 +263,7 @@ def _sessions_upgraded_with(
     return list(zip(frames, lines, strict=True))
 
 
-def test_an_incoming_traceparent_on_the_upgrade_gives_the_session_its_trace_id(
+def test_an_incoming_traceparent_on_the_upgrade_gives_the_session_its_trace_id_and_parent_span(
     capsys: pytest.CaptureFixture[str], implementation: str
 ) -> None:
     upgrade = {
@@ -283,6 +283,8 @@ def test_an_incoming_traceparent_on_the_upgrade_gives_the_session_its_trace_id(
         "tracestate": _INCOMING_TRACESTATE,
     }
     assert session_line["trace_id"] == _INCOMING_TRACE_ID
+    assert session_line["span_id"] == outgoing["span_id"]
+    assert session_line["parent_span_id"] == _INCOMING_SPAN_ID
 
 
 @pytest.mark.parametrize(
@@ -369,7 +371,7 @@ def test_a_turn_that_raises_leaves_the_sessions_trace_on_the_sockets_later_lines
     assert later_after_line["trace_id"] == session_trace_id
 
 
-def test_two_turns_carrying_one_traceparent_log_that_trace_id(
+def test_two_turns_carrying_one_traceparent_log_that_trace_id_and_hand_on_the_senders_span(
     capsys: pytest.CaptureFixture[str], implementation: str
 ) -> None:
     incoming = f"00-{_INCOMING_TRACE_ID}-{_INCOMING_SPAN_ID}-01"
@@ -380,7 +382,7 @@ def test_two_turns_carrying_one_traceparent_log_that_trace_id(
     assert [line["trace_id"] for line in inside_lines] == [_INCOMING_TRACE_ID] * 2
     outgoing = [_TRACEPARENT.match(str(inside["traceparent"])) for inside, _ in frames]
     assert [match and match["trace_id"] for match in outgoing] == [_INCOMING_TRACE_ID] * 2
-    assert {match and match["span_id"] for match in outgoing}.isdisjoint({_INCOMING_SPAN_ID})
+    assert {match and match["span_id"] for match in outgoing} == {_INCOMING_SPAN_ID}
 
 
 @pytest.mark.parametrize(

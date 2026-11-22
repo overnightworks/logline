@@ -9,7 +9,7 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import InvalidHandshake
 
 from logline import Outcome, configure
-from logline.standard import BASE_KEYS
+from logline.standard import BASE_KEYS, CLOSING_LINE_KEYS
 from tests.support.apps import (
     HOST_CLIENT_IP,
     HOST_ROUTE,
@@ -163,7 +163,16 @@ def test_a_websocket_session_writes_one_line_when_it_ends(
     lines = json_lines(capsys.readouterr().out)
     (line,) = session_lines(lines)
     assert session.expected.items() <= line.items()
-    assert line.keys() <= {*BASE_KEYS, *session.expected, "duration_ms", "route", "sub", "ip"}
+    allowed = {
+        *BASE_KEYS,
+        *CLOSING_LINE_KEYS,
+        *session.expected,
+        "duration_ms",
+        "route",
+        "sub",
+        "ip",
+    }
+    assert CLOSING_LINE_KEYS <= line.keys() <= allowed
     assert isinstance(line["duration_ms"], int | float)
     assert not [line for line in lines if str(line["event"]).startswith("request.")]
     server_events = {line["event"] for line in lines_of(lines, _UVICORN_LOGGER)}

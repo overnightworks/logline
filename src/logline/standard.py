@@ -9,6 +9,11 @@ __all__: list[str] = []
 _RULES = json.loads(files("logline").joinpath("standard.json").read_text(encoding="utf-8"))
 
 BASE_KEYS: frozenset[str] = frozenset(_RULES["base_keys"])
+# The span a closing line is, then the span that started it, in the order `closing_line_keys` lists.
+SPAN_ID_KEY: str
+PARENT_SPAN_ID_KEY: str
+SPAN_ID_KEY, PARENT_SPAN_ID_KEY = _RULES["closing_line_keys"]
+CLOSING_LINE_KEYS: frozenset[str] = frozenset({SPAN_ID_KEY, PARENT_SPAN_ID_KEY})
 EVENT_NAME_PATTERN: re.Pattern[str] = re.compile(_RULES["event_name_pattern"])
 OWN_SETUP_CALLS: frozenset[str] = frozenset(_RULES["own_setup_calls"])
 OWN_SETUP_ASSIGNMENTS: frozenset[str] = frozenset(_RULES["own_setup_assignments"])

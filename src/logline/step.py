@@ -2,7 +2,8 @@
 
 A step is one finished piece of a unit of work: an outbound call, a wait, a compute stage. Its
 `.ended` line is written by `StepTimer` through the standard-library logger the caller names, so a
-host that never called `configure` gets an ordinary record under its own logging setup.
+host that never called `configure` gets an ordinary record under its own logging setup. The line is
+also the step's span: it names itself and the span that started it.
 """
 
 import logging
@@ -11,12 +12,18 @@ from collections.abc import Callable
 from enum import StrEnum
 from types import TracebackType
 
+from opentelemetry.context import Context
+
+from logline.standard import CLOSING_LINE_KEYS
+from logline.trace import attached, enter_span, leave_span, open_step_span, span_fields
+
 __all__: list[str] = []
 
 type Scalar = str | int | float | bool | None
 
-_TIMER_KEYS = frozenset(
-    {"duration_ms", "outcome", "reason", "first_output_ms", "error_type", "started_at"}
+_TIMER_KEYS = (
+    frozenset({"duration_ms", "outcome", "reason", "first_output_ms", "error_type", "started_at"})
+    | CLOSING_LINE_KEYS
 )
 # Logger.makeRecord raises KeyError on an extra key that names one of these record attributes.
 _RECORD_ATTRIBUTES = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
@@ -65,16 +72,26 @@ class StepTimer:
     """Time one step and write its single `.ended` line when the block ends, whatever happened.
 
     Works as `with` and as `async with`; the line is written once, in the thread or task the block
-    runs in, so it carries that context's `trace_id`. The timer starts when it is constructed, not
-    when the block is entered, or at `started_at` when the caller names it. A step that no block
-    surrounds is ended by `end` or `end_cancelled`.
+    runs in. The timer starts when it is constructed, not when the block is entered, or at
+    `started_at` when the caller names it. A step that no block surrounds is ended by `end` or
+    `end_cancelled`.
 
+    - Entering the block opens the step's span under the current one, and it stays current until
+      the block ends: a nested step, `outgoing_headers()` and `current_traceparent()` name it. The
+      line carries `span_id`, the step's, and `parent_span_id`, the span it ran under, as 16 hex
+      digits, and the `trace_id` of the trace it was opened in, wherever it is written: a dropped
+      generator's finaliser or a later turn that closes the step writes the same three. A step no
+      block surrounds takes a fresh span when `end` or `end_cancelled` writes its line, under the
+      then current span. Outside a trace a step has no span: both ids are `null`, and the step
+      starts no trace. When the block ends the previous span is current again, unless the block
+      ends in another context than it began in, which is left as it is.
     - `event` is the literal `<noun>.ended` name and `fields` are the step's id fields. The timer
-      owns `duration_ms`, `outcome`, `reason`, `first_output_ms` and `error_type`: a field of one of
-      these names is dropped, and the line carries them only as the timer sets them. A field named
-      like an attribute of `logging.LogRecord` (`name`, `module`, `process`, `args`, ...) raises
-      `ValueError`, at construction and in `add`, which sets more fields before the line is
-      written; a later value for the same key replaces the earlier one.
+      owns `duration_ms`, `outcome`, `reason`, `first_output_ms`, `error_type`, `span_id` and
+      `parent_span_id`: a field of one of these names is dropped, and the line carries them only as
+      the timer sets them. A field named like an attribute of `logging.LogRecord` (`name`,
+      `module`, `process`, `args`, ...) raises `ValueError`, at construction and in `add`, which
+      sets more fields before the line is written; a later value for the same key replaces the
+      earlier one.
     - `started_at` is a keyword-only `time.perf_counter()` value, for a step that began before the
       timer can be constructed: `duration_ms` and `first_output_ms` count from it. One later than
       `time.perf_counter()` raises `ValueError` at construction. It is no step field name: `add`
@@ -114,6 +131,8 @@ class StepTimer:
         self._failure_reason: str | None = None
         self._first_output_ms: float | None = None
         self._written = False
+        self._span: Context | None = None
+        self._previous: Context | None = None
 
     def _read_clock(self) -> float:
         """The one place a step reads the clock; the tests override it."""
@@ -157,6 +176,7 @@ class StepTimer:
             self._first_output_ms = self._stopwatch.elapsed_ms()
 
     def __enter__(self) -> StepTimer:
+        self._enter_span()
         return self
 
     def __exit__(
@@ -165,9 +185,10 @@ class StepTimer:
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        self._write_line(exc)
+        self._end_block(exc)
 
     async def __aenter__(self) -> StepTimer:
+        self._enter_span()
         return self
 
     async def __aexit__(
@@ -176,15 +197,29 @@ class StepTimer:
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        self._write_line(exc)
+        self._end_block(exc)
+
+    def _enter_span(self) -> None:
+        self._span = open_step_span()
+        if self._span is not None:
+            self._previous = enter_span(self._span)
+
+    def _end_block(self, exc: BaseException | None) -> None:
+        try:
+            self._write_line(exc)
+        finally:
+            if self._span is not None and self._previous is not None:
+                leave_span(self._span, self._previous)
 
     def _write_line(self, exc: BaseException | None, *, cancelled: bool = False) -> None:
         if self._written:
             return
         self._written = True
         outcome = self._outcome(exc, cancelled)
+        span = open_step_span() if self._span is None else self._span
         fields: dict[str, Scalar] = {
             **self._fields,
+            **span_fields(span),
             "duration_ms": self._stopwatch.elapsed_ms(),
             "outcome": outcome,
         }
@@ -196,7 +231,11 @@ class StepTimer:
             fields["reason"] = self._refusal_reason
         if outcome is Outcome.FAILED:
             fields.update(self._failure_fields(exc))
-        self._logger.log(self._level(outcome), self._event, extra=fields)
+        if span is None:
+            self._logger.log(self._level(outcome), self._event, extra=fields)
+            return
+        with attached(span):
+            self._logger.log(self._level(outcome), self._event, extra=fields)
 
     def _failure_fields(self, exc: BaseException | None) -> dict[str, Scalar]:
         fields: dict[str, Scalar] = {}

@@ -7,7 +7,7 @@ from typing import Any
 import httpx
 import pytest
 
-from logline import RequestLine, configure
+from logline import RequestLine, StepTimer, configure
 from tests.support.apps import HOST_CLIENT_IP, HOST_ROUTE, SUB
 from tests.support.lines import Line, json_lines
 from tests.support.serving import Call
@@ -25,6 +25,7 @@ NO_STATUS_PATH = "/no-status"
 IDENTITY_PATH = "/identity"
 LOGGING_PATH = "/logging"
 ENDED_EARLY_PATH = "/ended-early"
+STEP_PATH = "/step"
 
 _STATUS_REFUSED = 404
 _STATUS_UNAVAILABLE = 503
@@ -87,6 +88,12 @@ def _ended_early(handler: BaseHTTPRequestHandler, line: RequestLine) -> None:
     _reply(handler, 200)
 
 
+def _step(handler: BaseHTTPRequestHandler, line: RequestLine) -> None:
+    with StepTimer(HANDLED_EVENT, logging.getLogger(HOST_LOGGER)):
+        pass
+    _answer(handler, line, 200)
+
+
 _ROUTES: dict[str, Callable[[BaseHTTPRequestHandler, RequestLine], None]] = {
     OK_PATH: _ok,
     REFUSED_PATH: _refused,
@@ -97,6 +104,7 @@ _ROUTES: dict[str, Callable[[BaseHTTPRequestHandler, RequestLine], None]] = {
     IDENTITY_PATH: _identity,
     LOGGING_PATH: _logging,
     ENDED_EARLY_PATH: _ended_early,
+    STEP_PATH: _step,
 }
 
 
