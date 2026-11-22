@@ -154,8 +154,8 @@ def attached(span: context.Context) -> Iterator[None]:
 def span_fields(span: context.Context | None) -> dict[str, str | None]:
     """The two ids of a closing line: the span `span` holds and its parent, as 16 hex digits.
 
-    Both are None for no span, a step outside a trace, and the parent is None for a trace's first
-    span.
+    Both are None for no span, as for a step outside a trace; the parent alone is None for the first
+    span of a trace.
     """
     if span is None:
         return {SPAN_ID_KEY: None, PARENT_SPAN_ID_KEY: None}

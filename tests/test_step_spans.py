@@ -94,7 +94,7 @@ def test_a_step_inside_a_step_names_the_outer_step_as_its_parent_and_hands_on_it
 
     inner, outer = lines_of(lines, STEP_LOGGER)
     (request,) = request_lines(lines)
-    assert (inner["depth"], outer["depth"]) == ("inner", "outer")
+    assert (inner["position"], outer["position"]) == ("inner", "outer")
     assert inner["parent_span_id"] == outer["span_id"]
     assert outer["parent_span_id"] == request["span_id"]
     assert _span_of_traceparent(answers[0].json()["traceparent"]) == inner["span_id"]
@@ -122,7 +122,7 @@ def test_a_step_that_ended_leaves_the_requests_span_current_for_the_next_step(
 
     (request,) = request_lines(lines)
     first, second = lines_of(lines, STEP_LOGGER)
-    assert (first["order"], second["order"]) == ("first", "second")
+    assert (first["position"], second["position"]) == ("first", "second")
     assert {first["parent_span_id"], second["parent_span_id"]} == {request["span_id"]}
 
 

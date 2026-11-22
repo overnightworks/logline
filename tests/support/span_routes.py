@@ -13,8 +13,8 @@ CALLEE_PATH = "/span/callee"
 TURNS_PATH = "/span/turns"
 
 
-def _step(**fields: str) -> StepTimer:
-    return StepTimer(STEP_EVENT, logging.getLogger(STEP_LOGGER), **fields)
+def _step(position: str | None = None) -> StepTimer:
+    return StepTimer(STEP_EVENT, logging.getLogger(STEP_LOGGER), position=position)
 
 
 async def _generator_of_a_step() -> AsyncGenerator[int]:
@@ -34,8 +34,8 @@ def _add_nesting_routes(app: FastAPI) -> None:
 
     @app.get("/span/nested")
     async def nested() -> dict[str, str | None]:
-        async with _step(depth="outer"):
-            async with _step(depth="inner"):
+        async with _step("outer"):
+            async with _step("inner"):
                 return {"traceparent": current_traceparent()}
 
     @app.get("/span/call")
@@ -62,12 +62,12 @@ def _add_nesting_routes(app: FastAPI) -> None:
     @app.get("/span/after/{how}")
     async def after(how: str) -> dict[str, str | None]:
         """Two steps one after the other; the first one ends by `how`."""
-        async with _step(order="first") as first:
+        async with _step("first") as first:
             if how == "end":
                 first.end()
             if how == "end-cancelled":
                 first.end_cancelled()
-        async with _step(order="second"):
+        async with _step("second"):
             pass
         return {}
 
