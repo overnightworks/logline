@@ -5,7 +5,7 @@ This module imports no web framework: it speaks ASGI, and `RequestLine` serves a
 """
 
 from collections.abc import Iterable
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from enum import StrEnum
 from types import TracebackType
@@ -16,7 +16,7 @@ from opentelemetry.context import Context
 from logline.asgi import ASGIApp, Message, Receive, Scope, Send
 from logline.lifespan import run_lifespan
 from logline.step import Outcome, Stopwatch, outcome_of_raised
-from logline.trace import request_trace, span_fields
+from logline.trace import attached, request_trace, span_fields
 from logline.websocket import SessionEnd, run_websocket
 
 __all__: list[str] = []
@@ -197,17 +197,22 @@ class RequestLine:
             return
         self._written = True
         status = self._status or _STATUS_WHEN_NONE_SENT
-        _request_logger.info(
-            REQUEST_EVENT,
-            outcome=raised_outcome or _outcome_of_status(status),
-            method=self._method,
-            route=self._record.route or None,
-            status=status,
-            duration_ms=self._stopwatch.elapsed_ms(),
-            sub=self._record.sub,
-            ip=self._record.ip,
-            **span_fields(self._span),
-        )
+        with self._in_own_trace():
+            _request_logger.info(
+                REQUEST_EVENT,
+                outcome=raised_outcome or _outcome_of_status(status),
+                method=self._method,
+                route=self._record.route or None,
+                status=status,
+                duration_ms=self._stopwatch.elapsed_ms(),
+                sub=self._record.sub,
+                ip=self._record.ip,
+                **span_fields(self._span),
+            )
+
+    def _in_own_trace(self) -> AbstractContextManager[None]:
+        """The request's span current, so the line's `trace_id` is its span ids' trace."""
+        return nullcontext() if self._span is None else attached(self._span)
 
 
 def _outcome_of_exception(exception_type: type[BaseException] | None) -> Outcome | None:
