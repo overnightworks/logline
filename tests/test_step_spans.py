@@ -192,6 +192,8 @@ def test_a_step_in_a_turn_without_a_valid_traceparent_names_the_turns_fresh_span
     (step,) = lines_of(lines, STEP_LOGGER)
     assert step["trace_id"] == str(answers[0]["traceparent"]).split("-")[1]
     assert _HEX_SPAN_ID.fullmatch(str(step["parent_span_id"]))
+    (session,) = session_lines(lines)
+    assert step["parent_span_id"] != session["span_id"]
 
 
 @pytest.mark.parametrize("implementation", WEBSOCKET_IMPLEMENTATIONS)
