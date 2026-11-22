@@ -8,6 +8,7 @@ from tests.support.serving import Call, get
 from tests.support.threaded_host import (
     CANCELLED_PATH,
     ENDED_EARLY_PATH,
+    ENDED_IN_ANOTHER_TRACE_PATH,
     HANDLE_ERROR_EVENT,
     HANDLED_EVENT,
     HOST_LOGGER,
@@ -173,3 +174,14 @@ def test_a_step_entered_outside_a_trace_keeps_null_span_ids_when_it_ends_inside_
 
     (step,) = lines_of(lines, HOST_LOGGER)
     assert (step["span_id"], step["parent_span_id"]) == (None, None)
+
+
+def test_a_request_line_ended_inside_another_trace_keeps_its_own_trace_and_span(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, lines = serve_threaded_requests(
+        capsys, [Call(ENDED_IN_ANOTHER_TRACE_PATH, headers={"traceparent": _INCOMING_TRACEPARENT})]
+    )
+
+    (line,) = request_lines(lines)
+    assert (line["trace_id"], line["parent_span_id"]) == (_INCOMING_TRACE_ID, _INCOMING_SPAN_ID)
