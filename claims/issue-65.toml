@@ -1,0 +1,8 @@
+claim_id = "4e9c5e863f2b48729ddeff8993377688"
+agent = "Claude 37419b29-f987-4748-86bc-4d4eb3a66029"
+role = "builder"
+base = "b1031e32294bb2a37999b2688b069ff03af8d828"
+branch = "claude/issue-65-closing-lines-write-their-span-and-paren"
+scope = ["README.md", "docs/ARCHITECTURE.md", "src/logline/request.py", "src/logline/standard.json", "src/logline/standard.py", "src/logline/step.py", "src/logline/trace.py", "tests"]
+opened_commit = "731b0a82052427d1f83da92e0fc58a4648fa4964"
+whole_reason = "One extension of the record: the span edges of request, session and step lines change together with their one owner in trace, the standard's data, the proof and the documents."
