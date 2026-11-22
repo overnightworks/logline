@@ -15,7 +15,12 @@ from logline import configure, outgoing_headers
 from logline.lifespan import LIFESPAN_LOGGER_NAME
 from logline.trace import current_trace_id, current_traceparent, unit_trace
 from tests.support.apps import BAGGAGE_PATH, HANDLER_BAGGAGE_KEY, WEBSOCKET_TRACE_PATH, build_app
-from tests.support.incoming_trace import INCOMING_SPAN_ID, INCOMING_TRACE_ID, TRACEPARENT_PATTERN
+from tests.support.incoming_trace import (
+    INCOMING_SPAN_ID,
+    INCOMING_TRACE_ID,
+    INCOMING_TRACEPARENT,
+    TRACEPARENT_PATTERN,
+)
 from tests.support.lines import Line, json_lines, lines_of, request_lines, session_lines
 from tests.support.propagators import SPAN_HEADER, SingleHeaderPropagator
 from tests.support.serving import WEBSOCKET_IMPLEMENTATIONS, serve
@@ -50,7 +55,7 @@ def test_an_incoming_traceparent_gives_every_line_of_the_request_its_trace_id(
     capsys: pytest.CaptureFixture[str], path: str, lines_in_the_request: int
 ) -> None:
     configure("trace-service")
-    traceparent = f"00-{INCOMING_TRACE_ID}-{INCOMING_SPAN_ID}-01"
+    traceparent = INCOMING_TRACEPARENT
 
     body = _call(path, traceparent=traceparent, tracestate=_INCOMING_TRACESTATE)
 
@@ -104,7 +109,7 @@ def test_the_error_line_of_an_unhandled_exception_carries_the_requests_trace_id(
                 "/boom",
                 headers={
                     "x-secret": "a value",
-                    "traceparent": f"00-{INCOMING_TRACE_ID}-{INCOMING_SPAN_ID}-01",
+                    "traceparent": INCOMING_TRACEPARENT,
                 },
             )
 
@@ -202,7 +207,7 @@ def test_with_otel_propagators_none_a_request_starts_a_new_trace_and_hands_nothi
 ) -> None:
     configure("trace-service")
 
-    body = _call("/trace", traceparent=f"00-{INCOMING_TRACE_ID}-{INCOMING_SPAN_ID}-01")
+    body = _call("/trace", traceparent=INCOMING_TRACEPARENT)
 
     (request_line,) = request_lines(json_lines(capsys.readouterr().out))
     assert request_line["trace_id"] not in {None, INCOMING_TRACE_ID}
@@ -227,7 +232,7 @@ def test_a_global_propagator_reading_another_header_than_traceparent_continues_t
 def test_with_otel_propagators_none_a_unit_starts_a_new_trace_and_hands_nothing_on() -> None:
     configure("trace-service")
 
-    with unit_trace(f"00-{INCOMING_TRACE_ID}-{INCOMING_SPAN_ID}-01"):
+    with unit_trace(INCOMING_TRACEPARENT):
         assert current_trace_id() not in {None, INCOMING_TRACE_ID}
         assert current_traceparent() is None
 
@@ -263,7 +268,7 @@ def test_an_incoming_traceparent_on_the_upgrade_gives_the_session_its_trace_id_a
     capsys: pytest.CaptureFixture[str], implementation: str
 ) -> None:
     upgrade = {
-        "traceparent": f"00-{INCOMING_TRACE_ID}-{INCOMING_SPAN_ID}-01",
+        "traceparent": INCOMING_TRACEPARENT,
         "tracestate": _INCOMING_TRACESTATE,
     }
 
@@ -343,7 +348,7 @@ def _turn(traceparent: str | None = None, *, failure: str | None = None) -> dict
 def test_a_turn_that_raises_leaves_the_sessions_trace_on_the_sockets_later_lines(
     capsys: pytest.CaptureFixture[str], implementation: str
 ) -> None:
-    incoming = f"00-{INCOMING_TRACE_ID}-{INCOMING_SPAN_ID}-01"
+    incoming = INCOMING_TRACEPARENT
 
     frames, lines, session_line = _play_turns(
         capsys, implementation, [_turn(incoming, failure="the turn failed"), _turn()]
@@ -371,7 +376,7 @@ def test_a_turn_that_raises_leaves_the_sessions_trace_on_the_sockets_later_lines
 def test_two_turns_carrying_one_traceparent_log_that_trace_id_and_hand_on_the_senders_span(
     capsys: pytest.CaptureFixture[str], implementation: str
 ) -> None:
-    incoming = f"00-{INCOMING_TRACE_ID}-{INCOMING_SPAN_ID}-01"
+    incoming = INCOMING_TRACEPARENT
 
     frames, lines, _ = _play_turns(capsys, implementation, [_turn(incoming), _turn(incoming)])
 
