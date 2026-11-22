@@ -646,8 +646,9 @@ async def ask_model(client, request):
   another task or turn still writes all three from one trace. When the block ends, the previous span is current
   again, unless the block ends in another context than it began in, whose current span stays as it is. A step no
   block surrounds takes a fresh span when `end()` or `end_cancelled()` writes its line, under the current span; one
-  that ends inside its block writes the block's span. A step outside any trace has no span: `span_id` and
-  `parent_span_id` are `null`, and it starts no trace.
+  that ends inside its block writes the block's span. A step whose line `end()` or `end_cancelled()` already
+  wrote opens no span when it is then entered as a block: a call or step inside names the span the block ran under.
+  A step outside any trace has no span: `span_id` and `parent_span_id` are `null`, and it starts no trace.
 - The line is at INFO. `step.degraded()` makes it a warning, such as a `refused` call the unit retried. A
   `failed` step is at ERROR, or at WARNING after `step.handled()` when its unit goes on; a step that is
   degraded and failed unhandled stays at ERROR.

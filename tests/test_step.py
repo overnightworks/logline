@@ -4,6 +4,7 @@ import pytest
 
 from logline import Outcome, StepTimer, configure
 from logline.trace import current_trace_id
+from tests.support.incoming_trace import INCOMING_TRACE_ID, INCOMING_TRACEPARENT
 from tests.support.lines import Line, json_lines, lines_of, request_lines
 from tests.support.serving import get, serve_requests, serve_requests_answered
 from tests.support.step_routes import (
@@ -15,8 +16,6 @@ from tests.support.step_routes import (
     STEP_REFUSAL_REASON,
 )
 
-_TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
-_TRACEPARENT = f"00-{_TRACE_ID}-00f067aa0ba902b7-01"
 _INFO, _WARNING, _ERROR = "info", "warning", "error"
 
 
@@ -459,11 +458,11 @@ def test_a_step_given_a_start_in_the_future_raises_and_writes_no_line(
 def test_a_step_line_carries_the_trace_of_the_request_it_ran_in(
     capsys: pytest.CaptureFixture[str], path: str
 ) -> None:
-    _, lines = serve_requests(capsys, [get(path, traceparent=_TRACEPARENT)])
+    _, lines = serve_requests(capsys, [get(path, traceparent=INCOMING_TRACEPARENT)])
 
-    assert _step_line(lines)["trace_id"] == _TRACE_ID
+    assert _step_line(lines)["trace_id"] == INCOMING_TRACE_ID
     (request,) = request_lines(lines)
-    assert request["trace_id"] == _TRACE_ID
+    assert request["trace_id"] == INCOMING_TRACE_ID
 
 
 def test_a_step_line_is_written_through_the_logger_the_caller_names_without_configure(

@@ -8,14 +8,17 @@ from websockets.asyncio.client import connect
 from logline import REQUEST_EVENT, configure
 from logline.standard import CLOSING_LINE_KEYS
 from tests.support.apps import build_app
+from tests.support.incoming_trace import (
+    INCOMING_SPAN_ID,
+    INCOMING_TRACE_ID,
+    INCOMING_TRACEPARENT,
+    TRACEPARENT_PATTERN,
+)
 from tests.support.lines import Line, json_lines, lines_of, request_lines, session_lines
 from tests.support.serving import WEBSOCKET_IMPLEMENTATIONS, get, serve, serve_requests_answered
 from tests.support.span_routes import CALLEE_PATH, TURNS_PATH
 from tests.support.step_routes import STEP_EVENT, STEP_LOGGER
 
-_TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
-_SPAN_ID = "00f067aa0ba902b7"
-_TRACEPARENT = f"00-{_TRACE_ID}-{_SPAN_ID}-01"
 _HEX_SPAN_ID = re.compile(r"[0-9a-f]{16}")
 _OPENTELEMETRY_CONTEXT_LOGGER = "opentelemetry.context"
 
@@ -26,9 +29,9 @@ def _request_of(lines: list[Line], route: str) -> Line:
 
 
 def _span_of_traceparent(traceparent: object) -> str:
-    match = re.fullmatch(r"00-[0-9a-f]{32}-([0-9a-f]{16})-[0-9a-f]{2}", str(traceparent))
+    match = TRACEPARENT_PATTERN.match(str(traceparent))
     assert match
-    return match[1]
+    return match["span_id"]
 
 
 @pytest.mark.parametrize(
@@ -56,11 +59,11 @@ def _span_of_traceparent(traceparent: object) -> str:
 def test_a_step_line_names_its_own_span_and_the_requests_span_as_its_parent(
     capsys: pytest.CaptureFixture[str], path: str
 ) -> None:
-    _, lines, _ = serve_requests_answered(capsys, [get(path, traceparent=_TRACEPARENT)])
+    _, lines, _ = serve_requests_answered(capsys, [get(path, traceparent=INCOMING_TRACEPARENT)])
 
     (request,) = request_lines(lines)
     (step,) = lines_of(lines, STEP_LOGGER)
-    assert step["trace_id"] == request["trace_id"] == _TRACE_ID
+    assert step["trace_id"] == request["trace_id"] == INCOMING_TRACE_ID
     assert step["parent_span_id"] == request["span_id"]
     assert _HEX_SPAN_ID.fullmatch(str(step["span_id"]))
     assert step["span_id"] != request["span_id"]
@@ -70,7 +73,7 @@ def test_a_step_line_names_its_own_span_and_the_requests_span_as_its_parent(
 @pytest.mark.parametrize(
     ("incoming", "parent_span_id"),
     [
-        pytest.param({"traceparent": _TRACEPARENT}, _SPAN_ID, id="incoming"),
+        pytest.param({"traceparent": INCOMING_TRACEPARENT}, INCOMING_SPAN_ID, id="incoming"),
         pytest.param({}, None, id="new-trace"),
     ],
 )
@@ -89,7 +92,7 @@ def test_a_step_inside_a_step_names_the_outer_step_as_its_parent_and_hands_on_it
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _, lines, answers = serve_requests_answered(
-        capsys, [get("/span/nested", traceparent=_TRACEPARENT)]
+        capsys, [get("/span/nested", traceparent=INCOMING_TRACEPARENT)]
     )
 
     inner, outer = lines_of(lines, STEP_LOGGER)
@@ -103,12 +106,14 @@ def test_a_step_inside_a_step_names_the_outer_step_as_its_parent_and_hands_on_it
 def test_a_callee_requested_from_inside_a_step_names_the_step_as_its_parent(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _, lines, _ = serve_requests_answered(capsys, [get("/span/call", traceparent=_TRACEPARENT)])
+    _, lines, _ = serve_requests_answered(
+        capsys, [get("/span/call", traceparent=INCOMING_TRACEPARENT)]
+    )
 
     (step,) = lines_of(lines, STEP_LOGGER)
     callee = _request_of(lines, CALLEE_PATH)
     assert callee["parent_span_id"] == step["span_id"]
-    assert callee["trace_id"] == _TRACE_ID
+    assert callee["trace_id"] == INCOMING_TRACE_ID
     assert step["parent_span_id"] == _request_of(lines, "/span/call")["span_id"]
 
 
@@ -117,13 +122,27 @@ def test_a_step_that_ended_leaves_the_requests_span_current_for_the_next_step(
     capsys: pytest.CaptureFixture[str], how: str
 ) -> None:
     _, lines, _ = serve_requests_answered(
-        capsys, [get(f"/span/after/{how}", traceparent=_TRACEPARENT)]
+        capsys, [get(f"/span/after/{how}", traceparent=INCOMING_TRACEPARENT)]
     )
 
     (request,) = request_lines(lines)
     first, second = lines_of(lines, STEP_LOGGER)
     assert (first["position"], second["position"]) == ("first", "second")
     assert {first["parent_span_id"], second["parent_span_id"]} == {request["span_id"]}
+
+
+@pytest.mark.parametrize("how", ["end", "end-cancelled"])
+def test_a_step_entered_after_its_line_was_written_leaves_a_step_inside_under_the_requests_span(
+    capsys: pytest.CaptureFixture[str], how: str
+) -> None:
+    _, lines, _ = serve_requests_answered(
+        capsys, [get(f"/span/entered-after/{how}", traceparent=INCOMING_TRACEPARENT)]
+    )
+
+    (request,) = request_lines(lines)
+    written, inside = lines_of(lines, STEP_LOGGER)
+    assert (written["position"], inside["position"]) == ("written", "inside")
+    assert inside["parent_span_id"] == request["span_id"]
 
 
 def test_a_field_named_like_a_span_key_never_reaches_the_line(
@@ -176,10 +195,10 @@ def _play(
 def test_a_step_in_a_turn_names_the_senders_span_as_its_parent(
     capsys: pytest.CaptureFixture[str], implementation: str
 ) -> None:
-    answers, lines = _play(capsys, implementation, [_turn("step", _TRACEPARENT)])
+    answers, lines = _play(capsys, implementation, [_turn("step", INCOMING_TRACEPARENT)])
 
     (step,) = lines_of(lines, STEP_LOGGER)
-    assert (step["trace_id"], step["parent_span_id"]) == (_TRACE_ID, _SPAN_ID)
+    assert (step["trace_id"], step["parent_span_id"]) == (INCOMING_TRACE_ID, INCOMING_SPAN_ID)
     assert _span_of_traceparent(answers[0]["traceparent"]) == step["span_id"]
 
 
@@ -208,14 +227,14 @@ def test_a_step_closed_in_another_turn_keeps_its_own_trace(
         capsys,
         implementation,
         [
-            _turn("enter", _TRACEPARENT),
+            _turn("enter", INCOMING_TRACEPARENT),
             _turn("exit", f"00-{other_trace}-{other_span}-01"),
             _turn("step", f"00-{other_trace}-{later_span}-01"),
         ],
     )
 
     closed, later = lines_of(lines, STEP_LOGGER)
-    assert (closed["trace_id"], closed["parent_span_id"]) == (_TRACE_ID, _SPAN_ID)
+    assert (closed["trace_id"], closed["parent_span_id"]) == (INCOMING_TRACE_ID, INCOMING_SPAN_ID)
     assert (later["trace_id"], later["parent_span_id"]) == (other_trace, later_span)
     assert lines_of(lines, _OPENTELEMETRY_CONTEXT_LOGGER) == []
 
@@ -231,13 +250,13 @@ def test_a_step_run_after_one_closed_in_another_turn_belongs_to_the_current_turn
         capsys,
         implementation,
         [
-            _turn("enter", _TRACEPARENT),
+            _turn("enter", INCOMING_TRACEPARENT),
             _turn("exit-then-step", f"00-{other_trace}-{other_span}-01"),
         ],
     )
 
     closed, later = lines_of(lines, STEP_LOGGER)
-    assert (closed["trace_id"], closed["parent_span_id"]) == (_TRACE_ID, _SPAN_ID)
+    assert (closed["trace_id"], closed["parent_span_id"]) == (INCOMING_TRACE_ID, INCOMING_SPAN_ID)
     assert (later["trace_id"], later["parent_span_id"]) == (other_trace, other_span)
 
 

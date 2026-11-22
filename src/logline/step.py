@@ -11,6 +11,7 @@ import time
 from collections.abc import Callable
 from enum import StrEnum
 from types import TracebackType
+from typing import NamedTuple
 
 from opentelemetry.context import Context, get_current
 
@@ -27,6 +28,13 @@ _TIMER_KEYS = (
 )
 # Logger.makeRecord raises KeyError on an extra key that names one of these record attributes.
 _RECORD_ATTRIBUTES = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
+
+
+class _BlockSpan(NamedTuple):
+    """The span a block opened and the context it replaced."""
+
+    span: Context
+    previous: Context
 
 
 class Outcome(StrEnum):
@@ -83,8 +91,10 @@ class StepTimer:
       generator's finaliser or a later turn that closes the step writes the same three. A step no
       block surrounds takes a fresh span when `end` or `end_cancelled` writes its line, under the
       then current span. Outside a trace a step has no span: both ids are `null`, and the step
-      starts no trace. When the block ends the previous span is current again, unless the block
-      ends in another context than it began in, which is left as it is.
+      starts no trace. A step whose line is already written, by `end` or `end_cancelled`, opens no
+      span when it is entered as a block: what runs inside names the span it ran under. When the
+      block ends the previous span is current again, unless the block ends in another context than
+      it began in, which is left as it is.
     - `event` is the literal `<noun>.ended` name and `fields` are the step's id fields. The timer
       owns `duration_ms`, `outcome`, `reason`, `first_output_ms`, `error_type`, `span_id` and
       `parent_span_id`: a field of one of these names is dropped, and the line carries them only as
@@ -132,8 +142,7 @@ class StepTimer:
         self._first_output_ms: float | None = None
         self._written = False
         self._entered = False
-        self._span: Context | None = None
-        self._previous: Context | None = None
+        self._block_span: _BlockSpan | None = None
         self._entry_context: Context | None = None
 
     def _read_clock(self) -> float:
@@ -203,23 +212,27 @@ class StepTimer:
     def _enter_span(self) -> None:
         self._entered = True
         self._entry_context = get_current()
-        self._span = open_step_span()
-        if self._span is not None:
-            self._previous = enter_span(self._span)
+        # A step whose line is written has no line left to carry a span, so it opens none.
+        span = None if self._written else open_step_span()
+        if span is not None:
+            self._block_span = _BlockSpan(span, enter_span(span))
 
     def _end_block(self, exc: BaseException | None) -> None:
         try:
             self._write_line(exc)
         finally:
-            if self._span is not None and self._previous is not None:
-                leave_span(self._span, self._previous)
+            if self._block_span is not None:
+                leave_span(*self._block_span)
 
     def _write_line(self, exc: BaseException | None, *, cancelled: bool = False) -> None:
         if self._written:
             return
         self._written = True
         outcome = self._outcome(exc, cancelled)
-        span = self._span if self._entered else open_step_span()
+        if self._entered:
+            span = None if self._block_span is None else self._block_span.span
+        else:
+            span = open_step_span()
         fields: dict[str, Scalar] = {
             **self._fields,
             **span_fields(span),
@@ -235,11 +248,7 @@ class StepTimer:
         if outcome is Outcome.FAILED:
             fields.update(self._failure_fields(exc))
         # A step entered outside a trace logs in the context it was entered in, not the closing one.
-        line_context = self._entry_context if span is None else span
-        if line_context is None:
-            self._logger.log(self._level(outcome), self._event, extra=fields)
-            return
-        with attached(line_context):
+        with attached(self._entry_context if span is None else span):
             self._logger.log(self._level(outcome), self._event, extra=fields)
 
     def _failure_fields(self, exc: BaseException | None) -> dict[str, Scalar]:

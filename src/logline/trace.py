@@ -142,13 +142,17 @@ def leave_span(span: context.Context, previous: context.Context) -> None:
 
 
 @contextmanager
-def attached(span: context.Context) -> Iterator[None]:
-    """Run the block, such as one log call, with `span` current, attached and detached here."""
-    token = context.attach(span)
+def attached(span: context.Context | None) -> Iterator[None]:
+    """Run the block, such as one log call, with `span` current, attached and detached here.
+
+    With None the block runs in the context it finds.
+    """
+    token = None if span is None else context.attach(span)
     try:
         yield
     finally:
-        context.detach(token)
+        if token is not None:
+            context.detach(token)
 
 
 def span_fields(span: context.Context | None) -> dict[str, str | None]:

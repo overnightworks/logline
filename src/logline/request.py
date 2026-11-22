@@ -5,7 +5,7 @@ This module imports no web framework: it speaks ASGI, and `RequestLine` serves a
 """
 
 from collections.abc import Iterable
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from enum import StrEnum
 from types import TracebackType
@@ -197,7 +197,8 @@ class RequestLine:
             return
         self._written = True
         status = self._status or _STATUS_WHEN_NONE_SENT
-        with self._in_own_trace():
+        # The request's span is current, so the line's `trace_id` is its span ids' trace.
+        with attached(self._span):
             _request_logger.info(
                 REQUEST_EVENT,
                 outcome=raised_outcome or _outcome_of_status(status),
@@ -209,10 +210,6 @@ class RequestLine:
                 ip=self._record.ip,
                 **span_fields(self._span),
             )
-
-    def _in_own_trace(self) -> AbstractContextManager[None]:
-        """The request's span current, so the line's `trace_id` is its span ids' trace."""
-        return nullcontext() if self._span is None else attached(self._span)
 
 
 def _outcome_of_exception(exception_type: type[BaseException] | None) -> Outcome | None:

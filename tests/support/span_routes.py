@@ -71,6 +71,19 @@ def _add_nesting_routes(app: FastAPI) -> None:
             pass
         return {}
 
+    @app.get("/span/entered-after/{how}")
+    async def entered_after(how: str) -> dict[str, str | None]:
+        """A step whose line `how` wrote, then entered as a block with a step inside."""
+        step = _step("written")
+        if how == "end":
+            step.end()
+        else:
+            step.end_cancelled()
+        async with step:
+            async with _step("inside"):
+                pass
+        return {}
+
 
 def _add_generator_routes(app: FastAPI) -> None:
     """Routes whose step lives in a generator or a context manager."""
