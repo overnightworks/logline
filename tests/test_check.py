@@ -542,7 +542,10 @@ def _assert_work_grows_linearly(source_of_size: Callable[[int], str]) -> None:
     ids=["one function logged once", "one function logged twice"],
 )
 def test_a_crafted_file_of_repeated_functions_is_checked_in_linear_time(definition: str) -> None:
-    _assert_work_grows_linearly(lambda repeats: _STDLIB + (definition + 'note("job.done")\n') * repeats)
+    def source_of(repeats: int) -> str:
+        return _STDLIB + (definition + 'note("job.done")\n') * repeats
+
+    _assert_work_grows_linearly(source_of)
 
 
 def test_alike_functions_with_distinct_parameters_are_checked_in_linear_time() -> None:
