@@ -1,6 +1,6 @@
 import ast
 import sys
-import time
+from collections.abc import Callable
 from pathlib import Path, PurePath
 
 import pytest
@@ -501,6 +501,38 @@ def test_a_source_breaks_exactly_the_rows_its_rule_names(source: str, expected: 
     assert _rules(source) == expected
 
 
+def _lines_executed_checking(source: str) -> int:
+    """Count the Python lines `check` runs for `source`: a work measure with no clock in it."""
+    tool = sys.monitoring.PROFILER_ID
+    executed = 0
+
+    def count_line(code: object, line_number: int) -> None:
+        nonlocal executed
+        executed += 1
+
+    sys.monitoring.use_tool_id(tool, "linear-time-test")
+    try:
+        sys.monitoring.register_callback(tool, sys.monitoring.events.LINE, count_line)
+        sys.monitoring.set_events(tool, sys.monitoring.events.LINE)
+        check(source, PurePath("host.py"))
+    finally:
+        sys.monitoring.set_events(tool, 0)
+        sys.monitoring.register_callback(tool, sys.monitoring.events.LINE, None)
+        sys.monitoring.free_tool_id(tool)
+    return executed
+
+
+def _assert_work_grows_linearly(source_of_size: Callable[[int], str]) -> None:
+    base = 250
+    assert not check(source_of_size(base), PurePath("host.py"))
+
+    work = _lines_executed_checking(source_of_size(base))
+    doubled_work = _lines_executed_checking(source_of_size(2 * base))
+
+    # Doubling the input doubles linear work and quadruples quadratic work; 3 sits between them.
+    assert doubled_work < 3 * work
+
+
 @pytest.mark.parametrize(
     "definition",
     [
@@ -510,28 +542,18 @@ def test_a_source_breaks_exactly_the_rows_its_rule_names(source: str, expected: 
     ids=["one function logged once", "one function logged twice"],
 )
 def test_a_crafted_file_of_repeated_functions_is_checked_in_linear_time(definition: str) -> None:
-    repeats = 4000
-    source = _STDLIB + (definition + 'note("job.done")\n') * repeats
+    def source_of(repeats: int) -> str:
+        return _STDLIB + (definition + 'note("job.done")\n') * repeats
 
-    started = time.perf_counter()
-    findings = check(source, PurePath("host.py"))
-    elapsed = time.perf_counter() - started
-
-    assert not findings
-    assert elapsed < 3.0  # quadratic scanning took 15 s here; linear takes well under 1 s
+    _assert_work_grows_linearly(source_of)
 
 
 def test_alike_functions_with_distinct_parameters_are_checked_in_linear_time() -> None:
-    repeats = 2000
-    definitions = "".join(f"def note(e{n}):\n    logger.info(e{n})\n" for n in range(repeats))
-    source = _STDLIB + definitions + 'note("job.done")\n' * repeats
+    def source_of(repeats: int) -> str:
+        definitions = "".join(f"def note(e{n}):\n    logger.info(e{n})\n" for n in range(repeats))
+        return _STDLIB + definitions + 'note("job.done")\n' * repeats
 
-    started = time.perf_counter()
-    findings = check(source, PurePath("host.py"))
-    elapsed = time.perf_counter() - started
-
-    assert not findings
-    assert elapsed < 1.5  # quadratic scanning took 3.5 s here; linear takes well under 1 s
+    _assert_work_grows_linearly(source_of)
 
 
 def test_a_finding_names_its_path_and_the_place_of_the_node() -> None:
