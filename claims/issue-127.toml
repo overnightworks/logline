@@ -1,7 +1,0 @@
-claim_id = "26d609363df24f88a863f50703cafd6e"
-agent = "Claude 6ae51efc-85df-4386-813e-74f7c26c23cd"
-role = "builder"
-base = "ebe950f00d0b1e27b000a7beb77946c6cfb60f22"
-branch = "claude/issue-127-the-check-s-linear-time-tests-measure-wo"
-scope = ["tests/test_check.py"]
-opened_commit = "b6cfc30938a0de45f2148c7079ec3cee629e7fba"
