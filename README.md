@@ -776,8 +776,9 @@ def test_the_app_logs_its_request(capsys):
 `logline.check.check(source, path)` returns the rows one Python source breaks, as a tuple of
 `Finding(path, line, column, rule)`, in source order; `line` and `column` count from 1, the column in characters. It is a pure function
 over text: it never imports or runs the checked code, and a source that does not parse raises `SyntaxError`.
-`path` only labels the rows. Once quality#889 lands, the fleet's quality gate runs it over every host, with the rules of the logline
-tag the gate pins, not the tag the host pins; until then nothing runs it. Importing it runs `logline/__init__.py`, so `structlog` and
+`path` only labels the rows. Quality's gate runs it over every host whose root `pyproject.toml` declares logline, with the rules of the logline
+tag the gate pins, not the tag the host pins; it is report-only until quality#914 makes it red.
+Importing it runs `logline/__init__.py`, so `structlog` and
 `opentelemetry-api` must be installed: the check needs only the standard library, but a lazy `__init__` would make every public name a deferred import, so it stays eager. `Finding`, `Rule` and `check` are public, and renaming a `Rule` code is
 a breaking change.
 
@@ -791,6 +792,7 @@ a breaking change.
 | `uvicorn_log_config` | `uvicorn.run`, `uvicorn.main.run` or `uvicorn.Config` is called without `log_config=None` |
 | `uvicorn_log_level` | `uvicorn.run`, `uvicorn.main.run` or `uvicorn.Config` is called with a `log_level` |
 | `uvicorn_options_hidden` | one of them is called with a `**` argument, a `*` argument or a positional argument after the app, which hide its options |
+| `hand_written_ended` | a logging call's literal event, or its one-hop event parameter when some call passes such a literal, matches `event_name_pattern` of `standard.json` and ends in `closing_event_suffix` of `standard.json` (`.ended`), which only `StepTimer` writes with its span; a `StepTimer` event is no logging call and is not reported |
 
 A logging call is `debug`, `info`, `warning`, `error`, `exception`, `critical` or `log` (the event is its
 second argument) on a logger the same file binds from `logging.getLogger`, `structlog.get_logger`,

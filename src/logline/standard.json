@@ -1,5 +1,6 @@
 {
   "base_keys": ["ts", "level", "service", "version", "logger", "event", "trace_id"],
+  "closing_event_suffix": ".ended",
   "closing_line_keys": ["span_id", "parent_span_id"],
   "denied_field_names": [
     "duration",
