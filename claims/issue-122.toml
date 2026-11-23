@@ -1,8 +1,0 @@
-claim_id = "7633ec83bb1448f6aceca30b3ea2fe54"
-agent = "Claude 6ae51efc-85df-4386-813e-74f7c26c23cd"
-role = "builder"
-base = "7c4915e7b713fb23b37c6035bbf7c22a16fb7380"
-branch = "claude/issue-122-logline-pins-quality-v0-24-0"
-scope = [".github/workflows/ci.yml", ".github/workflows/code-scanning.yml", ".github/workflows/release.yml", "pyproject.toml", "uv.lock"]
-opened_commit = "ed2c702a6905174017c1e5d9dda4fd9d38f63275"
-whole_reason = "One quality release taken: its four pins, the test dependency it asks for and the two pytest calls it judges."
