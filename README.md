@@ -792,7 +792,7 @@ a breaking change.
 | `uvicorn_log_config` | `uvicorn.run`, `uvicorn.main.run` or `uvicorn.Config` is called without `log_config=None` |
 | `uvicorn_log_level` | `uvicorn.run`, `uvicorn.main.run` or `uvicorn.Config` is called with a `log_level` |
 | `uvicorn_options_hidden` | one of them is called with a `**` argument, a `*` argument or a positional argument after the app, which hide its options |
-| `hand_written_ended` | a logging call's literal event, or its one-hop event parameter when some call passes such a literal, ends in `closing_event_suffix` of `standard.json` (`.ended`), which only `StepTimer` writes with its span; a `StepTimer` event is no logging call and is not reported |
+| `hand_written_ended` | a logging call's literal event, or its one-hop event parameter when some call passes such a literal, matches `event_name_pattern` of `standard.json` and ends in `closing_event_suffix` of `standard.json` (`.ended`), which only `StepTimer` writes with its span; a `StepTimer` event is no logging call and is not reported |
 
 A logging call is `debug`, `info`, `warning`, `error`, `exception`, `critical` or `log` (the event is its
 second argument) on a logger the same file binds from `logging.getLogger`, `structlog.get_logger`,

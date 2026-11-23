@@ -117,6 +117,15 @@ def _is_matching_literal(node: ast.expr | None) -> bool:
     )
 
 
+def _count_at(counters: dict[bool, Counter[int]], position: int, *, is_method: bool) -> int:
+    """The calls counted at a parameter position; a bound method call shifts its index by one."""
+    return sum(
+        counter[position - 1 if is_method and bound else position]
+        for bound, counter in counters.items()
+        if position - (1 if is_method and bound else 0) >= 0
+    )
+
+
 class _CallsOfName:
     """The calls of one name, indexed once so each parameter's verdict is a lookup."""
 
@@ -139,10 +148,12 @@ class _CallsOfName:
         for index, argument in enumerate(call.args):
             if isinstance(argument, ast.Starred):
                 break
-            if _is_matching_literal(argument):
-                self._matching_at[bound][index] += 1
-            if _is_hand_written_ended(argument):
-                self._ended_at[bound][index] += 1
+            for is_fact, counters in (
+                (_is_matching_literal, self._matching_at),
+                (_is_hand_written_ended, self._ended_at),
+            ):
+                if is_fact(argument):
+                    counters[bound][index] += 1
 
     def all_pass_literal(self, parameter: str, position: int | None, *, is_method: bool) -> bool:
         """Whether every call passes `parameter` a matching literal, by keyword or by position."""
@@ -163,18 +174,10 @@ class _CallsOfName:
             return True
         if position is None:
             return False
-        return any(
-            counter[position - 1 if is_method and bound else position] > 0
-            for bound, counter in self._ended_at.items()
-            if position - (1 if is_method and bound else 0) >= 0
-        )
+        return _count_at(self._ended_at, position, is_method=is_method) > 0
 
     def _matching_count(self, position: int, *, is_method: bool) -> int:
-        return sum(
-            counter[position - 1 if is_method and bound else position]
-            for bound, counter in self._matching_at.items()
-            if position - (1 if is_method and bound else 0) >= 0
-        )
+        return _count_at(self._matching_at, position, is_method=is_method)
 
     @staticmethod
     def _matches_by_position(call: ast.Call, position: int, *, is_method: bool) -> int:
