@@ -1,8 +1,0 @@
-claim_id = "2c0b697eb87c40aba2b52370daf2ef3b"
-agent = "Claude 6ae51efc-85df-4386-813e-74f7c26c23cd"
-role = "builder"
-base = "cca495315f8fb25dae85851592a2c42376052c58"
-branch = "claude/issue-121-the-check-reports-a-hand-written-ended-l"
-scope = ["README.md", "src/logline/check.py", "src/logline/standard.json", "src/logline/standard.py", "tests/test_check.py"]
-opened_commit = "5eba18a8f1068fa4c843dec679d6c1643bc97f2a"
-whole_reason = "One check rule, the one standard value it reads and the README rows that state it."
