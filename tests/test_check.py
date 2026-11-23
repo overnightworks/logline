@@ -10,7 +10,7 @@ from logline.check import Finding, Rule, check
 
 _STDLIB = "import logging\nlogger = logging.getLogger(__name__)\n"
 _STRUCTLOG = "import structlog\nlog = structlog.get_logger()\n"
-_ARRIVED = "turn.ended"
+_ARRIVED = "turn.arrived"
 
 
 def _rules(source: str) -> list[Rule]:
@@ -24,10 +24,10 @@ def _case(case_id: str, source: str, *expected: Rule) -> object:
 _EVENT_CASES = [
     _case("stdlib literal is clean", _STDLIB + f'logger.info("{_ARRIVED}")\n'),
     _case("structlog literal is clean", _STRUCTLOG + f'log.info("{_ARRIVED}", turn_id=3)\n'),
-    _case("logging module itself", 'import logging\nlogging.warning("turn.ended")\n'),
+    _case("logging module itself", 'import logging\nlogging.warning("turn.arrived")\n'),
     _case(
         "logging.log has the event second",
-        _STDLIB + 'logger.log(20, "turn.ended")\n',
+        _STDLIB + 'logger.log(20, "turn.arrived")\n',
     ),
     _case(
         "logging.log with a message as event",
@@ -41,7 +41,7 @@ _EVENT_CASES = [
         _STDLIB + 'logger.info("turn %s.ended" % 1)\n',
         Rule.EVENT_NOT_LITERAL,
     ),
-    _case("byte event", _STDLIB + 'logger.info(b"turn.ended")\n', Rule.EVENT_NOT_LITERAL),
+    _case("byte event", _STDLIB + 'logger.info(b"turn.arrived")\n', Rule.EVENT_NOT_LITERAL),
     _case("starred event", _STDLIB + "logger.info(*parts)\n", Rule.EVENT_NOT_LITERAL),
     _case("call without an event", _STDLIB + "logger.info()\n"),
     _case("message as event", _STDLIB + 'logger.info("Turn ended")\n', Rule.EVENT_NAME_SHAPE),
@@ -155,24 +155,24 @@ _HOP_CASES = [
     _case(
         "parameter with literal callers",
         _STDLIB
-        + 'def note(event):\n    logger.info(event)\n\nnote("turn.ended")\nnote("turn.failed")\n',
+        + 'def note(event):\n    logger.info(event)\n\nnote("turn.arrived")\nnote("turn.failed")\n',
     ),
     _case(
         "parameter passed by keyword",
-        _STDLIB + 'def note(*, event):\n    logger.info(event)\n\nnote(event="turn.ended")\n',
+        _STDLIB + 'def note(*, event):\n    logger.info(event)\n\nnote(event="turn.arrived")\n',
     ),
     _case(
         "parameter passed by position beside another keyword",
         _STDLIB
-        + 'def note(event, count=0):\n    logger.info(event)\n\nnote("turn.ended", count=2)\n',
+        + 'def note(event, count=0):\n    logger.info(event)\n\nnote("turn.arrived", count=2)\n',
     ),
     _case(
         "positional parameter passed by keyword",
-        _STDLIB + 'def note(event):\n    logger.info(event)\n\nnote(event="turn.ended")\n',
+        _STDLIB + 'def note(event):\n    logger.info(event)\n\nnote(event="turn.arrived")\n',
     ),
     _case(
         "positional parameter passed by keyword and position",
-        _STDLIB + 'def note(event):\n    logger.info(event)\n\nnote("Bad", event="turn.ended")\n',
+        _STDLIB + 'def note(event):\n    logger.info(event)\n\nnote("Bad", event="turn.arrived")\n',
     ),
     _case(
         "parameter passed a message by keyword",
@@ -181,19 +181,19 @@ _HOP_CASES = [
     ),
     _case(
         "positional-only parameter",
-        _STDLIB + 'def note(event, /):\n    logger.info(event)\n\nnote("turn.ended")\n',
+        _STDLIB + 'def note(event, /):\n    logger.info(event)\n\nnote("turn.arrived")\n',
     ),
     _case(
         "method called through self",
         "import logging\n\nclass Worker:\n"
         '    log = logging.getLogger("x")\n\n'
         "    def note(self, event):\n        self.log.info(event)\n\n"
-        '    def run(self):\n        self.note("turn.ended")\n',
+        '    def run(self):\n        self.note("turn.arrived")\n',
     ),
     _case(
         "one caller passes a message",
         _STDLIB
-        + 'def note(event):\n    logger.info(event)\n\nnote("turn.ended")\nnote("Turn ended")\n',
+        + 'def note(event):\n    logger.info(event)\n\nnote("turn.arrived")\nnote("Turn ended")\n',
         Rule.EVENT_NOT_LITERAL,
     ),
     _case(
@@ -232,24 +232,24 @@ _HOP_CASES = [
         "import logging\n\nclass Worker:\n"
         '    log = logging.getLogger("x")\n\n'
         "    def note(self, event):\n        self.log.info(event)\n\n"
-        '    def run(self):\n        Worker.note(self, "turn.ended")\n',
+        '    def run(self):\n        Worker.note(self, "turn.arrived")\n',
         Rule.EVENT_NOT_LITERAL,
     ),
     _case(
         "async function",
-        _STDLIB + 'async def note(event):\n    logger.info(event)\n\nnote("turn.ended")\n',
+        _STDLIB + 'async def note(event):\n    logger.info(event)\n\nnote("turn.arrived")\n',
     ),
 ]
 
 _MESSAGE_ARGUMENT_CASES = [
-    _case("stdlib argument", _STDLIB + 'logger.info("turn.ended", count)\n', Rule.MESSAGE_ARGS),
+    _case("stdlib argument", _STDLIB + 'logger.info("turn.arrived", count)\n', Rule.MESSAGE_ARGS),
     _case(
         "stdlib argument of log",
-        _STDLIB + 'logger.log(20, "turn.ended", count)\n',
+        _STDLIB + 'logger.log(20, "turn.arrived", count)\n',
         Rule.MESSAGE_ARGS,
     ),
-    _case("stdlib without arguments", _STDLIB + 'logger.info("turn.ended", exc_info=True)\n'),
-    _case("structlog argument", _STRUCTLOG + 'log.info("turn.ended", count)\n'),
+    _case("stdlib without arguments", _STDLIB + 'logger.info("turn.arrived", exc_info=True)\n'),
+    _case("structlog argument", _STRUCTLOG + 'log.info("turn.arrived", count)\n'),
 ]
 
 _DENIED_FIELD_CASES = [
@@ -331,6 +331,56 @@ _DENIED_FIELD_CASES = [
         "step.add clean",
         'from logline import StepTimer\nwith StepTimer("a.ended", log) as step:\n'
         "    step.add(turn_id=1)\n",
+    ),
+]
+
+_ENDED = Rule.HAND_WRITTEN_ENDED
+
+_HAND_WRITTEN_ENDED_CASES = [
+    _case("stdlib ended literal", _STDLIB + 'logger.info("turn.ended")\n', _ENDED),
+    _case("structlog ended literal", _STRUCTLOG + 'log.info("turn.ended", turn_id=1)\n', _ENDED),
+    _case("logging.log ended literal", _STDLIB + 'logger.log(20, "turn.ended")\n', _ENDED),
+    _case("other verb is clean", _STDLIB + 'logger.info("turn.failed")\n'),
+    _case("suffix inside the name is clean", _STDLIB + 'logger.info("ended.turn")\n'),
+    _case(
+        "misshapen ended name is only a shape row",
+        _STDLIB + 'logger.info("Turn.ended")\n',
+        Rule.EVENT_NAME_SHAPE,
+    ),
+    _case(
+        "ended parameter one hop away",
+        _STDLIB + 'def note(event):\n    logger.info(event)\n\nnote("turn.ended")\n',
+        _ENDED,
+    ),
+    _case(
+        "ended parameter passed by keyword",
+        _STDLIB + 'def note(*, event):\n    logger.info(event)\n\nnote(event="turn.ended")\n',
+        _ENDED,
+    ),
+    _case(
+        "ended parameter of a method",
+        _STDLIB + "class Worker:\n    def note(self, event):\n        logger.info(event)\n"
+        '    def run(self):\n        self.note("turn.ended")\n',
+        _ENDED,
+    ),
+    _case(
+        "parameter without an ended caller is clean",
+        _STDLIB + 'def note(event):\n    logger.info(event)\n\nnote("turn.failed")\n',
+    ),
+    _case(
+        "keyword-only parameter without an ended caller is clean",
+        _STDLIB + 'def note(*, event):\n    logger.info(event)\n\nnote(event="turn.failed")\n',
+    ),
+    _case(
+        "StepTimer event is not a logging call",
+        'from logline import StepTimer\nimport logging\nlog = logging.getLogger("x")\n'
+        'StepTimer("turn.ended", log)\n',
+    ),
+    _case(
+        "host wrapper around StepTimer is not a logging call",
+        "from logline import StepTimer\nclass Host:\n    def _step_timer(self, event, log):\n"
+        "        return StepTimer(event, log)\n\n    def run(self, log):\n"
+        '        self._step_timer("lease_renewal.ended", log)\n',
     ),
 ]
 
@@ -442,6 +492,7 @@ _UVICORN_CASES = [
         *_HOP_CASES,
         *_MESSAGE_ARGUMENT_CASES,
         *_DENIED_FIELD_CASES,
+        *_HAND_WRITTEN_ENDED_CASES,
         *_OWN_SETUP_CASES,
         *_UVICORN_CASES,
     ],
@@ -513,6 +564,7 @@ def test_a_source_that_does_not_parse_raises_a_syntax_error() -> None:
         (Rule.UVICORN_LOG_CONFIG, "uvicorn_log_config"),
         (Rule.UVICORN_LOG_LEVEL, "uvicorn_log_level"),
         (Rule.UVICORN_OPTIONS_HIDDEN, "uvicorn_options_hidden"),
+        (Rule.HAND_WRITTEN_ENDED, "hand_written_ended"),
     ],
 )
 def test_a_rule_code_is_its_text(rule: Rule, code: str) -> None:

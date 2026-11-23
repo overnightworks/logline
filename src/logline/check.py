@@ -14,6 +14,7 @@ from enum import Enum, StrEnum
 from pathlib import PurePath
 
 from logline.standard import (
+    CLOSING_EVENT_SUFFIX,
     EVENT_NAME_PATTERN,
     OWN_SETUP_ASSIGNMENTS,
     OWN_SETUP_CALLS,
@@ -34,6 +35,7 @@ class Rule(StrEnum):
     UVICORN_LOG_CONFIG = "uvicorn_log_config"
     UVICORN_LOG_LEVEL = "uvicorn_log_level"
     UVICORN_OPTIONS_HIDDEN = "uvicorn_options_hidden"
+    HAND_WRITTEN_ENDED = "hand_written_ended"
 
 
 @dataclass(frozen=True)
@@ -99,6 +101,14 @@ def _is_literal_text(node: ast.expr) -> bool:
     return isinstance(node, ast.Constant) and isinstance(node.value, str)
 
 
+def _is_hand_written_ended(node: ast.expr | None) -> bool:
+    return (
+        _is_matching_literal(node)
+        and isinstance(node, ast.Constant)
+        and str(node.value).endswith(CLOSING_EVENT_SUFFIX)
+    )
+
+
 def _is_matching_literal(node: ast.expr | None) -> bool:
     return (
         isinstance(node, ast.Constant)
@@ -115,6 +125,8 @@ class _CallsOfName:
         self._with_keyword: defaultdict[str, list[ast.keyword]] = defaultdict(list)
         self._matching_at: dict[bool, Counter[int]] = {False: Counter(), True: Counter()}
         self._calls_with_keyword: defaultdict[str, list[ast.Call]] = defaultdict(list)
+        self._ended_keywords: set[str] = set()
+        self._ended_at: dict[bool, Counter[int]] = {False: Counter(), True: Counter()}
 
     def add(self, call: ast.Call, *, bound: bool) -> None:
         self.total += 1
@@ -122,11 +134,15 @@ class _CallsOfName:
             if keyword.arg is not None:
                 self._with_keyword[keyword.arg].append(keyword)
                 self._calls_with_keyword[keyword.arg].append(call)
+                if _is_hand_written_ended(keyword.value):
+                    self._ended_keywords.add(keyword.arg)
         for index, argument in enumerate(call.args):
             if isinstance(argument, ast.Starred):
                 break
             if _is_matching_literal(argument):
                 self._matching_at[bound][index] += 1
+            if _is_hand_written_ended(argument):
+                self._ended_at[bound][index] += 1
 
     def all_pass_literal(self, parameter: str, position: int | None, *, is_method: bool) -> bool:
         """Whether every call passes `parameter` a matching literal, by keyword or by position."""
@@ -138,6 +154,20 @@ class _CallsOfName:
         for call in self._calls_with_keyword[parameter]:
             matching -= self._matches_by_position(call, position, is_method=is_method)
         return matching == self.total - len(self._calls_with_keyword[parameter])
+
+    def any_pass_hand_written_ended(
+        self, parameter: str, position: int | None, *, is_method: bool
+    ) -> bool:
+        """Whether some call passes `parameter` a literal event that ends in the closing suffix."""
+        if parameter in self._ended_keywords:
+            return True
+        if position is None:
+            return False
+        return any(
+            counter[position - 1 if is_method and bound else position] > 0
+            for bound, counter in self._ended_at.items()
+            if position - (1 if is_method and bound else 0) >= 0
+        )
 
     def _matching_count(self, position: int, *, is_method: bool) -> int:
         return sum(
@@ -165,7 +195,7 @@ class _Judge:
         self._loggers: dict[str, _Kind] = {}
         self._timers: set[str] = set()
         self._calls_by_name: defaultdict[str, _CallsOfName] = defaultdict(_CallsOfName)
-        self._literal_parameters: dict[tuple[str, str, int | None, bool], bool] = {}
+        self._parameter_verdicts: dict[tuple[bool, str, str, int | None, bool], bool] = {}
         for parent in ast.walk(tree):
             for child in ast.iter_child_nodes(parent):
                 self._parents[child] = parent
@@ -307,6 +337,8 @@ class _Judge:
             yield arguments[0], Rule.EVENT_NOT_LITERAL
         elif len(arguments) > event_index:
             yield from self._event_rows(arguments[event_index])
+            if self._is_hand_written_ended_event(arguments[event_index]):
+                yield arguments[event_index], Rule.HAND_WRITTEN_ENDED
         if kind is _Kind.STDLIB and len(arguments) > event_index + 1:
             yield arguments[event_index + 1], Rule.MESSAGE_ARGS
         for keyword in call.keywords:
@@ -322,27 +354,51 @@ class _Judge:
         elif not self._is_literal_parameter(event):
             yield event, Rule.EVENT_NOT_LITERAL
 
-    def _is_literal_parameter(self, event: ast.expr) -> bool:
-        """Whether `event` is a parameter that every call in this file passes a matching literal."""
+    def _is_hand_written_ended_event(self, event: ast.expr) -> bool:
+        """Whether `event` is a literal, or a parameter some call in this file passes a literal,
+        that ends in the closing suffix."""
+        if _is_literal_text(event):
+            return _is_hand_written_ended(event)
+        return self._parameter_verdict(event, ended=True)
+
+    def _event_parameter(
+        self, event: ast.expr
+    ) -> tuple[ast.FunctionDef | ast.AsyncFunctionDef, int | None, bool] | None:
+        """The function, the position and whether it is a method, when `event` is its parameter."""
         if not isinstance(event, ast.Name):
-            return False
+            return None
         function = self._enclosing_function(event)
         if function is None:
-            return False
+            return None
         parameters = function.args
         positional = [argument.arg for argument in (*parameters.posonlyargs, *parameters.args)]
         keyword_only = [argument.arg for argument in parameters.kwonlyargs]
         if event.id not in (*positional, *keyword_only):
-            return False
+            return None
         is_method = isinstance(self._parents.get(function), ast.ClassDef)
         position = positional.index(event.id) if event.id in positional else None
-        key = (function.name, event.id, position, is_method)
-        if key not in self._literal_parameters:
+        return function, position, is_method
+
+    def _is_literal_parameter(self, event: ast.expr) -> bool:
+        """Whether `event` is a parameter that every call in this file passes a matching literal."""
+        return self._parameter_verdict(event, ended=False)
+
+    def _parameter_verdict(self, event: ast.expr, *, ended: bool) -> bool:
+        """What the calls in this file say about the event parameter: that some call passes a
+        hand-written `.ended` literal (`ended`), or that every call passes a matching literal."""
+        parameter = self._event_parameter(event)
+        if parameter is None or not isinstance(event, ast.Name):
+            return False
+        function, position, is_method = parameter
+        key = (ended, function.name, event.id, position, is_method)
+        if key not in self._parameter_verdicts:
             calls = self._calls_by_name.get(function.name)
-            self._literal_parameters[key] = calls is not None and calls.all_pass_literal(
-                event.id, position, is_method=is_method
+            self._parameter_verdicts[key] = calls is not None and (
+                calls.any_pass_hand_written_ended(event.id, position, is_method=is_method)
+                if ended
+                else calls.all_pass_literal(event.id, position, is_method=is_method)
             )
-        return self._literal_parameters[key]
+        return self._parameter_verdicts[key]
 
     def _enclosing_function(self, node: ast.AST) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
         parent = self._parents.get(node)

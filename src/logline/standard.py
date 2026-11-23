@@ -14,6 +14,7 @@ SPAN_ID_KEY: str
 PARENT_SPAN_ID_KEY: str
 SPAN_ID_KEY, PARENT_SPAN_ID_KEY = _RULES["closing_line_keys"]
 CLOSING_LINE_KEYS: frozenset[str] = frozenset({SPAN_ID_KEY, PARENT_SPAN_ID_KEY})
+CLOSING_EVENT_SUFFIX: str = _RULES["closing_event_suffix"]
 EVENT_NAME_PATTERN: re.Pattern[str] = re.compile(_RULES["event_name_pattern"])
 OWN_SETUP_CALLS: frozenset[str] = frozenset(_RULES["own_setup_calls"])
 OWN_SETUP_ASSIGNMENTS: frozenset[str] = frozenset(_RULES["own_setup_assignments"])
