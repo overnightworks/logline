@@ -14,7 +14,8 @@ from tests.support.apps import build_app
 from tests.support.lines import Line, json_lines
 
 HTTP_IMPLEMENTATIONS = ["h11", "httptools"]
-# What uvicorn's default `ws="auto"` resolves to with `websockets` installed, and wsproto.
+# The implementations a test means by name, never by uvicorn's default `ws="auto"`, which
+# resolves to the legacy `websockets` one at uvicorn's declared floor.
 WEBSOCKET_IMPLEMENTATIONS = ["websockets-sansio", "wsproto"]
 
 
@@ -23,7 +24,9 @@ def serve(config: uvicorn.Config, exercise: Callable[[str], Awaitable[None]]) ->
 
     `exercise` gets the server's base URL. The listening socket exists before the server runs,
     so a request made at once waits in its backlog and nothing needs polling. A config that leaves
-    `http` on "auto" runs h11, so an installed httptools never changes which parser a test means.
+    `http` on "auto" runs h11, so an installed httptools never changes which parser a test means,
+    and `ws` on "auto" runs websockets-sansio, so a uvicorn whose "auto" imports the deprecated
+    `websockets.legacy` never writes its import-time warning into the first request that serves.
     """
 
     async def exercise_url(base_url: str, _server: uvicorn.Server) -> None:
@@ -38,6 +41,8 @@ def serve_with_server(
     """Serve like `serve`, and hand `exercise` the server too, for a test that stops it itself."""
     if config.http == "auto":
         config.http = "h11"
+    if config.ws == "auto":
+        config.ws = "websockets-sansio"
 
     async def run() -> None:
         listener = socket.socket()
