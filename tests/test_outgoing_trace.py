@@ -150,7 +150,7 @@ def test_with_otel_propagators_none_a_call_carries_no_trace(
         pytest.param(httpx2.AsyncClient, ("send",), CLIENTS["httpx2-async"], id="httpx2-async"),
     ],
 )
-def test_a_second_configure_installs_no_second_carrier_keeps_a_hosts_wrapper_and_writes_no_line_above_info(
+def test_a_second_configure_adds_no_carrier_keeps_a_hosts_wrapper_and_writes_no_line_above_info(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     echo: EchoServer,
