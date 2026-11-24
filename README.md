@@ -773,7 +773,7 @@ and level, the handlers, filters, levels and propagation of the uvicorn, HTTP cl
 capped library (`mcp`, `botocore`, `sqlalchemy.dialects.postgresql`, `piper`) loggers, structlog's configuration and the
 stdlib logger class its factory installs, OpenTelemetry's global propagator and whether outgoing requests carry the
 trace. Inside the block a covered client's request carries the current trace ([Outgoing calls](#outgoing-calls)),
-so a test that asserts a request's exact headers sees it. After the block none is sent; the carriers stay on the
+so a test that asserts a request's exact headers sees it. After the block requests carry the trace only if they did before it; the carriers stay on the
 HTTP clients' methods, which `configured` never reassigns, so a wrapper the host or a library put on one survives.
 The module imports no test framework.
 
