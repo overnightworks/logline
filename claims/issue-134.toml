@@ -1,7 +1,0 @@
-claim_id = "35c4af65a29f4932a799c1759a3c6f06"
-agent = "Claude c66eb07a-a12f-4837-9f07-0f8a5930fa7f"
-role = "builder"
-base = "6194e28977e046c040d838ca2f2a7f9f7e6e9823"
-branch = "claude/issue-134-logline-pins-quality-v0-26-0"
-scope = [".github/workflows/ci.yml", ".github/workflows/code-scanning.yml", ".github/workflows/release.yml"]
-opened_commit = "a0cef946380e09c3e88daf702281dfdf2c55da45"
