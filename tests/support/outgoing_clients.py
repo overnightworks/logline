@@ -101,7 +101,8 @@ def _with_http_client(url: str, headers: Headers) -> None:
 
 
 def _with_urllib_request(url: str, headers: Headers) -> None:
-    with urllib.request.urlopen(urllib.request.Request(url, headers=headers)) as response:
+    request = urllib.request.Request(url, headers=headers)  # noqa: S310 - a local http url
+    with urllib.request.urlopen(request) as response:  # noqa: S310 - a local http url
         response.read()
 
 

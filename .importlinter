@@ -1,12 +1,13 @@
-# logline speaks ASGI and nothing else: it imports no web framework, server or HTTP client, so
-# every host can take it. quality's CI gate checks the contracts over the real import graph.
+# logline speaks ASGI and nothing else: it imports no web framework or server, and an HTTP client
+# only in its outgoing-trace module, so every host can take it. quality's CI gate checks the
+# contracts over the real import graph.
 [importlinter]
 include_external_packages = True
 root_packages =
     logline
 
 [importlinter:contract:logline-imports-no-web-framework]
-name = logline imports no web framework, server or HTTP client
+name = logline imports no web framework or server, and an HTTP client only in its outgoing-trace module
 type = forbidden
 source_modules =
     logline
@@ -19,6 +20,9 @@ forbidden_modules =
     httpcore
     httpcore2
     websockets
+ignore_imports =
+    logline.outgoing_trace -> httpx
+    logline.outgoing_trace -> httpx2
 
 [importlinter:contract:logline-check-imports-only-the-standard-library-and-standard]
 name = logline.check imports only the standard library and logline.standard
