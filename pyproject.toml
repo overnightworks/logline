@@ -30,6 +30,9 @@ dev = [
     "websockets>=15,<17",
     "wsproto>=1.2,<2",
     "httpx>=0.27,<1",
+    "httpx2>=2,<3",
+    "urllib3>=2.0,<3",
+    "botocore>=1.35,<2",
     "ruff>=0.4,<1",
     "pyright>=1.1.414,<2",
     "deptry==0.25.1",
@@ -72,6 +75,10 @@ branch = true
 
 [tool.coverage.report]
 fail_under = 100
+
+[tool.deptry.per_rule_ignores]
+# `logline.outgoing_trace` patches httpx and httpx2 only where the host installed them.
+DEP004 = ["httpx", "httpx2"]
 
 [tool.pyright]
 include = [

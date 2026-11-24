@@ -41,3 +41,25 @@ class SingleHeaderPropagator(TextMapPropagator):
             value = f"{trace.format_trace_id(span_context.trace_id)}-"
             value += trace.format_span_id(span_context.span_id)
             setter.set(carrier, SPAN_HEADER, value)
+
+
+class PropagatorFailure(Exception):
+    """What `RaisingPropagator` raises."""
+
+
+class RaisingPropagator(TextMapPropagator):
+    """A propagator that fails whenever a call asks it for headers."""
+
+    @property
+    def fields(self) -> set[str]:
+        return {"traceparent"}
+
+    def extract(
+        self, carrier: CarrierT, context: Context | None = None, getter: Getter = default_getter
+    ) -> Context:
+        return context or Context()
+
+    def inject(
+        self, carrier: CarrierT, context: Context | None = None, setter: Setter = default_setter
+    ) -> None:
+        raise PropagatorFailure

@@ -4,6 +4,7 @@ import threading
 import warnings
 from collections.abc import Iterator
 from dataclasses import replace
+from typing import TYPE_CHECKING
 
 import pytest
 import structlog
@@ -11,7 +12,11 @@ from opentelemetry.propagate import get_global_textmap, set_global_textmap
 from opentelemetry.propagators.composite import CompositePropagator
 from structlog.stdlib import ProcessorFormatter
 
+from logline.outgoing_trace import is_enabled, set_enabled
 from logline.testing import LoggerState
+
+if TYPE_CHECKING:
+    from tests.support.outgoing_clients import EchoServer
 
 pytest.register_assert_rewrite("tests.support")
 
@@ -25,10 +30,12 @@ def isolated_logging(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.delenv("SERVICE_VERSION", raising=False)
     monkeypatch.delenv("OTEL_PROPAGATORS", raising=False)
     propagator = get_global_textmap()
+    carrying_trace = is_enabled()
     hooks = (sys.excepthook, threading.excepthook, warnings.showwarning)
     saved = {logger.name: LoggerState.of(logger) for logger in all_loggers()}
     yield
     set_global_textmap(propagator)
+    set_enabled(carrying_trace)
     sys.excepthook, threading.excepthook, warnings.showwarning = hooks
     for logger in all_loggers():
         state = saved.get(logger.name) or LoggerState(logger, [], [], logging.NOTSET, True)
@@ -49,3 +56,12 @@ def host_with_otel_propagators_none(monkeypatch: pytest.MonkeyPatch) -> None:
     """Give the test the environment and propagator of a host that set `OTEL_PROPAGATORS=none`."""
     monkeypatch.setenv("OTEL_PROPAGATORS", "none")
     set_global_textmap(CompositePropagator([]))
+
+
+@pytest.fixture
+def echo() -> Iterator[EchoServer]:
+    """A real server that records the headers of every request it gets."""
+    from tests.support.outgoing_clients import echo_server  # noqa: PLC0415 - see above
+
+    with echo_server() as server:
+        yield server
