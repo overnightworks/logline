@@ -143,13 +143,14 @@ def test_configuring_twice_still_sends_one_header_and_writes_no_line_above_info(
 ) -> None:
     configure("outgoing-service")
     configure("outgoing-service")
+    levels_written = {line["level"] for line in json_lines(capsys.readouterr().out)}
 
     with inside_a_request():
         expected = outgoing_headers()
         call(echo.url, {})
 
     assert echo.last[TRACEPARENT] == [expected[TRACEPARENT]]
-    assert {line["level"] for line in json_lines(capsys.readouterr().out)} <= {"debug", "info"}
+    assert levels_written <= {"debug", "info"}
 
 
 def _causes(error: BaseException) -> Iterator[BaseException]:

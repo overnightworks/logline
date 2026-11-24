@@ -4,7 +4,6 @@ import threading
 import warnings
 from collections.abc import Iterator
 from dataclasses import replace
-from typing import TYPE_CHECKING
 
 import pytest
 import structlog
@@ -14,9 +13,6 @@ from structlog.stdlib import ProcessorFormatter
 
 from logline.outgoing_trace import is_enabled, set_enabled
 from logline.testing import LoggerState
-
-if TYPE_CHECKING:
-    from tests.support.outgoing_clients import EchoServer
 
 pytest.register_assert_rewrite("tests.support")
 
@@ -59,8 +55,12 @@ def host_with_otel_propagators_none(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def echo() -> Iterator[EchoServer]:
-    """A real server that records the headers of every request it gets."""
+def echo() -> Iterator[object]:
+    """A real `EchoServer`: a server that records the headers of every request it gets.
+
+    Unannotated beyond `object`: pytest 8.3 reads annotations eagerly, and `EchoServer` is imported
+    only once `tests.support` is registered for assertion rewriting.
+    """
     from tests.support.outgoing_clients import echo_server  # noqa: PLC0415 - see above
 
     with echo_server() as server:
