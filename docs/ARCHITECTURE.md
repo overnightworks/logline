@@ -12,11 +12,12 @@ flowchart LR
     end
     logline -- "one JSON object per line" --> stdout[("stdout<br/>(collected by the platform)")]
     client["Caller (any client, in scope)"] -- "HTTP, traceparent" --> host
-    host -- "HTTP, traceparent" --> callee["Callee service"]
+    host -- "HTTP, traceparent<br/>(added by logline)" --> callee["Callee service"]
 ```
 
 Outside: the callers, who choose their own `traceparent` and so their own `trace_id`; the callee services,
-which receive the request's trace through `outgoing_headers()`; and the platform, which collects stdout.
+which receive the request's trace on every outgoing request the process makes through a covered HTTP client, or
+through `outgoing_headers()` where the transport is not covered; and the platform, which collects stdout.
 
 ## 2. Building Block View
 
@@ -28,7 +29,13 @@ Module owners in `logline`:
 - `configuration` owns `configure`: the root JSON handler on stdout, the root level from `LOG_LEVEL`, the
   `logline.request` level pin, the capped library loggers' levels (HTTP clients, `mcp`, `botocore` and
   `sqlalchemy.dialects.postgresql` at WARNING, `piper` at ERROR), the routing of uvicorn's loggers and the
-  installing of the `process_failures` hooks, and OpenTelemetry's global propagator (see Constraints and reasons).
+  installing of the `process_failures` hooks, OpenTelemetry's global propagator (see Constraints and reasons) and
+  the `outgoing_trace` carriers.
+- `outgoing_trace` owns how the trace reaches an outgoing HTTP request with no call-site code: a hook on
+  `http.client.HTTPConnection` (urllib.request, urllib3, requests and botocore go through it) and a hook on the
+  public `send` of httpx's and httpx2's `Client` and `AsyncClient`, where the host installed them. It is the one
+  module that imports an HTTP client, and only after `importlib.util.find_spec` found it. It owns the state, on or
+  off, that decides whether the installed hooks add anything.
 - `process_failures` owns the three hooks `configure` installs, `sys.excepthook`, `threading.excepthook` and
   `warnings.showwarning`, and the events they write: `process.crashed`, `thread.crashed` and
   `python_warning.raised`, with an `error_type`.
@@ -78,10 +85,11 @@ Module owners in `logline`:
   step's child span; a unit continues the sender's) and renders a span as the `span_id` and `parent_span_id` of
   a closing line, the one function every writer uses, with the key names `standard` reads from `standard.json`.
 
-`record` uses `standard` and `trace`; `step` uses `standard` and `trace`; `trace` uses `standard`; `request` uses `step`, `trace`, `lifespan`, `websocket` and `asgi`; `uvicorn_records` uses `websocket`; `configuration` uses `record`, `uvicorn_records` and
-`process_failures` and names the request logger; `testing` uses `configuration`.
-`request` imports no web framework; an import contract keeps `logline` free of frameworks, servers and
-HTTP clients.
+`outgoing_trace` uses `trace`; `record` uses `standard` and `trace`; `step` uses `standard` and `trace`; `trace` uses `standard`; `request` uses `step`, `trace`, `lifespan`, `websocket` and `asgi`; `uvicorn_records` uses `websocket`; `configuration` uses `record`, `uvicorn_records`,
+`outgoing_trace` and `process_failures` and names the request logger; `testing` uses `configuration` and
+`outgoing_trace`.
+`request` imports no web framework; an import contract keeps `logline` free of frameworks and servers, and of
+HTTP clients except in `outgoing_trace`.
 
 ## 3. Runtime View
 
@@ -183,6 +191,15 @@ lowest direct dependency floors run the same tests.
   OpenTelemetry built it; `trace` reads it on every call and follows it, so `none` gives every request and turn a
   new trace and no outgoing headers. A host that never calls `configure` keeps OpenTelemetry's default, trace
   context and baggage.
+- `outgoing_trace` installs each hook once per process and never removes it; its wrapper reads the one state the
+  module owns. `configure` installs what is missing and turns the state on; `testing.configured` restores the state
+  and never reassigns a client's method, so a wrapper a host or a library put on the same method afterwards
+  survives. A request that already carries `traceparent` gets no propagator header at all, so a caller's
+  `traceparent` is never paired with the current `tracestate`, and a propagator that raises fails the request. The
+  `http.client` hook records the header names a request puts and clears the record at `putrequest`, because urllib3
+  keeps a connection alive across requests. The httpx hook runs before every transport, so custom and in-process
+  transports carry the trace too. A CONNECT tunnel, urllib3's HTTP/2, `websockets` and aiohttp stay uncovered;
+  `outgoing_headers()` serves them. No URL is excluded, so third parties receive the headers.
 - `configure` puts a drop-all filter on `uvicorn.access`: a later `dictConfig` removes handlers but never
   filters, so the access log, which carries the raw path, stays silent in every start mode.
 - The `uvicorn.error` filter knows a record by uvicorn's message template or by the `OSError` it logs for a bind
