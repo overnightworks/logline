@@ -1,8 +1,0 @@
-claim_id = "c9f65b71547245c09c1faebbb12e7029"
-agent = "Claude c66eb07a-a12f-4837-9f07-0f8a5930fa7f"
-role = "builder"
-base = "6a8a0e75ab5383da80d7d74af74a773b77be3714"
-branch = "claude/issue-137-trace-test-line-count-order"
-scope = ["pyproject.toml", "tests", "uv.lock"]
-opened_commit = "42fb2cfbebad05a0656ed107866afcb0d53f4bc8"
-whole_reason = "One order-dependent test and the dependency floor or fixture that settles it."
