@@ -153,6 +153,46 @@ def test_configuring_twice_still_sends_one_header_and_writes_no_line_above_info(
     assert levels_written <= {"debug", "info"}
 
 
+@pytest.mark.parametrize(
+    ("client_class", "methods", "call"),
+    [
+        pytest.param(
+            http.client.HTTPConnection,
+            ("putrequest", "putheader", "endheaders"),
+            CLIENTS["http.client"],
+            id="http.client",
+        ),
+        pytest.param(httpx.Client, ("send",), CLIENTS["httpx"], id="httpx"),
+        pytest.param(httpx.AsyncClient, ("send",), CLIENTS["httpx-async"], id="httpx-async"),
+        pytest.param(httpx2.Client, ("send",), CLIENTS["httpx2"], id="httpx2"),
+        pytest.param(httpx2.AsyncClient, ("send",), CLIENTS["httpx2-async"], id="httpx2-async"),
+    ],
+)
+def test_a_second_configure_installs_no_second_carrier_and_keeps_a_hosts_wrapper(
+    monkeypatch: pytest.MonkeyPatch,
+    echo: EchoServer,
+    client_class: type,
+    methods: tuple[str, ...],
+    call,
+) -> None:
+    last_method = methods[-1]
+    inner = getattr(client_class, last_method)
+
+    def hosts_wrapper(*args: object, **kwargs: object) -> object:
+        return inner(*args, **kwargs)
+
+    monkeypatch.setattr(client_class, last_method, hosts_wrapper)
+    before = {method: getattr(client_class, method) for method in methods}
+
+    configure("outgoing-service")
+
+    assert {method: getattr(client_class, method) for method in methods} == before
+    with inside_a_request():
+        expected = outgoing_headers()
+        call(echo.url, {})
+    assert echo.last[TRACEPARENT] == [expected[TRACEPARENT]]
+
+
 def _causes(error: BaseException) -> Iterator[BaseException]:
     seen: BaseException | None = error
     while seen is not None:
