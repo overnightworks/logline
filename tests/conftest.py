@@ -16,6 +16,8 @@ from logline.testing import LoggerState
 
 pytest.register_assert_rewrite("tests.support")
 
+from tests.support.outgoing_clients import EchoServer, echo_server  # noqa: E402 - after the rewrite
+
 
 @pytest.fixture(autouse=True)
 def isolated_logging(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
@@ -55,13 +57,7 @@ def host_with_otel_propagators_none(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def echo() -> Iterator[object]:
-    """A real `EchoServer`: a server that records the headers of every request it gets.
-
-    Unannotated beyond `object`: pytest 8.3 reads annotations eagerly, and `EchoServer` is imported
-    only once `tests.support` is registered for assertion rewriting.
-    """
-    from tests.support.outgoing_clients import echo_server  # noqa: PLC0415 - see above
-
+def echo() -> Iterator[EchoServer]:
+    """A real `EchoServer`: a server that records the headers of every request it gets."""
     with echo_server() as server:
         yield server

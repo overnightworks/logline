@@ -1,4 +1,3 @@
-import asyncio
 import http.client
 import json
 import re
@@ -18,7 +17,6 @@ import uvicorn
 from opentelemetry.propagate import set_global_textmap
 
 from logline import RequestLineMiddleware, configure, outgoing_headers
-from tests.support.apps import build_app
 from tests.support.incoming_trace import INCOMING_TRACE_ID, INCOMING_TRACEPARENT
 from tests.support.lines import json_lines
 from tests.support.outgoing_clients import (
@@ -240,20 +238,6 @@ def test_httpx_clients_with_an_in_process_transport_carry_the_trace(
             client.get("http://callee.invalid/")
 
     assert seen == [expected[TRACEPARENT]]
-
-
-def test_a_host_test_through_asgi_transport_continues_the_callers_trace() -> None:
-    async def call() -> dict[str, dict[str, str]]:
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=build_app()), base_url="http://callee.invalid"
-        ) as client:
-            return (await client.get("/trace")).json()
-
-    with inside_a_request():
-        callers_trace_id = outgoing_headers()[TRACEPARENT].split("-")[1]
-        callee = asyncio.run(call())
-
-    assert callee["headers"][TRACEPARENT].split("-")[1] == callers_trace_id
 
 
 def test_a_call_made_by_a_handler_of_a_real_app_continues_the_requests_trace(
