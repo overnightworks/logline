@@ -16,14 +16,13 @@ from logline.testing import LoggerState
 
 pytest.register_assert_rewrite("tests.support")
 
+from tests.support.loggers import all_loggers  # noqa: E402 - after the rewrite
 from tests.support.outgoing_clients import EchoServer, echo_server  # noqa: E402 - after the rewrite
 
 
 @pytest.fixture(autouse=True)
 def isolated_logging(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Give each test the logging and propagator as they were, and no logline environment."""
-    from tests.support.loggers import all_loggers  # noqa: PLC0415 - after register_assert_rewrite
-
     monkeypatch.delenv("LOG_LEVEL", raising=False)
     monkeypatch.delenv("SERVICE_VERSION", raising=False)
     monkeypatch.delenv("OTEL_PROPAGATORS", raising=False)

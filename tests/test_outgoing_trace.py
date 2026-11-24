@@ -135,22 +135,6 @@ def test_with_otel_propagators_none_a_call_carries_no_trace(
     assert TRACEPARENT not in echo.last
 
 
-@_ALL_CLIENTS
-def test_configuring_twice_still_sends_one_header_and_writes_no_line_above_info(
-    capsys: pytest.CaptureFixture[str], echo: EchoServer, call
-) -> None:
-    configure("outgoing-service")
-    configure("outgoing-service")
-    levels_written = {line["level"] for line in json_lines(capsys.readouterr().out)}
-
-    with inside_a_request():
-        expected = outgoing_headers()
-        call(echo.url, {})
-
-    assert echo.last[TRACEPARENT] == [expected[TRACEPARENT]]
-    assert levels_written <= {"debug", "info"}
-
-
 @pytest.mark.parametrize(
     ("client_class", "methods", "call"),
     [
@@ -168,6 +152,7 @@ def test_configuring_twice_still_sends_one_header_and_writes_no_line_above_info(
 )
 def test_a_second_configure_installs_no_second_carrier_and_keeps_a_hosts_wrapper(
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
     echo: EchoServer,
     client_class: type,
     methods: tuple[str, ...],
@@ -183,8 +168,10 @@ def test_a_second_configure_installs_no_second_carrier_and_keeps_a_hosts_wrapper
     before = {method: getattr(client_class, method) for method in methods}
 
     configure("outgoing-service")
+    levels_written = {line["level"] for line in json_lines(capsys.readouterr().out)}
 
     assert {method: getattr(client_class, method) for method in methods} == before
+    assert levels_written <= {"debug", "info"}
     with inside_a_request():
         expected = outgoing_headers()
         call(echo.url, {})
