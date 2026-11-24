@@ -184,7 +184,7 @@ def test_a_botocore_request_is_signed_without_the_added_header(echo: EchoServer)
     assert TRACEPARENT not in signed_headers.group(1).split(";")
 
 
-@pytest.mark.parametrize("client_module", [httpx, httpx2])
+@pytest.mark.parametrize("client_module", [httpx, httpx2], ids=["httpx", "httpx2"])
 def test_httpx_clients_with_an_in_process_transport_carry_the_trace(
     client_module: ModuleType,
 ) -> None:

@@ -329,7 +329,7 @@ A WebSocket session runs in a trace the same way, from the upgrade's `traceparen
 `configure` hands the current trace to every outgoing HTTP request of the process, with no call-site code: the
 headers of the global propagator, `traceparent` and `tracestate` under the default. Inside a `StepTimer` block that is
 the step's span, inside a turn that carries a valid `traceparent` the sender's, and else the request's or the
-session's. Outside a trace nothing is added, and `OTEL_PROPAGATORS=none` adds nothing.
+session's. Outside a trace nothing is added under the default, and `OTEL_PROPAGATORS=none` adds nothing.
 
 - Covered are every client that goes through the standard library's `http.client` (`urllib.request`, urllib3,
   requests, botocore) and httpx and httpx2, `Client` and `AsyncClient`, where the host installed them. For httpx and

@@ -34,8 +34,8 @@ Module owners in `logline`:
 - `outgoing_trace` owns how the trace reaches an outgoing HTTP request with no call-site code: a hook on
   `http.client.HTTPConnection` (urllib.request, urllib3, requests and botocore go through it) and a hook on the
   public `send` of httpx's and httpx2's `Client` and `AsyncClient`, where the host installed them. It is the one
-  module that imports an HTTP client, and only after `importlib.util.find_spec` found it. It owns the state, on or
-  off, that decides whether the installed hooks add anything.
+  module that imports an HTTP client, a third-party one only after `importlib.util.find_spec` found it. It owns the
+  state, on or off, that decides whether the installed hooks add anything.
 - `process_failures` owns the three hooks `configure` installs, `sys.excepthook`, `threading.excepthook` and
   `warnings.showwarning`, and the events they write: `process.crashed`, `thread.crashed` and
   `python_warning.raised`, with an `error_type`.

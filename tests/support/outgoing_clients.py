@@ -3,7 +3,6 @@
 import asyncio
 import http.client
 import logging
-import threading
 import urllib.request
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -20,6 +19,7 @@ import urllib3
 from logline import StepTimer, unit_trace
 from logline.trace import request_trace
 from tests.support.incoming_trace import INCOMING_TRACEPARENT
+from tests.support.serving_in_a_thread import serving_in_a_thread
 from tests.support.step_routes import STEP_EVENT, STEP_LOGGER
 
 type Headers = dict[str, str]
@@ -80,14 +80,8 @@ def echo_server() -> Iterator[EchoServer]:
     server = ThreadingHTTPServer(("127.0.0.1", 0), _handler_recording(echo))
     server.daemon_threads = True
     echo.url = f"http://127.0.0.1:{server.server_port}"
-    serving = threading.Thread(target=server.serve_forever)
-    serving.start()
-    try:
+    with serving_in_a_thread(server):
         yield echo
-    finally:
-        server.shutdown()
-        serving.join()
-        server.server_close()
 
 
 def _with_http_client(url: str, headers: Headers) -> None:
