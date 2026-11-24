@@ -1,0 +1,8 @@
+claim_id = "795f94aa9a5c4d699563bcc786764924"
+agent = "Claude c66eb07a-a12f-4837-9f07-0f8a5930fa7f"
+role = "builder"
+base = "6a8a0e75ab5383da80d7d74af74a773b77be3714"
+branch = "claude/issue-131-a-trace-reaches-every-outgoing-call-with"
+scope = [".importlinter", "AGENTS.md", "README.md", "docs/ARCHITECTURE.md", "pyproject.toml", "quality/config.toml", "src/logline", "tests", "uv.lock"]
+opened_commit = "0d570d0dbd20f807c12f941f78ac6591942a6000"
+whole_reason = "One mechanism that carries the trace on every covered HTTP client, with its import rule, end-to-end proof and the documents that name its reach."
