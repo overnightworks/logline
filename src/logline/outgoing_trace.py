@@ -23,11 +23,9 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 from weakref import WeakKeyDictionary
 
-from logline.trace import outgoing_headers
+from logline.trace import TRACEPARENT_HEADER, header_text, outgoing_headers
 
 __all__: list[str] = []
-
-_TRACEPARENT = "traceparent"
 
 
 @dataclass
@@ -45,10 +43,6 @@ _header_names: WeakKeyDictionary[http.client.HTTPConnection, set[str]] = WeakKey
 class _Request(Protocol):
     @property
     def headers(self) -> MutableMapping[str, str]: ...
-
-
-def _text(header_part: str | bytes) -> str:
-    return header_part.decode("latin-1") if isinstance(header_part, bytes) else header_part
 
 
 def _added_headers(request_has_traceparent: bool) -> dict[str, str]:
@@ -69,12 +63,14 @@ def _install_http_client() -> None:
 
     @functools.wraps(putheader)
     def record_header(self: http.client.HTTPConnection, header: str | bytes, *values: Any) -> None:
-        _header_names.setdefault(self, set()).add(_text(header).lower())
+        _header_names.setdefault(self, set()).add(header_text(header).lower())
         putheader(self, header, *values)
 
     @functools.wraps(endheaders)
     def add_trace(self: http.client.HTTPConnection, *args: Any, **kwargs: Any) -> None:
-        for name, value in _added_headers(_TRACEPARENT in _header_names.get(self, ())).items():
+        for name, value in _added_headers(
+            TRACEPARENT_HEADER in _header_names.get(self, ())
+        ).items():
             self.putheader(name, value)
         endheaders(self, *args, **kwargs)
 
@@ -85,7 +81,7 @@ def _install_http_client() -> None:
 
 def _add_to(request: _Request) -> None:
     headers = request.headers
-    headers.update(_added_headers(_TRACEPARENT in headers))
+    headers.update(_added_headers(TRACEPARENT_HEADER in headers))
 
 
 def _install_httpx_family(client_class: Any, async_client_class: Any) -> None:

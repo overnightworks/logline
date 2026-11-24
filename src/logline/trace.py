@@ -17,6 +17,8 @@ __all__ = [
     "unit_trace",
 ]
 
+# Shared with `logline.outgoing_trace`, which reads the same header on outgoing requests.
+TRACEPARENT_HEADER = "traceparent"
 _TRACE_ID_BITS = 128
 _SPAN_ID_BITS = 64
 # The span that started the current one; the span itself is OpenTelemetry's.
@@ -30,7 +32,7 @@ def _non_zero_random(bits: int) -> int:
 type HeaderPairs = Iterable[tuple[str, str]] | Iterable[tuple[bytes, bytes]]
 
 
-def _text(header_part: str | bytes) -> str:
+def header_text(header_part: str | bytes) -> str:
     return header_part.decode("latin-1") if isinstance(header_part, bytes) else header_part
 
 
@@ -38,9 +40,9 @@ def _trace_headers(headers: HeaderPairs) -> dict[str, str]:
     fields = propagate.get_global_textmap().fields
     carrier: dict[str, str] = {}
     for name, value in headers:
-        field = _text(name).lower()
+        field = header_text(name).lower()
         if field in fields:
-            carrier[field] = _text(value)
+            carrier[field] = header_text(value)
     return carrier
 
 
@@ -108,7 +110,7 @@ def unit_trace(traceparent: str | None) -> Iterator[None]:
     The trace is detached when the block ends, an exception included, which propagates unchanged: a
     later line of a long-lived task must not carry this unit's trace.
     """
-    incoming = _incoming_span({} if traceparent is None else {"traceparent": traceparent})
+    incoming = _incoming_span({} if traceparent is None else {TRACEPARENT_HEADER: traceparent})
     span = _with_span(incoming, None) if incoming.is_valid else _child_context(incoming)
     token = context.attach(span)
     try:
@@ -198,4 +200,4 @@ def current_traceparent() -> str | None:
     Inside a `StepTimer` block the step's span, else inside a turn the sender's, outside one the
     WebSocket session's; None outside a trace.
     """
-    return outgoing_headers().get("traceparent")
+    return outgoing_headers().get(TRACEPARENT_HEADER)
