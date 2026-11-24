@@ -6,3 +6,9 @@ what = 'import contract "logline.check imports only the standard library and log
 item = "#81"
 date = 2026-11-19
 reason = "import-linter wildcards match whole segments only, so the wildcard that covers every runtime module also covers logline.standard, which logline.check may import"
+
+[[gate.loosened]]
+what = 'import contract "logline imports no web framework, server or HTTP client" removed'
+item = "#131"
+date = 2026-11-24
+reason = "the operator's ruling of 23.11.2026, sentences 6 and 7 of #131: the contract is renamed 'logline imports no web framework or server, and an HTTP client only in its outgoing-trace module', and exempts exactly logline.outgoing_trace for httpx and httpx2"
