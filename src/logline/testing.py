@@ -16,6 +16,7 @@ import structlog
 from opentelemetry.propagate import get_global_textmap, set_global_textmap
 
 from logline.configuration import TOUCHED_LOGGER_NAMES, configure
+from logline.outgoing_trace import is_enabled, set_enabled
 
 if TYPE_CHECKING:
     from logging import _FilterType
@@ -49,7 +50,9 @@ def configured(service: str) -> Iterator[None]:
     Restored are the handlers, filters, level and propagation of the root logger, uvicorn's, the
     HTTP clients', the request and the capped library loggers, structlog's configuration and the
     stdlib logger class structlog's factory installs, the process's and the threads' exception hooks
-    and the warning display, and OpenTelemetry's global propagator, as they were on entry.
+    and the warning display, OpenTelemetry's global propagator and whether outgoing requests carry
+    the trace, as they were on entry. The carriers stay installed on the HTTP clients and their
+    methods are never reassigned, so a wrapper a host put on one survives.
     """
     logger_states = [LoggerState.of(logging.getLogger(name)) for name in TOUCHED_LOGGER_NAMES]
     logger_class = logging.getLoggerClass()
@@ -59,6 +62,7 @@ def configured(service: str) -> Iterator[None]:
     thread_hook = threading.excepthook
     warning_hook = warnings.showwarning
     propagator = get_global_textmap()
+    carrying_trace = is_enabled()
     try:
         configure(service)
         yield
@@ -67,6 +71,7 @@ def configured(service: str) -> Iterator[None]:
         threading.excepthook = thread_hook
         warnings.showwarning = warning_hook
         set_global_textmap(propagator)
+        set_enabled(carrying_trace)
         logging.setLoggerClass(logger_class)
         for state in logger_states:
             state.restore()

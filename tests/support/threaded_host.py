@@ -11,6 +11,7 @@ from logline import RequestLine, StepTimer, configure, unit_trace
 from tests.support.apps import HOST_CLIENT_IP, HOST_ROUTE, SUB
 from tests.support.lines import Line, json_lines
 from tests.support.serving import Call
+from tests.support.serving_in_a_thread import serving_in_a_thread
 
 HOST_LOGGER = "tests.threaded_host"
 HANDLED_EVENT = "handler.logged"
@@ -165,18 +166,14 @@ def serve_threaded_requests(
     """Serve the host with a real `ThreadingHTTPServer` in a thread, make `calls`, return stdout."""
     configure("request-service")
     server = _Host(("127.0.0.1", 0), _Handler)
-    serving = threading.Thread(target=server.serve_forever)
-    serving.start()
-    try:
-        with httpx.Client(base_url=f"http://127.0.0.1:{server.server_port}") as client:
-            for call in calls:
-                try:
-                    client.request(call.method, call.path, headers=call.headers)
-                except httpx.RemoteProtocolError:
-                    pass  # a request whose handler raised ends without an answer
-    finally:
-        server.shutdown()
-        serving.join()
-        server.server_close()
+    with (
+        serving_in_a_thread(server),
+        httpx.Client(base_url=f"http://127.0.0.1:{server.server_port}") as client,
+    ):
+        for call in calls:
+            try:
+                client.request(call.method, call.path, headers=call.headers)
+            except httpx.RemoteProtocolError:
+                pass  # a request whose handler raised ends without an answer
     output = capsys.readouterr().out
     return output, json_lines(output)

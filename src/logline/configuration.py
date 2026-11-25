@@ -11,6 +11,7 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 from structlog.processors import JSONRenderer
 from structlog.stdlib import BoundLogger, LoggerFactory, ProcessorFormatter, filter_by_level
 
+from logline.outgoing_trace import install_trace_carriers
 from logline.process_failures import install_process_failure_hooks
 from logline.record import record_shape
 from logline.request import REQUEST_LOGGER_NAME
@@ -112,6 +113,13 @@ def configure(service: str) -> None:
     While `OTEL_PROPAGATORS` is unset or empty it also sets OpenTelemetry's global propagator to
     W3C trace context alone, so no baggage is continued or forwarded by any library of the process;
     a set variable leaves the global as OpenTelemetry built it from it.
+
+    It also hands the global propagator's headers, `traceparent` and `tracestate` under that
+    default, to every outgoing HTTP request of the process that goes through `http.client`
+    (`urllib.request`, urllib3, requests, botocore) or through httpx or httpx2 where installed, with
+    no call-site code. A request that already carries `traceparent` keeps it and gets no
+    propagator header, and `OTEL_PROPAGATORS=none` adds none. `outgoing_headers()` stays for
+    transports these do not cover, such as `websockets` and aiohttp.
     """
     root_level = _root_level()
     processors = record_shape(service, os.environ.get("SERVICE_VERSION") or None)
@@ -130,4 +138,5 @@ def configure(service: str) -> None:
         logging.getLogger(name).setLevel(max(level, root_level))
     _route_uvicorn_through_root()
     _set_global_propagator()
+    install_trace_carriers()
     install_process_failure_hooks()

@@ -46,10 +46,11 @@ The host's `dependencies` stay as above.
 ## Quick start
 
 ```python
+import httpx
 import uvicorn
 from fastapi import FastAPI, Request
 
-from logline import RequestLineMiddleware, configure, outgoing_headers, set_sub
+from logline import RequestLineMiddleware, configure, set_sub
 
 configure("notes")
 
@@ -60,14 +61,17 @@ app.add_middleware(RequestLineMiddleware)
 @app.get("/notes/{note_id}")
 async def read_note(note_id: int, request: Request) -> dict[str, object]:
     set_sub(request.scope, "the-persons-sub")
-    return {"callee_headers": outgoing_headers()}
+    async with httpx.AsyncClient() as client:
+        await client.get(f"http://tags.internal/notes/{note_id}")  # carries the request's trace
+    return {"id": note_id}
 
 
 if __name__ == "__main__":
     uvicorn.run(app, log_config=None)
 ```
 
-- `configure(service)` runs once at the entry point, before the first line is written.
+- `configure(service)` runs once at the entry point, before the first line is written. It also makes every
+  outgoing HTTP request carry the current trace, with no call-site code ([Trace context](#trace-context)).
 - `app.add_middleware(RequestLineMiddleware)` goes after the app's other middleware, so they run inside the
   request's trace.
 - `set_sub(scope, sub)` and `set_client_ip(scope, ip)` take the ASGI scope. Call them from an async or a sync
@@ -309,8 +313,9 @@ is unset or empty, `configure` sets it to W3C trace context alone: `traceparent`
 extraction included. A library that only asks OpenTelemetry to inject headers (`opentelemetry.propagate.inject`)
 sends the same trace context as `outgoing_headers()`. A set `OTEL_PROPAGATORS` is the host's deliberate choice:
 `configure` leaves the global as OpenTelemetry built it from the variable and `request_trace`, `unit_trace` and
-`outgoing_headers()` follow it. With `none` every request and turn starts a new trace and `outgoing_headers()` is
-empty; with `tracecontext,baggage` baggage a handler set is forwarded, while logline continues no incoming
+`outgoing_headers()` follow it. With `none` every request and turn starts a new trace, `outgoing_headers()` is
+empty and no outgoing request carries a trace header; with `tracecontext,baggage` baggage a handler set is
+forwarded, while logline continues no incoming
 baggage itself. A host that never calls `configure` keeps OpenTelemetry's default, trace context and baggage.
 
 A host without ASGI gets the same trace from `RequestLine`. `logline.trace.request_trace` takes the pairs a server
@@ -319,10 +324,32 @@ hands over as text or as bytes, in any case.
 A WebSocket session runs in a trace the same way, from the upgrade's `traceparent` and `tracestate`
 ([The WebSocket session line](#the-websocket-session-line)).
 
-`outgoing_headers()` returns the current context as the headers of an outgoing call, an empty dict outside a
-request, a WebSocket session or a turn: `httpx.get(url, headers=outgoing_headers())`. Inside a `StepTimer` block it
-names the step's span, inside a turn that carries a valid `traceparent` the sender's, and else the request's or the
-session's.
+### Outgoing calls
+
+`configure` hands the current trace to every outgoing HTTP request of the process, with no call-site code: the
+headers of the global propagator, `traceparent` and `tracestate` under the default. Inside a `StepTimer` block that is
+the step's span, inside a turn that carries a valid `traceparent` the sender's, and else the request's or the
+session's. Outside a trace nothing is added under the default, and `OTEL_PROPAGATORS=none` adds nothing.
+
+- Covered are every client that goes through the standard library's `http.client` (`urllib.request`, urllib3,
+  requests, botocore) and httpx and httpx2, `Client` and `AsyncClient`, where the host installed them. For httpx and
+  httpx2 that includes custom and in-process transports (`ASGITransport`, `MockTransport`).
+- A request that already carries `traceparent` keeps it, and logline adds nothing to it: a caller's `traceparent` is
+  never paired with the current `tracestate`.
+- A propagator that raises fails the request, as `outgoing_headers()` does.
+- No URL is excluded: third parties receive `traceparent` and `tracestate` too. They carry no user data, but a caller's
+  `traceparent` and its passed-through `tracestate` travel on. A redirect to another host keeps the headers.
+- Not covered are `websockets`, aiohttp, a CONNECT tunnel and urllib3's optional HTTP/2. A call through one of them
+  carries the trace only where the host passes `outgoing_headers()` to it.
+
+`outgoing_headers()` returns the current context as the headers of an outgoing call, an empty dict outside a request,
+a WebSocket session or a turn.
+
+**Breaking:** an outgoing request through a covered client carries `traceparent` and `tracestate` where the host did
+not pass them, in-process test transports included. A host's tests through `ASGITransport` continue the caller's
+trace, and a test that asserts a request's exact headers (respx, `MockTransport`) sees the new ones. A hand-written
+carrier of the host, such as a wrapper that adds `outgoing_headers()` to each call, is no longer needed and
+may go; no host has to change. If a carrier breaks a client, pin the previous logline tag.
 
 ### Spans
 
@@ -338,8 +365,9 @@ crash lines and uvicorn's lines among them, carries neither.
 | step | the span its block opened | the span current when the block was entered: the request's, the session's, the sender's inside a turn, or an outer step's |
 
 The current span lives in OpenTelemetry's context, as the trace does; logline keeps no copy of it. A call a host
-makes inside a step, through `outgoing_headers()` or `opentelemetry.propagate.inject`, carries the step's span, so the
-callee's request line has the step's `span_id` as its `parent_span_id`.
+makes inside a step carries the step's span, so the callee's request line has the step's `span_id` as its
+`parent_span_id`. That holds for the covered clients ([Outgoing calls](#outgoing-calls)) and for a call that passes
+`outgoing_headers()` or `opentelemetry.propagate.inject`.
 
 ### A turn on a WebSocket
 
@@ -387,7 +415,7 @@ async for message in websocket.iter_json():
 |---|---|
 | `LOG_LEVEL` | the root level: `debug`, `info`, `warning`, `error` or `critical`, case-insensitive; `info` when unset. Anything else, an empty value included, makes `configure` raise `ValueError` |
 | `SERVICE_VERSION` | the `version` of every line; unset or empty makes it `null` |
-| `OTEL_PROPAGATORS` | read by OpenTelemetry; unset or empty lets `configure` set the global propagator to W3C trace context, anything else leaves it as OpenTelemetry built it ([Trace context](#trace-context)) |
+| `OTEL_PROPAGATORS` | read by OpenTelemetry; unset or empty lets `configure` set the global propagator to W3C trace context, anything else leaves it as OpenTelemetry built it; `none` also stops the trace headers on outgoing requests ([Trace context](#trace-context)) |
 
 ## The host's duties
 
@@ -743,7 +771,11 @@ Why this log is the target:
 `configure(service)` and on exit restores the process's logging as it was before: the root logger's handlers
 and level, the handlers, filters, levels and propagation of the uvicorn, HTTP client, `logline.request` and
 capped library (`mcp`, `botocore`, `sqlalchemy.dialects.postgresql`, `piper`) loggers, structlog's configuration and the
-stdlib logger class its factory installs, and OpenTelemetry's global propagator. The module imports no test framework.
+stdlib logger class its factory installs, OpenTelemetry's global propagator and whether outgoing requests carry the
+trace. Inside the block a covered client's request carries the current trace ([Outgoing calls](#outgoing-calls)),
+so a test that asserts a request's exact headers sees it. After the block requests carry the trace only if they did before it; the carriers stay on the
+HTTP clients' methods, which `configured` never reassigns, so a wrapper the host or a library put on one survives.
+The module imports no test framework.
 
 ```python
 import json
@@ -818,7 +850,8 @@ What the check does not see, so a clean result is not a proof:
 
 The version follows [semantic versioning](https://semver.org/). From 1.0 the public names are stable within a major:
 only renaming or removing one, or changing its signature, is a major, and a patch release never breaks one. The one
-semver exception: a change to the record, to an event name or to `configure`'s policy touches hosts only, so it is a
+semver exception: a change to the record, to an event name, to the headers `configure` puts on outgoing requests or
+to `configure`'s policy touches hosts only, so it is a
 minor release with a **Breaking** note in the [release pages](https://github.com/overnightworks/logline/releases),
 because hosts pin a tag and take it deliberately. The public modules are `logline`, `logline.check`, `logline.testing` and `logline.trace`; a public name is one that a
 public module's `__all__` lists, and everything else may change in any release.

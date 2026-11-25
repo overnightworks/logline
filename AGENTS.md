@@ -13,7 +13,7 @@
 - `logline.__version__` is the one version. It stays a plain string literal and is raised alone, in the pull request before the release.
 - A tag is never moved or re-created; a broken release gets the next patch tag. A gate refusal leaves no tag, so the release is dispatched again once its cause is gone; after a failed `tag` job, re-run the failed jobs, never all jobs.
 - A new field on a line is an id, a number whose name carries its unit, or a code from a closed set; never content, a credential, a header value, a raw path or a query string.
-- FastAPI, uvicorn, httpx and websockets are test dependencies only; `.importlinter` keeps them out of `logline`.
+- FastAPI, uvicorn, websockets and every third-party HTTP client are test dependencies only. logline imports no web framework or server, and imports an HTTP client only in the one module that carries the trace on outgoing requests, a third-party one only where it is installed; `.importlinter` enforces this.
 - Runtime behaviour is proven by driving a real FastAPI app through the middleware under a real `uvicorn.Server`, and the non-ASGI writer `RequestLine` through a real standard-library `ThreadingHTTPServer` in a thread, and reading stdout, with only the clock and randomness faked; pure logic, such as `logline.check`, by unit tests. Branch coverage stays 100 %.
 - The trace id has one owner, OpenTelemetry's context through `logline.trace`; no module keeps a second copy.
 - The public modules are `logline`, `logline.check`, `logline.testing` and `logline.trace`; a name is public when a public module's `__all__` lists it, and every other module declares `__all__: list[str] = []`. A pull request that changes a public name states its **Breaking** line and the hosts' migration or "No migration".
