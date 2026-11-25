@@ -1,0 +1,7 @@
+claim_id = "ca18f1be4ea341a18a4b9edd52100192"
+agent = "Claude a7e3f44b-722b-4ad9-aadc-c154ca881e36"
+role = "builder"
+base = "f944bf5a437d9fd1de9577720cd96b218ee0c41c"
+branch = "dependabot/github_actions/astral-sh/setup-uv-10.4.0"
+scope = [".github/workflows/ci.yml"]
+opened_commit = "69aab2853b9d32ef7e2d482295206935b87fa0fb"
