@@ -2,15 +2,21 @@
 
 import asyncio
 import http.client
+import io
 import logging
+import tempfile
 import urllib.request
 from collections.abc import Callable, Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from types import ModuleType
+from typing import Any
 from urllib.parse import urlsplit
 
+import boto3
 import botocore.session
 import httpx
 import httpx2
@@ -24,18 +30,21 @@ from tests.support.step_routes import STEP_EVENT, STEP_LOGGER
 
 type Headers = dict[str, str]
 type Call = Callable[[str, Headers], None]
+type Transfer = Callable[[str], None]
 type ReceivedHeaders = dict[str, list[str]]
 
 TRACEPARENT = "traceparent"
 TRACESTATE = "tracestate"
 INCOMING_TRACESTATE = "vendor=incoming"
-A_CALLERS_TRACEPARENT = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+A_CALLERS_TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
+A_CALLERS_TRACEPARENT = f"00-{A_CALLERS_TRACE_ID}-b7ad6b7169203331-01"
 
 
 @dataclass
 class Received:
-    """One request as the server saw it: the headers by lower-case name, and the peer's port."""
+    """One request as the server saw it: method, headers by lower-case name and the peer's port."""
 
+    method: str
     headers: ReceivedHeaders
     client_port: int
 
@@ -59,13 +68,15 @@ def _handler_recording(server: EchoServer) -> type[BaseHTTPRequestHandler]:
             headers: ReceivedHeaders = {}
             for name, value in self.headers.items():
                 headers.setdefault(name.lower(), []).append(value)
-            server.received.append(Received(headers, self.client_address[1]))
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            server.received.append(Received(self.command, headers, self.client_address[1]))
             self.send_response(200)
             self.send_header("Content-Length", "0")
             self.end_headers()
 
         do_GET = _answer
         do_HEAD = _answer
+        do_PUT = _answer
 
         def log_message(self, format: str, *args: object) -> None:
             """The standard library's access line is not under test."""
@@ -140,6 +151,34 @@ def _with_httpx_family(client_module: ModuleType) -> tuple[Call, Call]:
 _HTTPX_CALL, _HTTPX_ASYNC_CALL = _with_httpx_family(httpx)
 _HTTPX2_CALL, _HTTPX2_ASYNC_CALL = _with_httpx_family(httpx2)
 
+
+def _in_a_pool_with_submit(url: str, headers: Headers) -> None:
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pool.submit(_with_http_client, url, headers).result()
+
+
+class _HostsPool(ThreadPoolExecutor):
+    def submit(self, fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Future[Any]:
+        return super().submit(fn, *args, **kwargs)
+
+
+def _in_a_pool_subclass(url: str, headers: Headers) -> None:
+    with _HostsPool(max_workers=1) as pool:
+        pool.submit(_with_http_client, url, headers).result()
+
+
+def _in_a_pool_with_map(url: str, headers: Headers) -> None:
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        list(pool.map(_with_http_client, [url], [headers]))
+
+
+def _in_run_in_executor(url: str, headers: Headers) -> None:
+    async def call() -> None:
+        await asyncio.get_running_loop().run_in_executor(None, _with_http_client, url, headers)
+
+    asyncio.run(call())
+
+
 # Every covered client by a name that is its test id.
 CLIENTS: dict[str, Call] = {
     "http.client": _with_http_client,
@@ -150,6 +189,50 @@ CLIENTS: dict[str, Call] = {
     "httpx-async": _HTTPX_ASYNC_CALL,
     "httpx2": _HTTPX2_CALL,
     "httpx2-async": _HTTPX2_ASYNC_CALL,
+    "thread-pool-submit": _in_a_pool_with_submit,
+    "thread-pool-subclass": _in_a_pool_subclass,
+    "thread-pool-map": _in_a_pool_with_map,
+    "run-in-executor": _in_run_in_executor,
+}
+
+
+def _s3_client(url: str) -> Any:
+    return boto3.client(
+        "s3",
+        endpoint_url=url,
+        region_name="us-east-1",
+        aws_access_key_id="dummy-key-id",
+        aws_secret_access_key="dummy-secret",
+    )
+
+
+def _upload_file(url: str) -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        source = Path(directory, "source")
+        source.write_bytes(b"content")
+        _s3_client(url).upload_file(str(source), "a-bucket", "a-key")
+
+
+def _download_file(url: str) -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        _s3_client(url).download_file("a-bucket", "a-key", str(Path(directory, "target")))
+
+
+def _upload_fileobj(url: str) -> None:
+    _s3_client(url).upload_fileobj(io.BytesIO(b"content"), "a-bucket", "a-key")
+
+
+def _download_fileobj(url: str) -> None:
+    _s3_client(url).download_fileobj("a-bucket", "a-key", io.BytesIO())
+
+
+# Each managed transfer of boto3, which sends from the pool of its own, by a name that is its test
+# id, and the methods of the requests it sends.
+TRANSFERS: dict[str, tuple[Transfer, set[str]]] = {
+    "upload_file": (_upload_file, {"PUT"}),
+    "download_file": (_download_file, {"HEAD", "GET"}),
+    "upload_fileobj": (_upload_fileobj, {"PUT"}),
+    "download_fileobj": (_download_fileobj, {"HEAD", "GET"}),
 }
 
 

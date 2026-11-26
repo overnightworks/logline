@@ -2,6 +2,7 @@ import contextlib
 import http.client
 import logging
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import httpx
@@ -14,6 +15,8 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 
 from logline import configure
 from logline.testing import configured
+from logline.trace import current_trace_id
+from tests.support.incoming_trace import INCOMING_TRACE_ID
 from tests.support.lines import json_lines
 from tests.support.loggers import logger_settings
 from tests.support.outgoing_clients import CLIENTS, TRACEPARENT, EchoServer, inside_a_request
@@ -149,23 +152,40 @@ def test_leaving_the_block_stops_the_trace_reaching_outgoing_calls(
     assert (carried_inside, TRACEPARENT in echo.last) == (True, False)
 
 
+def test_leaving_the_block_stops_a_thread_pool_item_seeing_the_submitters_trace() -> None:
+    with configured("pool"), ThreadPoolExecutor(max_workers=1) as pool, inside_a_request():
+        seen_inside = pool.submit(current_trace_id).result()
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pool.submit(int).result()
+        with inside_a_request():
+            seen_after = pool.submit(current_trace_id).result()
+
+    assert (seen_inside, seen_after) == (INCOMING_TRACE_ID, None)
+
+
 @pytest.mark.parametrize(
-    ("client_class", "call"),
+    ("client_class", "method", "call"),
     [
-        pytest.param(http.client.HTTPConnection, CLIENTS["http.client"], id="http.client"),
-        pytest.param(httpx.Client, CLIENTS["httpx"], id="httpx"),
-        pytest.param(httpx.AsyncClient, CLIENTS["httpx-async"], id="httpx-async"),
-        pytest.param(httpx2.Client, CLIENTS["httpx2"], id="httpx2"),
-        pytest.param(httpx2.AsyncClient, CLIENTS["httpx2-async"], id="httpx2-async"),
+        pytest.param(
+            http.client.HTTPConnection, "endheaders", CLIENTS["http.client"], id="http.client"
+        ),
+        pytest.param(httpx.Client, "send", CLIENTS["httpx"], id="httpx"),
+        pytest.param(httpx.AsyncClient, "send", CLIENTS["httpx-async"], id="httpx-async"),
+        pytest.param(httpx2.Client, "send", CLIENTS["httpx2"], id="httpx2"),
+        pytest.param(httpx2.AsyncClient, "send", CLIENTS["httpx2-async"], id="httpx2-async"),
+        pytest.param(
+            ThreadPoolExecutor, "submit", CLIENTS["thread-pool-submit"], id="thread-pool-submit"
+        ),
     ],
 )
 def test_a_wrapper_put_on_a_patched_method_after_configure_survives_the_block(
     monkeypatch: pytest.MonkeyPatch,
     echo: EchoServer,
     client_class: type,
+    method: str,
     call: Callable[[str, dict[str, str]], None],
 ) -> None:
-    method = "endheaders" if client_class is http.client.HTTPConnection else "send"
     wrapped_calls: list[object] = []
     with configured("wrapped"):
         patched = getattr(client_class, method)

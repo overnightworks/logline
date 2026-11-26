@@ -16,8 +16,8 @@ flowchart LR
 ```
 
 Outside: the callers, who choose their own `traceparent` and so their own `trace_id`; the callee services,
-which receive the request's trace on every outgoing request the process makes through a covered HTTP client, or
-through `outgoing_headers()` where the transport is not covered; and the platform, which collects stdout.
+which receive the request's trace on every outgoing request the process makes through a covered HTTP client,
+from a thread pool's work items too, or through `outgoing_headers()` where the transport is not covered; and the platform, which collects stdout.
 
 ## 2. Building Block View
 
@@ -31,11 +31,12 @@ Module owners in `logline`:
   `sqlalchemy.dialects.postgresql` at WARNING, `piper` at ERROR), the routing of uvicorn's loggers and the
   installing of the `process_failures` hooks, OpenTelemetry's global propagator (see Constraints and reasons), the
   `outgoing_trace` carriers and the `asyncio_records` wrap and filter.
-- `outgoing_trace` owns how the trace reaches an outgoing HTTP request with no call-site code: a hook on
-  `http.client.HTTPConnection` (urllib.request, urllib3, requests and botocore go through it) and a hook on the
-  public `send` of httpx's and httpx2's `Client` and `AsyncClient`, where the host installed them. It is the one
-  module that imports an HTTP client, a third-party one only after `importlib.util.find_spec` found it. It owns the
-  state, on or off, that decides whether the installed hooks add anything.
+- `outgoing_trace` owns how the current trace leaves the caller's hand with no call-site code: on every outgoing
+  HTTP request, through a hook on `http.client.HTTPConnection` (urllib.request, urllib3, requests and botocore go
+  through it) and a hook on the public `send` of httpx's and httpx2's `Client` and `AsyncClient`, where the host
+  installed them; and into every work item submitted to a `concurrent.futures.ThreadPoolExecutor`, through a hook on
+  `submit`. It is the one module that imports an HTTP client, a third-party one only after `importlib.util.find_spec`
+  found it. It owns the state, on or off, that decides whether the installed hooks add anything, and uses `trace`.
 - `asyncio_records` owns how asyncio's failures become lines: a class-level wrap of
   `asyncio.BaseEventLoop.default_exception_handler`, installed once per process and never removed, behind the
   state, on or off, that decides whether it writes anything; the classification of a handler's context into
@@ -178,7 +179,8 @@ lowest direct dependency floors run the same tests.
 - The request line is written on its own logger at INFO, whatever `LOG_LEVEL` says: a quiet root must not
   hide the line that audits every request.
 - The trace and the current span live only in OpenTelemetry's context, read through `opentelemetry-api`: a second
-  contextvar could disagree with the first, and a worker thread inherits the one the framework copies. The span's
+  contextvar could disagree with the first, and a worker thread inherits the one the framework copies, or the one the
+  `outgoing_trace` hook on `ThreadPoolExecutor.submit` attaches around each work item. The span's
   parent id sits beside the span in that context, not in a store of logline's own.
 - A step's line is written with the step's own context attached around the log call, so its `trace_id`,
   `span_id` and `parent_span_id` come from one trace wherever the block ends. The previous context is put back with
@@ -201,13 +203,21 @@ lowest direct dependency floors run the same tests.
   context and baggage.
 - `outgoing_trace` installs each hook once per process and never removes it; its wrapper reads the one state the
   module owns. `configure` installs what is missing and turns the state on; `testing.configured` restores the state
-  and never reassigns a client's method, so a wrapper a host or a library put on the same method afterwards
-  survives. A request that already carries `traceparent` gets no propagator header at all, so a caller's
+  and never reassigns a client's method or `ThreadPoolExecutor.submit`, so a wrapper a host or a library put on the
+  same method afterwards survives. A request that already carries `traceparent` gets no propagator header at all, so a caller's
   `traceparent` is never paired with the current `tracestate`, and a propagator that raises fails the request. The
   `http.client` hook records the header names a request puts and clears the record at `putrequest`, because urllib3
   keeps a connection alive across requests. The httpx hook runs before every transport, so custom and in-process
   transports carry the trace too. A CONNECT tunnel, urllib3's HTTP/2, `websockets` and aiohttp stay uncovered;
-  `outgoing_headers()` serves them. No URL is excluded, so third parties receive the headers.
+  `outgoing_headers()` serves them. No URL is excluded, so third parties receive the headers, from a pool's work items
+  too.
+- The `submit` hook attaches only OpenTelemetry's context, taken at every submit even outside a trace: a worker that
+  inherited its starter's context under `-X thread_inherit_context=1` must not hand that trace to an item, and copying
+  every context variable would reset worker-local state such as Django's cache backends. The attach is
+  `trace.attached`, detached when the item ends, so an item that leaves a trace attached passes nothing on. A class
+  that overrides `prepare_context` (`InterpreterPoolExecutor`) is left alone, found by the function under its
+  classmethod, since its items cannot be wrapped; comparing the bound classmethods would switch carrying off for every
+  pool.
 - `configure` puts a drop-all filter on `uvicorn.access`: a later `dictConfig` removes handlers but never
   filters, so the access log, which carries the raw path, stays silent in every start mode.
 - The `uvicorn.error` filter knows a record by uvicorn's message template or by the `OSError` it logs for a bind

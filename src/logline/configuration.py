@@ -124,6 +124,11 @@ def configure(service: str) -> None:
     no call-site code. A request that already carries `traceparent` keeps it and gets no
     propagator header, and `OTEL_PROPAGATORS=none` adds none. `outgoing_headers()` stays for
     transports these do not cover, such as `websockets` and aiohttp.
+
+    Every work item submitted to a `concurrent.futures.ThreadPoolExecutor` also runs with the
+    OpenTelemetry context its submitter had, so `Executor.map`, asyncio's `run_in_executor` and
+    boto3's managed transfers carry the trace; a thread a host or library starts and the other
+    executors do not.
     """
     root_level = _root_level()
     processors = record_shape(service, os.environ.get("SERVICE_VERSION") or None)
