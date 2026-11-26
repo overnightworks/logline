@@ -1,8 +1,0 @@
-claim_id = "cdffd41765bc46b89ebbdb2579ce0e82"
-agent = "Claude 23ef093f-79b8-4fbc-860e-cb1d30fb1417"
-role = "builder"
-base = "26c202af85cb01fd88029f76105cb1b0175dc8d2"
-branch = "claude/issue-151-does-an-event-name-held-in-a-same-module"
-scope = ["README.md", "src/logline/check.py", "tests/support/check_cases.py", "tests/support/named_event_cases.py", "tests/test_check.py"]
-opened_commit = "567d536fe8d18847afe056ea52034319435e3a1d"
-whole_reason = "One predicate in the check for the literal an event stands for, its README rows, and its test cases, split from test_check.py into a support module and a named-events module beside it."
