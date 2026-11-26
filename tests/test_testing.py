@@ -15,6 +15,8 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 
 from logline import configure
 from logline.testing import configured
+from logline.trace import current_trace_id
+from tests.support.incoming_trace import INCOMING_TRACE_ID
 from tests.support.lines import json_lines
 from tests.support.loggers import logger_settings
 from tests.support.outgoing_clients import CLIENTS, TRACEPARENT, EchoServer, inside_a_request
@@ -148,6 +150,16 @@ def test_leaving_the_block_stops_the_trace_reaching_outgoing_calls(
         call(echo.url, {})
 
     assert (carried_inside, TRACEPARENT in echo.last) == (True, False)
+
+
+def test_leaving_the_block_stops_a_thread_pool_item_seeing_the_submitters_trace() -> None:
+    with configured("pool"), ThreadPoolExecutor(max_workers=1) as pool, inside_a_request():
+        seen_inside = pool.submit(current_trace_id).result()
+
+    with ThreadPoolExecutor(max_workers=1) as pool, inside_a_request():
+        seen_after = pool.submit(current_trace_id).result()
+
+    assert (seen_inside, seen_after) == (INCOMING_TRACE_ID, None)
 
 
 @pytest.mark.parametrize(
