@@ -271,6 +271,54 @@ _NAMED_EVENT_CASES = [
         _NOT_LITERAL,
     ),
     _case(
+        "Final constant rebound by an except handler",
+        _STDLIB
+        + 'from typing import Final\nEVENT: Final = "turn.arrived"\n'
+        + 'try:\n    pass\nexcept Exception as EVENT:\n    pass\nlogger.info(EVENT)\n',
+        _NOT_LITERAL,
+    ),
+    _case(
+        "Final constant rebound by a match capture",
+        _STDLIB
+        + 'from typing import Final\nEVENT: Final = "turn.arrived"\n'
+        + 'match 1:\n    case EVENT:\n        pass\nlogger.info(EVENT)\n',
+        _NOT_LITERAL,
+    ),
+    _case(
+        "Final constant rebound by a match star",
+        _STDLIB
+        + 'from typing import Final\nEVENT: Final = "turn.arrived"\n'
+        + 'match [1]:\n    case [*EVENT]:\n        pass\nlogger.info(EVENT)\n',
+        _NOT_LITERAL,
+    ),
+    _case(
+        "Final constant rebound by a match mapping rest",
+        _STDLIB
+        + 'from typing import Final\nEVENT: Final = "turn.arrived"\n'
+        + 'match {}:\n    case {**EVENT}:\n        pass\nlogger.info(EVENT)\n',
+        _NOT_LITERAL,
+    ),
+    _case(
+        "Final constant shadowed by an except handler in the function",
+        _STDLIB
+        + 'from typing import Final\nEVENT: Final = "turn.arrived"\n'
+        + 'def note():\n    try:\n        pass\n    except Exception as EVENT:\n        logger.info(EVENT)\n',
+        _NOT_LITERAL,
+    ),
+    _case(
+        "Final constant shadowed by a match capture in the function",
+        _STDLIB
+        + 'from typing import Final\nEVENT: Final = "turn.arrived"\n'
+        + 'def note():\n    match 1:\n        case EVENT:\n            logger.info(EVENT)\n',
+        _NOT_LITERAL,
+    ),
+    _case(
+        "Final constant used beside a nested function that binds its name",
+        _STDLIB
+        + 'from typing import Final\nEVENT: Final = "turn.arrived"\n'
+        + 'def note():\n    def inner(EVENT):\n        pass\n    logger.info(EVENT)\n',
+    ),
+    _case(
         "Final constant bound twice",
         _STDLIB
         + 'from typing import Final\nEVENT: Final = "turn.arrived"\nEVENT = "turn.failed"\n'

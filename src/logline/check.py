@@ -68,7 +68,7 @@ _FINAL_ANNOTATIONS = frozenset({"typing.Final", "typing_extensions.Final"})
 _STRING_ENUMS = frozenset({"enum.StrEnum"})
 
 _Row = tuple[ast.expr | ast.keyword | ast.stmt, Rule]
-_LiteralOf = Callable[[ast.expr | None], str | None]
+_LiteralOf = Callable[[ast.expr], str | None]
 
 
 def check(source: str, path: PurePath) -> tuple[Finding, ...]:
@@ -195,6 +195,7 @@ class _Judge:
         self._loggers: dict[str, _Kind] = {}
         self._timers: set[str] = set()
         self._constants: dict[str, str] = {}
+        self._function_bindings: dict[ast.AST, set[str]] = {}
         self._calls_by_name: defaultdict[str, _CallsOfName] = defaultdict(
             lambda: _CallsOfName(self._literal_text)
         )
@@ -264,21 +265,26 @@ class _Judge:
             )
         return self._resolve(annotation) in _FINAL_ANNOTATIONS
 
-    def _literal_text(self, node: ast.expr | None) -> str | None:
+    def _literal_text(self, node: ast.expr) -> str | None:
         """The text an event stands for: a string literal, or a same-module `Final` constant or
         `StrEnum` member that no enclosing function rebinds. `None` for any other expression."""
         text = _string_literal(node)
-        if text is not None or node is None:
+        if text is not None:
             return text
         dotted = _dotted(node)
         if dotted is None or dotted not in self._constants:
             return None
         function = self._enclosing_function(node)
         while function is not None:
-            if dotted.partition(".")[0] in _function_bindings(function):
+            if dotted.partition(".")[0] in self._bindings_of(function):
                 return None
             function = self._enclosing_function(function)
         return self._constants[dotted]
+
+    def _bindings_of(self, function: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+        if function not in self._function_bindings:
+            self._function_bindings[function] = set(_scope_bindings([function.args, *function.body]))
+        return self._function_bindings[function]
 
     def _read_call_name(self, node: ast.AST) -> None:
         if isinstance(node, ast.Call):
@@ -467,7 +473,13 @@ class _Judge:
 
 def _module_bindings(tree: ast.Module) -> Iterator[str]:
     """Every name the module scope binds, once per binding, in nested statements too."""
-    pending: list[ast.AST] = [*tree.body]
+    return _scope_bindings(tree.body)
+
+
+def _scope_bindings(nodes: list[ast.AST]) -> Iterator[str]:
+    """Every name one scope binds, once per binding; a nested function or class binds only its
+    own name here."""
+    pending = list(nodes)
     while pending:
         node = pending.pop()
         yield from _names_bound_by(node)
@@ -485,11 +497,11 @@ def _names_bound_by(node: ast.AST) -> Iterator[str]:
     elif isinstance(node, ast.Import | ast.ImportFrom):
         for alias in node.names:
             yield alias.asname or alias.name.partition(".")[0]
-
-
-def _function_bindings(function: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
-    """The names a function binds itself: parameters and any assignment, nested ones included."""
-    return {name for node in ast.walk(function) for name in _names_bound_by(node)}
+    elif isinstance(node, ast.ExceptHandler | ast.MatchAs | ast.MatchStar):
+        if node.name is not None:
+            yield node.name
+    elif isinstance(node, ast.MatchMapping) and node.rest is not None:
+        yield node.rest
 
 
 def _field_rows(keywords: list[ast.keyword]) -> Iterator[_Row]:
