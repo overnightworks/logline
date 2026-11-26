@@ -896,7 +896,7 @@ a breaking change.
 
 | `Rule` | Broken when |
 | --- | --- |
-| `event_not_literal` | the event of a logging call or of `StepTimer(...)` is no string literal, an f-string or a formatted text included |
+| `event_not_literal` | the event of a logging call or of `StepTimer(...)` stands for no string literal: an f-string, a formatted text, or a name the check cannot resolve to one (see below) |
 | `event_name_shape` | the event is a literal that does not match the event-name pattern |
 | `message_args` | a standard-library logging call passes positional arguments after the event |
 | `denied_field` | a field on the deny list is a keyword of a structlog call, of `.bind(...)`, of `bind_contextvars(...)`, of `StepTimer(...)` or `step.add(...)`, or a literal key of an `extra=` dict |
@@ -904,19 +904,29 @@ a breaking change.
 | `uvicorn_log_config` | `uvicorn.run`, `uvicorn.main.run` or `uvicorn.Config` is called without `log_config=None` |
 | `uvicorn_log_level` | `uvicorn.run`, `uvicorn.main.run` or `uvicorn.Config` is called with a `log_level` |
 | `uvicorn_options_hidden` | one of them is called with a `**` argument, a `*` argument or a positional argument after the app, which hide its options |
-| `hand_written_ended` | a logging call's literal event, or its one-hop event parameter when some call passes such a literal, matches `event_name_pattern` of `standard.json` and ends in `closing_event_suffix` of `standard.json` (`.ended`), which only `StepTimer` writes with its span; a `StepTimer` event is no logging call and is not reported |
+| `hand_written_ended` | a logging call's literal event (or the literal its same-module constant or member stands for), or its one-hop event parameter when some call passes such a literal, matches `event_name_pattern` of `standard.json` and ends in `closing_event_suffix` of `standard.json` (`.ended`), which only `StepTimer` writes with its span; a `StepTimer` event is no logging call and is not reported |
 
 A logging call is `debug`, `info`, `warning`, `error`, `exception`, `critical` or `log` (the event is its
 second argument) on a logger the same file binds from `logging.getLogger`, `structlog.get_logger`,
-`structlog.stdlib.get_logger` or `.bind(...)`, on the `logging` module, or on a parameter or attribute annotated
-`logging.Logger` or structlog's `BoundLogger`; imports are resolved, aliases included. A call gets at most one
-event row. An event may be a parameter of a function in the same file when every call of that function in the
-file passes a matching literal; the check follows one hop and never crosses a file. Setup on a named library
-logger, such as `logging.getLogger("httpx").addFilter(...)` or `setLevel`, is not own setup.
+`structlog.stdlib.get_logger` or `.bind(...)`, on the `logging` module, or on a parameter or attribute
+annotated `logging.Logger` or structlog's `BoundLogger`; imports are resolved, aliases included. A call gets
+at most one event row.
+
+An event is a string literal, or a name bound once at module level of the same file by an annotated assignment
+of a string literal whose annotation is `Final` or `Final[str]` (from `typing` or `typing_extensions`), or
+`Class.MEMBER` of a module-level `StrEnum` class of the same file whose body assigns `MEMBER` a string
+literal. The check judges that literal, its shape and `.ended` suffix, as it judges one at the call.
+
+A name an enclosing function binds itself, a name bound twice or without `Final`, a member assigned `auto()`,
+and a constant or member imported from another file stay `event_not_literal`. An event may be a parameter of a
+function in the same file when every call of that function in the file passes a matching literal, or such a
+constant or member; the check follows one hop and never crosses a file. Setup on a named library logger, such
+as `logging.getLogger("httpx").addFilter(...)` or `setLevel`, is not own setup.
 
 What the check does not see, so a clean result is not a proof:
 
 - A logger handed in without an annotation, and one bound in another file.
+- An event constant or member imported from another file, which reads as `event_not_literal`.
 - An `extra=` given as a variable, and any `**fields`; the record still drops a denied field at runtime.
 - A logging function imported by name, such as `from logging import warning`.
 - An event passed as a keyword (`event=`, `msg=`); only the positional event is read.
