@@ -336,6 +336,17 @@ def test_a_context_logline_cannot_read_still_writes_one_coded_line_and_raises_no
     assert (line["event"], line["error_type"]) == (_CALLBACK_FAILED, "RuntimeError")
 
 
+def test_a_context_whose_exception_is_not_an_exception_writes_one_unknown_record(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with configured("asyncio-not-an-exception"):
+        asyncio.run(_report(lambda _loop: {"message": "m", "exception": "not an exception"})())
+
+    captured = capsys.readouterr()
+    (line,) = _the_asyncio_lines(captured.out)
+    assert (line["event"], line.keys(), captured.err) == (_UNKNOWN_RECORD, BASE_KEYS, "")
+
+
 def test_leaving_the_block_gives_asyncio_its_own_records_back(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
