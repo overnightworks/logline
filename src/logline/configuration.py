@@ -11,6 +11,7 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 from structlog.processors import JSONRenderer
 from structlog.stdlib import BoundLogger, LoggerFactory, ProcessorFormatter, filter_by_level
 
+from logline.asyncio_records import ASYNCIO_LOGGER_NAME, install_asyncio_records
 from logline.outgoing_trace import install_trace_carriers
 from logline.process_failures import install_process_failure_hooks
 from logline.record import record_shape
@@ -49,6 +50,7 @@ TOUCHED_LOGGER_NAMES = (
     _ROOT_LOGGER_NAME,
     REQUEST_LOGGER_NAME,
     *_UVICORN_LOGGERS,
+    ASYNCIO_LOGGER_NAME,
     *_CAPPED_LOGGER_LEVELS,
 )
 
@@ -108,7 +110,9 @@ def configure(service: str) -> None:
 
     `service` names the app or service. `SERVICE_VERSION` is read here and `LOG_LEVEL` sets the
     root level; a malformed `LOG_LEVEL` raises `ValueError` before anything changes. It also writes
-    an uncaught exception, a thread's uncaught exception and a Python warning as record lines.
+    an uncaught exception, a thread's uncaught exception, a Python warning, an unraisable exception
+    and every failure asyncio reports (an exception nobody retrieved, in a callback or on a
+    transport) as record lines; a host's own `loop.set_exception_handler` still wins over the last.
 
     While `OTEL_PROPAGATORS` is unset or empty it also sets OpenTelemetry's global propagator to
     W3C trace context alone, so no baggage is continued or forwarded by any library of the process;
@@ -144,4 +148,5 @@ def configure(service: str) -> None:
     _route_uvicorn_through_root()
     _set_global_propagator()
     install_trace_carriers()
+    install_asyncio_records()
     install_process_failure_hooks()

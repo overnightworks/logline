@@ -9,8 +9,9 @@ import pytest
 
 from logline.standard import BASE_KEYS
 from logline.testing import configured
-from tests.support.failing_process import SECRET
-from tests.support.lines import Line, json_lines
+from tests.support.failing_process import SECRET, Leaky
+from tests.support.lines import Line, json_lines, outside_the_traceback
+from tests.support.outgoing_clients import inside_a_request
 
 _REPOSITORY = Path(__file__).parents[1]
 
@@ -36,6 +37,16 @@ def _the_line_of(output: str, event: str) -> Line:
         ("crash", "process.crashed", "critical", "logline.crash", "RuntimeError", 1),
         ("thread", "thread.crashed", "critical", "logline.crash", "RuntimeError", 0),
         ("warning", "python_warning.raised", "warning", "py.warnings", "DeprecationWarning", 0),
+        ("task", "asyncio_task.failed", "error", "asyncio", "RuntimeError", 0),
+        ("unraisable", "object_cleanup.failed", "error", "logline.crash", "RuntimeError", 0),
+        (
+            "unraisable_in_exit_handler",
+            "object_cleanup.failed",
+            "error",
+            "logline.crash",
+            "RuntimeError",
+            0,
+        ),
     ],
 )
 def test_a_failing_process_writes_one_record_line_on_stdout(
@@ -59,7 +70,26 @@ def test_a_crash_keeps_its_message_inside_the_traceback() -> None:
 
     line = _the_line_of(result.stdout, "process.crashed")
     assert SECRET in str(line["exception"])
-    assert SECRET not in str({key: value for key, value in line.items() if key != "exception"})
+    assert SECRET not in str(outside_the_traceback(line))
+
+
+def test_an_unraisable_line_carries_no_message_and_no_object_text() -> None:
+    result = _run_failing_process("unraisable")
+
+    line = _the_line_of(result.stdout, "object_cleanup.failed")
+    assert SECRET in str(line["exception"])
+    outside = str(outside_the_traceback(line))
+    assert SECRET not in outside
+    assert "Leaky" not in outside
+    assert "err_msg" not in line
+
+
+def test_an_object_cleaned_up_at_interpreter_teardown_keeps_python_text_on_stderr() -> None:
+    result = _run_failing_process("unraisable_at_teardown")
+
+    assert SECRET in result.stderr
+    assert "object_cleanup.failed" not in result.stdout
+    assert result.returncode == 0
 
 
 def test_a_warning_line_carries_no_message_text(capsys: pytest.CaptureFixture[str]) -> None:
@@ -94,13 +124,42 @@ def test_the_process_hook_writes_a_critical_line_in_process(
     assert (line["level"], line["error_type"]) == ("critical", "ValueError")
 
 
+def _hooks() -> tuple[object, ...]:
+    return (sys.excepthook, threading.excepthook, warnings.showwarning, sys.unraisablehook)
+
+
 def test_leaving_the_block_restores_the_hooks_the_host_had() -> None:
-    before = (sys.excepthook, threading.excepthook, warnings.showwarning)
+    before = _hooks()
 
     with configured("restoring"):
-        assert (sys.excepthook, threading.excepthook, warnings.showwarning) != before
+        assert all(inside is not host for inside, host in zip(_hooks(), before, strict=True))
 
-    assert before == (sys.excepthook, threading.excepthook, warnings.showwarning)
+    assert before == _hooks()
+
+
+def test_the_unraisable_hook_writes_an_error_line_in_process(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with configured("collecting"):
+        Leaky()
+
+    captured = capsys.readouterr()
+    line = _the_line_of(captured.out, "object_cleanup.failed")
+    assert (line["level"], line["logger"], line["error_type"]) == (
+        "error",
+        "logline.crash",
+        "RuntimeError",
+    )
+    assert captured.err == ""
+
+
+def test_an_unraisable_line_carries_no_trace_even_inside_a_request(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with configured("collecting"), inside_a_request():
+        Leaky()
+
+    assert _the_line_of(capsys.readouterr().out, "object_cleanup.failed")["trace_id"] is None
 
 
 def test_a_thread_that_raises_writes_a_critical_line_in_process(

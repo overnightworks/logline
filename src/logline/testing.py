@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 import structlog
 from opentelemetry.propagate import get_global_textmap, set_global_textmap
 
+from logline import asyncio_records
 from logline.configuration import TOUCHED_LOGGER_NAMES, configure
 from logline.outgoing_trace import is_enabled, set_enabled
 
@@ -49,11 +50,13 @@ def configured(service: str) -> Iterator[None]:
 
     Restored are the handlers, filters, level and propagation of the root logger, uvicorn's, the
     HTTP clients', the request and the capped library loggers, structlog's configuration and the
-    stdlib logger class structlog's factory installs, the process's and the threads' exception hooks
-    and the warning display, OpenTelemetry's global propagator and whether outgoing requests and
-    thread pool work items carry the trace, as they were on entry. The carriers stay installed on
-    the HTTP clients and on `ThreadPoolExecutor.submit` and their methods are never reassigned, so
-    a wrapper a host put on one survives.
+    stdlib logger class structlog's factory installs, the process's and the threads' exception
+    hooks, the unraisable-exception hook and the warning display, OpenTelemetry's global propagator,
+    whether outgoing requests and thread pool work items carry the trace and whether asyncio's
+    failures are coded, as they were on entry. The carriers stay installed on the HTTP clients and
+    on `ThreadPoolExecutor.submit` and their methods are never reassigned, so a wrapper a host put
+    on one survives; asyncio's default exception handler stays wrapped and, once the block ends,
+    writes asyncio's own record again.
     """
     logger_states = [LoggerState.of(logging.getLogger(name)) for name in TOUCHED_LOGGER_NAMES]
     logger_class = logging.getLoggerClass()
@@ -62,8 +65,10 @@ def configured(service: str) -> Iterator[None]:
     process_hook = sys.excepthook
     thread_hook = threading.excepthook
     warning_hook = warnings.showwarning
+    unraisable_hook = sys.unraisablehook
     propagator = get_global_textmap()
     carrying_trace = is_enabled()
+    coding_asyncio = asyncio_records.is_enabled()
     try:
         configure(service)
         yield
@@ -71,8 +76,10 @@ def configured(service: str) -> Iterator[None]:
         sys.excepthook = process_hook
         threading.excepthook = thread_hook
         warnings.showwarning = warning_hook
+        sys.unraisablehook = unraisable_hook
         set_global_textmap(propagator)
         set_enabled(carrying_trace)
+        asyncio_records.set_enabled(coding_asyncio)
         logging.setLoggerClass(logger_class)
         for state in logger_states:
             state.restore()
