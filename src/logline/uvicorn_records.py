@@ -4,6 +4,7 @@ import errno
 import logging
 from dataclasses import dataclass
 
+from logline.record import logged_exception_type_name
 from logline.websocket import in_owned_session
 
 __all__: list[str] = []
@@ -111,14 +112,6 @@ def _bind_failure(error: OSError) -> _CodedEvent:
     return _CodedEvent("server_bind.failed", reason)
 
 
-def _logged_exception_type_name(record: logging.LogRecord) -> str | None:
-    # uvicorn logs `exc_info=exc`, which the logging module expands to the full triple.
-    exc_info = record.exc_info
-    if isinstance(exc_info, tuple) and exc_info and isinstance(exc_info[0], type):
-        return exc_info[0].__name__
-    return None
-
-
 def _first_integer_argument(record: logging.LogRecord) -> int | None:
     arguments = record.args
     if isinstance(arguments, tuple) and arguments and isinstance(arguments[0], int):
@@ -148,7 +141,7 @@ def _name_record(record: logging.LogRecord) -> None:
         fields["error_type"] = type(record.msg).__name__
     elif record.msg == _UVICORN_ASGI_EXCEPTION_TEMPLATE:
         coded = _CodedEvent("asgi_app.failed")
-        fields["error_type"] = _logged_exception_type_name(record)
+        fields["error_type"] = logged_exception_type_name(record)
     else:
         coded = _coded_event_of_template(record.msg)
         record.exc_info = None

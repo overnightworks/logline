@@ -407,6 +407,7 @@ _OWN_SETUP_CASES = [
         "structlog.configure_once", "import structlog as s\ns.configure_once()\n", Rule.OWN_SETUP
     ),
     _case("sys.excepthook", "import sys\nsys.excepthook = handler\n", Rule.OWN_SETUP),
+    _case("sys.unraisablehook", "import sys\nsys.unraisablehook = handler\n", Rule.OWN_SETUP),
     _case(
         "threading.excepthook in a chain",
         "import threading\nthreading.excepthook = other = handler\n",

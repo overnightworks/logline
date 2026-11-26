@@ -1,6 +1,6 @@
 """The record shape: the processors that give every line the same base fields."""
 
-from logging import Logger
+from logging import Logger, LogRecord
 from math import isfinite
 
 from structlog.processors import TimeStamper, format_exc_info
@@ -98,3 +98,12 @@ def record_shape(service: str, version: str | None) -> list[Processor]:
         format_exc_info,
         _drop_denied_fields,
     ]
+
+
+def logged_exception_type_name(record: LogRecord) -> str | None:
+    """The class name of the exception a standard-library record carries, if it carries one."""
+    # A caller's `exc_info=exc` is expanded by the logging module to the full triple.
+    exc_info = record.exc_info
+    if isinstance(exc_info, tuple) and exc_info and isinstance(exc_info[0], type):
+        return exc_info[0].__name__
+    return None
