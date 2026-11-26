@@ -8,7 +8,7 @@ file) is not judged, and neither is a field given through `**fields` or an `extr
 import ast
 import re
 from collections import Counter, defaultdict
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from enum import Enum, StrEnum
 from pathlib import PurePath
@@ -283,7 +283,8 @@ class _Judge:
 
     def _bindings_of(self, function: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
         if function not in self._function_bindings:
-            self._function_bindings[function] = set(_scope_bindings([function.args, *function.body]))
+            scope = [function.args, *function.body]
+            self._function_bindings[function] = set(_scope_bindings(scope))
         return self._function_bindings[function]
 
     def _read_call_name(self, node: ast.AST) -> None:
@@ -476,7 +477,7 @@ def _module_bindings(tree: ast.Module) -> Iterator[str]:
     return _scope_bindings(tree.body)
 
 
-def _scope_bindings(nodes: list[ast.AST]) -> Iterator[str]:
+def _scope_bindings(nodes: Sequence[ast.AST]) -> Iterator[str]:
     """Every name one scope binds, once per binding; a nested function or class binds only its
     own name here."""
     pending = list(nodes)
