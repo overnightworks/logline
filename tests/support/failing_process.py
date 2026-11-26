@@ -1,6 +1,7 @@
 """A host process that configures logline, serves briefly and then fails as `argv[1]` names."""
 
 import asyncio
+import atexit
 import gc
 import sys
 import threading
@@ -69,6 +70,8 @@ if __name__ == "__main__":
             asyncio.run(forget_a_failing_task())
         case "unraisable":
             Leaky()
+        case "unraisable_in_exit_handler":
+            atexit.register(Leaky)
         case "unraisable_at_teardown":
             # Python cleans a module global up only while the interpreter shuts down.
             _HELD_UNTIL_TEARDOWN = Leaky()

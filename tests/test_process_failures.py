@@ -39,6 +39,14 @@ def _the_line_of(output: str, event: str) -> Line:
         ("warning", "python_warning.raised", "warning", "py.warnings", "DeprecationWarning", 0),
         ("task", "asyncio_task.failed", "error", "asyncio", "RuntimeError", 0),
         ("unraisable", "object_cleanup.failed", "error", "logline.crash", "RuntimeError", 0),
+        (
+            "unraisable_in_exit_handler",
+            "object_cleanup.failed",
+            "error",
+            "logline.crash",
+            "RuntimeError",
+            0,
+        ),
     ],
 )
 def test_a_failing_process_writes_one_record_line_on_stdout(
