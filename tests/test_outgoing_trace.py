@@ -144,6 +144,19 @@ def test_with_otel_propagators_none_a_call_carries_no_trace(
     assert TRACEPARENT not in echo.last
 
 
+def test_with_otel_propagators_none_a_work_item_still_sees_the_submitters_trace(
+    host_with_otel_propagators_none: None,
+) -> None:
+    configure("outgoing-service")
+
+    with ThreadPoolExecutor(max_workers=1) as pool, inside_a_request():
+        trace_of_the_request = current_trace_id()
+        seen_by_the_item = pool.submit(current_trace_id).result()
+
+    assert trace_of_the_request is not None
+    assert seen_by_the_item == trace_of_the_request
+
+
 @pytest.mark.parametrize(
     ("client_class", "methods", "call"),
     [
@@ -385,8 +398,11 @@ def test_a_context_variable_an_item_sets_persists_to_the_next_item_on_its_worker
         with inside_a_request():
             pool.submit(_A_WORKER_VARIABLE.set, "set by an item").result()
         assert pool.submit(_A_WORKER_VARIABLE.get).result() == "set by an item"
-        _A_WORKER_VARIABLE.set("set by the submitter")
-        assert pool.submit(_A_WORKER_VARIABLE.get).result() == "set by an item"
+        token = _A_WORKER_VARIABLE.set("set by the submitter")
+        try:
+            assert pool.submit(_A_WORKER_VARIABLE.get).result() == "set by an item"
+        finally:
+            _A_WORKER_VARIABLE.reset(token)
 
 
 def test_the_submitters_trace_is_detached_when_an_item_ends() -> None:
