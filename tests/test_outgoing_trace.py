@@ -21,7 +21,7 @@ import uvicorn
 from opentelemetry.propagate import set_global_textmap
 
 from logline import RequestLineMiddleware, configure, outgoing_headers, unit_trace
-from logline.trace import request_trace
+from logline.trace import current_trace_id, request_trace
 from tests.support.incoming_trace import INCOMING_TRACE_ID, INCOMING_TRACEPARENT
 from tests.support.lines import json_lines
 from tests.support.outgoing_clients import (
@@ -378,6 +378,20 @@ def test_a_context_variable_an_item_sets_persists_to_the_next_item_on_its_worker
         with inside_a_request():
             pool.submit(_A_WORKER_VARIABLE.set, "set by an item").result()
         assert pool.submit(_A_WORKER_VARIABLE.get).result() == "set by an item"
+
+
+def test_the_submitters_trace_is_detached_when_an_item_ends() -> None:
+    item_running = threading.Event()
+    seen_after_the_item: list[str | None] = []
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with unit_trace(A_CALLERS_TRACEPARENT):
+            future = pool.submit(item_running.wait, 10)
+            future.add_done_callback(lambda _: seen_after_the_item.append(current_trace_id()))
+        item_running.set()
+        future.result()
+
+    assert seen_after_the_item == [None]
 
 
 def test_an_interpreter_pool_still_runs_its_work() -> None:
