@@ -1,0 +1,8 @@
+claim_id = "b6760b13db6e4369a23c00885f64f8e0"
+agent = "Claude 23ef093f-79b8-4fbc-860e-cb1d30fb1417"
+role = "builder"
+base = "4121b57c138942ba02d1ea3959a4260ac428d777"
+branch = "claude/issue-154-steptimer-end-a-step-outside-a-block-wit"
+scope = ["README.md", "src/logline/step.py", "tests/support/step_routes.py", "tests/test_step.py"]
+opened_commit = "1d8d4014d86be381866c872572c0fc686e86185d"
+whole_reason = "One public StepTimer ending, its README line, and its route and rows in the step tests that drive it."
