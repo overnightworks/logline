@@ -3,6 +3,6 @@ agent = "Claude 23ef093f-79b8-4fbc-860e-cb1d30fb1417"
 role = "builder"
 base = "e8274f1129256fb3b7a8789590e159d2a7e00d07"
 branch = "claude/issue-145-an-unretrieved-asyncio-exception-and-an"
-scope = ["README.md", "docs/ARCHITECTURE.md", "src/logline/asyncio_records.py", "src/logline/configuration.py", "src/logline/process_failures.py", "src/logline/standard.json", "src/logline/testing.py", "tests"]
+scope = ["README.md", "docs/ARCHITECTURE.md", "src/logline/asyncio_records.py", "src/logline/configuration.py", "src/logline/process_failures.py", "src/logline/record.py", "src/logline/standard.json", "src/logline/testing.py", "src/logline/uvicorn_records.py", "tests"]
 opened_commit = "5acf5ee5956b6563a663eeeb5d2169a2ca5bd20c"
 whole_reason = "Two failure paths in two owners, a new asyncio module and the fourth process hook, with their install in configure, their restore in testing, their check rule in the standard, and the documents that name the events, the owners and the gaps."
