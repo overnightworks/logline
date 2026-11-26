@@ -17,7 +17,12 @@ from tests.support.incoming_trace import (
 from tests.support.lines import Line, json_lines, lines_of, request_lines, session_lines
 from tests.support.serving import WEBSOCKET_IMPLEMENTATIONS, get, serve, serve_requests_answered
 from tests.support.span_routes import CALLEE_PATH, TURNS_PATH
-from tests.support.step_routes import STEP_EVENT, STEP_LOGGER
+from tests.support.step_routes import (
+    EXECUTOR_LINE_EVENT,
+    EXECUTOR_LINE_LOGGER,
+    STEP_EVENT,
+    STEP_LOGGER,
+)
 
 _HEX_SPAN_ID = re.compile(r"[0-9a-f]{16}")
 _OPENTELEMETRY_CONTEXT_LOGGER = "opentelemetry.context"
@@ -42,6 +47,7 @@ def _span_of_traceparent(traceparent: object) -> str:
         "/step/failed-escaping",
         "/step/cancelled",
         "/step/thread",
+        "/step/executor",
         "/step/sync-endpoint",
         "/span/task",
         "/step/generator-finished",
@@ -68,6 +74,20 @@ def test_a_step_line_names_its_own_span_and_the_requests_span_as_its_parent(
     assert _HEX_SPAN_ID.fullmatch(str(step["span_id"]))
     assert step["span_id"] != request["span_id"]
     assert lines_of(lines, _OPENTELEMETRY_CONTEXT_LOGGER) == []
+
+
+def test_a_line_inside_a_work_item_of_the_default_executor_carries_the_requests_trace(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, lines, _ = serve_requests_answered(
+        capsys, [get("/step/executor", traceparent=INCOMING_TRACEPARENT)]
+    )
+
+    (work_item_line,) = lines_of(lines, EXECUTOR_LINE_LOGGER)
+    assert (work_item_line["event"], work_item_line["trace_id"]) == (
+        EXECUTOR_LINE_EVENT,
+        INCOMING_TRACE_ID,
+    )
 
 
 @pytest.mark.parametrize(

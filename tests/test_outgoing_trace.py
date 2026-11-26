@@ -1,9 +1,13 @@
+import contextlib
+import contextvars
 import http.client
 import json
 import re
 import subprocess
 import sys
-from collections.abc import Iterator
+import threading
+from collections.abc import Callable, Iterator
+from concurrent.futures import InterpreterPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
 from types import ModuleType
 from urllib.parse import urlsplit
@@ -16,7 +20,8 @@ import urllib3
 import uvicorn
 from opentelemetry.propagate import set_global_textmap
 
-from logline import RequestLineMiddleware, configure, outgoing_headers
+from logline import RequestLineMiddleware, configure, outgoing_headers, unit_trace
+from logline.trace import request_trace
 from tests.support.incoming_trace import INCOMING_TRACE_ID, INCOMING_TRACEPARENT
 from tests.support.lines import json_lines
 from tests.support.outgoing_clients import (
@@ -25,6 +30,7 @@ from tests.support.outgoing_clients import (
     SCOPES,
     TRACEPARENT,
     TRACESTATE,
+    TRANSFERS,
     EchoServer,
     inside_a_request,
     inside_a_turn,
@@ -33,7 +39,9 @@ from tests.support.propagators import PropagatorFailure, RaisingPropagator
 from tests.support.serving import serve
 
 _HIDDEN_CLIENTS_HOST = Path(__file__).parent / "support" / "hidden_clients_host.py"
+_INHERITED_CONTEXT_HOST = Path(__file__).parent / "support" / "inherited_context_host.py"
 _ALL_CLIENTS = pytest.mark.parametrize("call", CLIENTS.values(), ids=CLIENTS.keys())
+_A_WORKER_VARIABLE = contextvars.ContextVar("a_worker_variable", default="not set")
 
 
 @pytest.fixture(autouse=True)
@@ -148,6 +156,9 @@ def test_with_otel_propagators_none_a_call_carries_no_trace(
         pytest.param(httpx.AsyncClient, ("send",), CLIENTS["httpx-async"], id="httpx-async"),
         pytest.param(httpx2.Client, ("send",), CLIENTS["httpx2"], id="httpx2"),
         pytest.param(httpx2.AsyncClient, ("send",), CLIENTS["httpx2-async"], id="httpx2-async"),
+        pytest.param(
+            ThreadPoolExecutor, ("submit",), CLIENTS["thread-pool-submit"], id="thread-pool-submit"
+        ),
     ],
 )
 def test_a_second_configure_adds_no_carrier_keeps_a_hosts_wrapper_and_writes_no_line_above_info(
@@ -265,3 +276,136 @@ def test_a_process_without_httpx_and_httpx2_configures_quietly_and_still_carries
 
     assert (result.returncode, result.stderr) == (0, "")
     assert json.loads(result.stdout) == {TRACEPARENT: echo.last[TRACEPARENT][0]}
+
+
+@pytest.mark.parametrize(("transfer", "methods"), TRANSFERS.values(), ids=TRANSFERS.keys())
+def test_a_managed_transfer_of_boto3_inside_a_trace_carries_it_on_every_request(
+    echo: EchoServer, transfer: Callable[[str], None], methods: set[str]
+) -> None:
+    with inside_a_request():
+        expected = outgoing_headers()
+        transfer(echo.url)
+
+    assert {request.method for request in echo.received} == methods
+    assert all(request.headers[TRACEPARENT] == [expected[TRACEPARENT]] for request in echo.received)
+
+
+def _trace_id_of(headers: dict[str, list[str]]) -> str | None:
+    return headers[TRACEPARENT][0].split("-")[1] if TRACEPARENT in headers else None
+
+
+def _item_of_trace_ids(echo: EchoServer) -> dict[str, str | None]:
+    return {
+        request.headers["x-item"][0]: _trace_id_of(request.headers) for request in echo.received
+    }
+
+
+def test_items_on_several_workers_each_carry_the_trace_they_were_submitted_in(
+    echo: EchoServer,
+) -> None:
+    workers = 4
+    all_workers_busy = threading.Barrier(workers, timeout=10)
+
+    def send(item: str) -> None:
+        all_workers_busy.wait()
+        CLIENTS["http.client"](echo.url, {"x-item": item})
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = []
+        for name, traceparent in (
+            ("first", INCOMING_TRACEPARENT),
+            ("second", A_CALLERS_TRACEPARENT),
+        ):
+            with unit_trace(traceparent):
+                futures += [pool.submit(send, f"{name}-{number}") for number in range(2)]
+        for future in futures:
+            future.result()
+
+    assert _item_of_trace_ids(echo) == {
+        "first-0": INCOMING_TRACE_ID,
+        "first-1": INCOMING_TRACE_ID,
+        "second-0": A_CALLERS_TRACEPARENT.split("-")[1],
+        "second-1": A_CALLERS_TRACEPARENT.split("-")[1],
+    }
+
+
+def test_the_items_of_a_one_worker_pool_carry_the_trace_of_their_own_submit_or_none(
+    echo: EchoServer,
+) -> None:
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        for scope in (
+            unit_trace(INCOMING_TRACEPARENT),
+            unit_trace(A_CALLERS_TRACEPARENT),
+            contextlib.nullcontext(),
+        ):
+            with scope:
+                pool.submit(CLIENTS["http.client"], echo.url, {}).result()
+
+    assert [_trace_id_of(request.headers) for request in echo.received] == [
+        INCOMING_TRACE_ID,
+        A_CALLERS_TRACEPARENT.split("-")[1],
+        None,
+    ]
+
+
+def _leaves_a_trace_attached() -> None:
+    with request_trace([(TRACEPARENT, A_CALLERS_TRACEPARENT)]):
+        raise RuntimeError
+
+
+def _raises() -> None:
+    raise RuntimeError
+
+
+@pytest.mark.parametrize(
+    "failing_item",
+    [_leaves_a_trace_attached, _raises],
+    ids=["leaves-a-trace-attached", "raises"],
+)
+def test_an_item_that_fails_passes_no_trace_to_the_next_item_on_its_worker(
+    echo: EchoServer, failing_item: Callable[[], None]
+) -> None:
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with inside_a_request():
+            assert isinstance(pool.submit(failing_item).exception(), RuntimeError)
+        pool.submit(CLIENTS["http.client"], echo.url, {}).result()
+
+    assert TRACEPARENT not in echo.last
+
+
+def test_a_context_variable_an_item_sets_persists_to_the_next_item_on_its_worker() -> None:
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with inside_a_request():
+            pool.submit(_A_WORKER_VARIABLE.set, "set by an item").result()
+        assert pool.submit(_A_WORKER_VARIABLE.get).result() == "set by an item"
+
+
+def test_an_interpreter_pool_still_runs_its_work() -> None:
+    with InterpreterPoolExecutor(max_workers=1) as pool, inside_a_request():
+        assert pool.submit(pow, 2, 3).result() == 8
+
+
+def test_with_thread_inherit_context_a_worker_started_in_a_trace_carries_no_stale_trace(
+    echo: EchoServer,
+) -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-X",
+            "thread_inherit_context=1",
+            str(_INHERITED_CONTEXT_HOST),
+            echo.url,
+            INCOMING_TRACEPARENT,
+            A_CALLERS_TRACEPARENT,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert (result.returncode, result.stderr) == (0, "")
+    assert [_trace_id_of(request.headers) for request in echo.received] == [
+        None,
+        A_CALLERS_TRACEPARENT.split("-")[1],
+    ]

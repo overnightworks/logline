@@ -10,6 +10,8 @@ from logline import StepTimer
 
 STEP_LOGGER = "tests.steps"
 STEP_EVENT = "gateway_call.ended"
+EXECUTOR_LINE_LOGGER = "tests.executor"
+EXECUTOR_LINE_EVENT = "work_item.ran"
 STEP_AGENT_ID = "agent-7"
 STEP_REFUSAL_REASON = "overloaded"
 STEP_FAILURE_MESSAGE = "failure message that stays out of the line"
@@ -83,6 +85,11 @@ def _sync_step(steps: Steps, *, failure: Exception | None) -> None:
     with steps():
         if failure is not None:
             raise failure
+
+
+def _logged_step(steps: Steps) -> None:
+    logging.getLogger(EXECUTOR_LINE_LOGGER).info(EXECUTOR_LINE_EVENT)
+    _sync_step(steps, failure=None)
 
 
 async def _generator_of_a_step(steps: Steps) -> AsyncGenerator[int]:
@@ -515,6 +522,11 @@ def _add_step_thread_routes(app: FastAPI, steps: Steps) -> None:
     @app.get("/step/thread")
     async def step_thread() -> _Answer:
         await asyncio.to_thread(_sync_step, steps, failure=None)
+        return {"caught": None}
+
+    @app.get("/step/executor")
+    async def step_executor() -> _Answer:
+        await asyncio.get_running_loop().run_in_executor(None, _logged_step, steps)
         return {"caught": None}
 
     @app.get("/step/thread-failed")

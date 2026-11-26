@@ -2,6 +2,7 @@ import contextlib
 import http.client
 import logging
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import httpx
@@ -150,22 +151,27 @@ def test_leaving_the_block_stops_the_trace_reaching_outgoing_calls(
 
 
 @pytest.mark.parametrize(
-    ("client_class", "call"),
+    ("client_class", "method", "call"),
     [
-        pytest.param(http.client.HTTPConnection, CLIENTS["http.client"], id="http.client"),
-        pytest.param(httpx.Client, CLIENTS["httpx"], id="httpx"),
-        pytest.param(httpx.AsyncClient, CLIENTS["httpx-async"], id="httpx-async"),
-        pytest.param(httpx2.Client, CLIENTS["httpx2"], id="httpx2"),
-        pytest.param(httpx2.AsyncClient, CLIENTS["httpx2-async"], id="httpx2-async"),
+        pytest.param(
+            http.client.HTTPConnection, "endheaders", CLIENTS["http.client"], id="http.client"
+        ),
+        pytest.param(httpx.Client, "send", CLIENTS["httpx"], id="httpx"),
+        pytest.param(httpx.AsyncClient, "send", CLIENTS["httpx-async"], id="httpx-async"),
+        pytest.param(httpx2.Client, "send", CLIENTS["httpx2"], id="httpx2"),
+        pytest.param(httpx2.AsyncClient, "send", CLIENTS["httpx2-async"], id="httpx2-async"),
+        pytest.param(
+            ThreadPoolExecutor, "submit", CLIENTS["thread-pool-submit"], id="thread-pool-submit"
+        ),
     ],
 )
 def test_a_wrapper_put_on_a_patched_method_after_configure_survives_the_block(
     monkeypatch: pytest.MonkeyPatch,
     echo: EchoServer,
     client_class: type,
+    method: str,
     call: Callable[[str, dict[str, str]], None],
 ) -> None:
-    method = "endheaders" if client_class is http.client.HTTPConnection else "send"
     wrapped_calls: list[object] = []
     with configured("wrapped"):
         patched = getattr(client_class, method)
