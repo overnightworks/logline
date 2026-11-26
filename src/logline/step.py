@@ -89,12 +89,12 @@ class StepTimer:
       line carries `span_id`, the step's, and `parent_span_id`, the span it ran under, as 16 hex
       digits, and the `trace_id` of the trace it was opened in, wherever it is written: a dropped
       generator's finaliser or a later turn that closes the step writes the same three. A step no
-      block surrounds takes a fresh span when `end`, `end_cancelled` or `end_failed` writes its line, under the
-      then current span. Outside a trace a step has no span: both ids are `null`, and the step
-      starts no trace. A step whose line is already written, by `end`, `end_cancelled` or `end_failed`, opens no
-      span when it is entered as a block: what runs inside names the span it ran under. When the
-      block ends the previous span is current again, unless the block ends in another context than
-      it began in, which is left as it is.
+      block surrounds takes a fresh span when `end`, `end_cancelled` or `end_failed` writes its
+      line, under the then current span. Outside a trace a step has no span: both ids are `null`,
+      and the step starts no trace. A step whose line is already written, by `end`, `end_cancelled`
+      or `end_failed`, opens no span when it is entered as a block: what runs inside names the span
+      it ran under. When the block ends the previous span is current again, unless the block ends
+      in another context than it began in, which is left as it is.
     - `event` is the literal `<noun>.ended` name and `fields` are the step's id fields. The timer
       owns `duration_ms`, `outcome`, `reason`, `first_output_ms`, `error_type`, `span_id` and
       `parent_span_id`: a field of one of these names is dropped, and the line carries them only as
