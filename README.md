@@ -584,8 +584,8 @@ One event per step, whatever its outcome.
 
 ### Crashes and warnings
 
-`configure` replaces Python's plain-text stderr output of five failures with one line on stdout, so a host installs
-no hook of its own. These events and their `error_type` values are public: renaming one is a breaking change.
+`configure` replaces Python's plain-text stderr output of four failures, and asyncio's free-text records, with one
+coded line each on stdout, so a host installs no hook of its own. These events and their `error_type` values are public: renaming one is a breaking change.
 A dying process exits with status 1 as before. Every `.failed` line carries the traceback in `exception` and the
 exception class in `error_type`, and none carries a message text, an object's repr or a path outside the traceback.
 
