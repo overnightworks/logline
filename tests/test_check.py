@@ -180,8 +180,7 @@ _NAMED_EVENT_CASES = [
     ),
     _case(
         "Final constant at a StepTimer",
-        _STEP_TIMER
-        + 'from typing import Final\nEVENT: Final = "turn.arrived"\nStepTimer(EVENT)\n',
+        _STEP_TIMER + 'from typing import Final\nEVENT: Final = "turn.arrived"\nStepTimer(EVENT)\n',
     ),
     _case(
         "badly shaped Final constant",
@@ -190,8 +189,7 @@ _NAMED_EVENT_CASES = [
     ),
     _case(
         "badly shaped Final constant at a StepTimer",
-        _STEP_TIMER
-        + 'from typing import Final\nEVENT: Final = "Turn ended"\nStepTimer(EVENT)\n',
+        _STEP_TIMER + 'from typing import Final\nEVENT: Final = "Turn ended"\nStepTimer(EVENT)\n',
         Rule.EVENT_NAME_SHAPE,
     ),
     _case(
@@ -201,8 +199,7 @@ _NAMED_EVENT_CASES = [
     ),
     _case(
         "ended Final constant at a StepTimer",
-        _STEP_TIMER
-        + 'from typing import Final\nEVENT: Final = "turn.ended"\nStepTimer(EVENT)\n',
+        _STEP_TIMER + 'from typing import Final\nEVENT: Final = "turn.ended"\nStepTimer(EVENT)\n',
     ),
     _case(
         "StrEnum member",
@@ -215,6 +212,13 @@ _NAMED_EVENT_CASES = [
         _STDLIB
         + "import enum as e\n"
         + 'class Event(e.StrEnum):\n    ARRIVED = "turn.arrived"\n\nlogger.info(Event.ARRIVED)\n',
+    ),
+    _case(
+        "StrEnum member beside a docstring and a method",
+        _STDLIB
+        + "from enum import StrEnum\n"
+        + 'class Event(StrEnum):\n    """Events."""\n\n    ARRIVED = "turn.arrived"\n\n'
+        + "    def label(self):\n        return self\n\nlogger.info(Event.ARRIVED)\n",
     ),
     _case(
         "badly shaped StrEnum member",

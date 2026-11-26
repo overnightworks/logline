@@ -8,7 +8,7 @@ file) is not judged, and neither is a field given through `**fields` or an `extr
 import ast
 import re
 from collections import Counter, defaultdict
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from enum import Enum, StrEnum
 from pathlib import PurePath
@@ -64,8 +64,11 @@ _ANNOTATION_KINDS = {
 _STEP_TIMERS = frozenset({"logline.StepTimer", "logline.step.StepTimer"})
 _FIELD_BINDERS = frozenset({"structlog.contextvars.bind_contextvars"})
 _UVICORN_STARTS = frozenset({"uvicorn.run", "uvicorn.main.run", "uvicorn.Config"})
+_FINAL_ANNOTATIONS = frozenset({"typing.Final", "typing_extensions.Final"})
+_STRING_ENUMS = frozenset({"enum.StrEnum"})
 
 _Row = tuple[ast.expr | ast.keyword | ast.stmt, Rule]
+_LiteralOf = Callable[[ast.expr | None], str | None]
 
 
 def check(source: str, path: PurePath) -> tuple[Finding, ...]:
@@ -97,24 +100,18 @@ def _dotted(node: ast.expr) -> str | None:
     return None
 
 
-def _is_literal_text(node: ast.expr) -> bool:
-    return isinstance(node, ast.Constant) and isinstance(node.value, str)
+def _string_literal(node: ast.expr | None) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
 
 
-def _is_hand_written_ended(node: ast.expr | None) -> bool:
-    return (
-        _is_matching_literal(node)
-        and isinstance(node, ast.Constant)
-        and str(node.value).endswith(CLOSING_EVENT_SUFFIX)
-    )
+def _is_matching(text: str | None) -> bool:
+    return text is not None and EVENT_NAME_PATTERN.fullmatch(text) is not None
 
 
-def _is_matching_literal(node: ast.expr | None) -> bool:
-    return (
-        isinstance(node, ast.Constant)
-        and isinstance(node.value, str)
-        and EVENT_NAME_PATTERN.fullmatch(node.value) is not None
-    )
+def _is_hand_written_ended(text: str | None) -> bool:
+    return _is_matching(text) and str(text).endswith(CLOSING_EVENT_SUFFIX)
 
 
 def _count_at(counters: dict[bool, Counter[int]], position: int, *, is_method: bool) -> int:
@@ -129,7 +126,8 @@ def _count_at(counters: dict[bool, Counter[int]], position: int, *, is_method: b
 class _CallsOfName:
     """The calls of one name, indexed once so each parameter's verdict is a lookup."""
 
-    def __init__(self) -> None:
+    def __init__(self, literal_of: _LiteralOf) -> None:
+        self._literal_of = literal_of
         self.total = 0
         self._with_keyword: defaultdict[str, list[ast.keyword]] = defaultdict(list)
         self._matching_at: dict[bool, Counter[int]] = {False: Counter(), True: Counter()}
@@ -143,21 +141,21 @@ class _CallsOfName:
             if keyword.arg is not None:
                 self._with_keyword[keyword.arg].append(keyword)
                 self._calls_with_keyword[keyword.arg].append(call)
-                if _is_hand_written_ended(keyword.value):
+                if _is_hand_written_ended(self._literal_of(keyword.value)):
                     self._ended_keywords.add(keyword.arg)
         for index, argument in enumerate(call.args):
             if isinstance(argument, ast.Starred):
                 break
             for is_fact, counters in (
-                (_is_matching_literal, self._matching_at),
+                (_is_matching, self._matching_at),
                 (_is_hand_written_ended, self._ended_at),
             ):
-                if is_fact(argument):
+                if is_fact(self._literal_of(argument)):
                     counters[bound][index] += 1
 
     def all_pass_literal(self, parameter: str, position: int | None, *, is_method: bool) -> bool:
         """Whether every call passes `parameter` a matching literal, by keyword or by position."""
-        if not all(_is_matching_literal(k.value) for k in self._with_keyword[parameter]):
+        if not all(_is_matching(self._literal_of(k.value)) for k in self._with_keyword[parameter]):
             return False
         if position is None:
             return len(self._calls_with_keyword[parameter]) == self.total
@@ -179,13 +177,12 @@ class _CallsOfName:
     def _matching_count(self, position: int, *, is_method: bool) -> int:
         return _count_at(self._matching_at, position, is_method=is_method)
 
-    @staticmethod
-    def _matches_by_position(call: ast.Call, position: int, *, is_method: bool) -> int:
+    def _matches_by_position(self, call: ast.Call, position: int, *, is_method: bool) -> int:
         index = position - (1 if is_method and isinstance(call.func, ast.Attribute) else 0)
         leading = call.args[: index + 1]
         if index < 0 or len(leading) <= index or any(isinstance(a, ast.Starred) for a in leading):
             return 0
-        return int(_is_matching_literal(leading[index]))
+        return int(_is_matching(self._literal_of(leading[index])))
 
 
 class _Judge:
@@ -197,13 +194,17 @@ class _Judge:
         self._imports: dict[str, str] = {}
         self._loggers: dict[str, _Kind] = {}
         self._timers: set[str] = set()
-        self._calls_by_name: defaultdict[str, _CallsOfName] = defaultdict(_CallsOfName)
+        self._constants: dict[str, str] = {}
+        self._calls_by_name: defaultdict[str, _CallsOfName] = defaultdict(
+            lambda: _CallsOfName(self._literal_text)
+        )
         self._parameter_verdicts: dict[tuple[bool, str, str, int | None, bool], bool] = {}
         for parent in ast.walk(tree):
             for child in ast.iter_child_nodes(parent):
                 self._parents[child] = parent
         for node in ast.walk(tree):
             self._read_import(node)
+        self._read_constants()
         for node in ast.walk(tree):
             self._read_binding(node)
             self._read_call_name(node)
@@ -228,6 +229,56 @@ class _Judge:
         elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
             for alias in node.names:
                 self._imports[alias.asname or alias.name] = f"{node.module}.{alias.name}"
+
+    def _read_constants(self) -> None:
+        """Index the module-level names that stand for one string literal: a `Final` constant and
+        a `StrEnum` member (as `Class.MEMBER`). A name bound more than once stands for none."""
+        bindings = Counter(_module_bindings(self._tree))
+        for node in self._tree.body:
+            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                text = _string_literal(node.value)
+                if text is not None and self._is_final(node.annotation):
+                    self._add_constant(bindings, node.target.id, text)
+            elif isinstance(node, ast.ClassDef) and any(
+                self._resolve(base) in _STRING_ENUMS for base in node.bases
+            ):
+                for member in node.body:
+                    if (
+                        isinstance(member, ast.Assign)
+                        and len(member.targets) == 1
+                        and isinstance(member.targets[0], ast.Name)
+                        and (text := _string_literal(member.value)) is not None
+                    ):
+                        self._add_constant(bindings, f"{node.name}.{member.targets[0].id}", text)
+
+    def _add_constant(self, bindings: Counter[str], name: str, text: str) -> None:
+        if bindings[name.partition(".")[0]] == 1:
+            self._constants[name] = text
+
+    def _is_final(self, annotation: ast.expr) -> bool:
+        if isinstance(annotation, ast.Subscript):
+            return (
+                isinstance(annotation.slice, ast.Name)
+                and annotation.slice.id == "str"
+                and self._is_final(annotation.value)
+            )
+        return self._resolve(annotation) in _FINAL_ANNOTATIONS
+
+    def _literal_text(self, node: ast.expr | None) -> str | None:
+        """The text an event stands for: a string literal, or a same-module `Final` constant or
+        `StrEnum` member that no enclosing function rebinds. `None` for any other expression."""
+        text = _string_literal(node)
+        if text is not None or node is None:
+            return text
+        dotted = _dotted(node)
+        if dotted is None or dotted not in self._constants:
+            return None
+        function = self._enclosing_function(node)
+        while function is not None:
+            if dotted.partition(".")[0] in _function_bindings(function):
+                return None
+            function = self._enclosing_function(function)
+        return self._constants[dotted]
 
     def _read_call_name(self, node: ast.AST) -> None:
         if isinstance(node, ast.Call):
@@ -351,8 +402,9 @@ class _Judge:
                 yield from _field_rows([keyword])
 
     def _event_rows(self, event: ast.expr) -> Iterator[_Row]:
-        if _is_literal_text(event):
-            if not _is_matching_literal(event):
+        text = self._literal_text(event)
+        if text is not None:
+            if not _is_matching(text):
                 yield event, Rule.EVENT_NAME_SHAPE
         elif not self._is_literal_parameter(event):
             yield event, Rule.EVENT_NOT_LITERAL
@@ -360,8 +412,9 @@ class _Judge:
     def _is_hand_written_ended_event(self, event: ast.expr) -> bool:
         """Whether `event` is a literal, or a parameter some call in this file passes a literal,
         that ends in the closing suffix."""
-        if _is_literal_text(event):
-            return _is_hand_written_ended(event)
+        text = self._literal_text(event)
+        if text is not None:
+            return _is_hand_written_ended(text)
         return self._parameter_verdict(event, ended=True)
 
     def _event_parameter(
@@ -410,6 +463,33 @@ class _Judge:
                 return parent
             parent = self._parents.get(parent)
         return None
+
+
+def _module_bindings(tree: ast.Module) -> Iterator[str]:
+    """Every name the module scope binds, once per binding, in nested statements too."""
+    pending: list[ast.AST] = [*tree.body]
+    while pending:
+        node = pending.pop()
+        yield from _names_bound_by(node)
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            pending.extend(ast.iter_child_nodes(node))
+
+
+def _names_bound_by(node: ast.AST) -> Iterator[str]:
+    if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+        yield node.id
+    elif isinstance(node, ast.arg):
+        yield node.arg
+    elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+        yield node.name
+    elif isinstance(node, ast.Import | ast.ImportFrom):
+        for alias in node.names:
+            yield alias.asname or alias.name.partition(".")[0]
+
+
+def _function_bindings(function: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+    """The names a function binds itself: parameters and any assignment, nested ones included."""
+    return {name for node in ast.walk(function) for name in _names_bound_by(node)}
 
 
 def _field_rows(keywords: list[ast.keyword]) -> Iterator[_Row]:
