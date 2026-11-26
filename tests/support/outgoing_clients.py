@@ -36,7 +36,8 @@ type ReceivedHeaders = dict[str, list[str]]
 TRACEPARENT = "traceparent"
 TRACESTATE = "tracestate"
 INCOMING_TRACESTATE = "vendor=incoming"
-A_CALLERS_TRACEPARENT = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+A_CALLERS_TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
+A_CALLERS_TRACEPARENT = f"00-{A_CALLERS_TRACE_ID}-b7ad6b7169203331-01"
 
 
 @dataclass
