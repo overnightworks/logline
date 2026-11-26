@@ -4,6 +4,7 @@ import errno
 import logging
 from dataclasses import dataclass
 
+from logline.record import logged_exception_type_name
 from logline.websocket import in_owned_session
 
 __all__: list[str] = []
@@ -109,14 +110,6 @@ _LISTENING_EVENT = _CodedEvent("server_listen.started")
 def _bind_failure(error: OSError) -> _CodedEvent:
     reason = "port_taken" if error.errno == errno.EADDRINUSE else "os_error"
     return _CodedEvent("server_bind.failed", reason)
-
-
-def logged_exception_type_name(record: logging.LogRecord) -> str | None:
-    # uvicorn logs `exc_info=exc`, which the logging module expands to the full triple.
-    exc_info = record.exc_info
-    if isinstance(exc_info, tuple) and exc_info and isinstance(exc_info[0], type):
-        return exc_info[0].__name__
-    return None
 
 
 def _first_integer_argument(record: logging.LogRecord) -> int | None:

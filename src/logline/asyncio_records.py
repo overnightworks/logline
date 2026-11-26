@@ -23,7 +23,7 @@ import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
-from logline.uvicorn_records import logged_exception_type_name
+from logline.record import logged_exception_type_name
 
 __all__: list[str] = []
 

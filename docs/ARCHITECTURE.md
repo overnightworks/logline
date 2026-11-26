@@ -63,7 +63,8 @@ Module owners in `logline`:
   first (never `event`, `exception` or `color_message`), keep only the scalar fields of a structlog event,
   render a non-finite float as `null`, then stamp `ts`, `level`, `service`, `version`,
   `logger` and `trace_id`, render exceptions as structlog's text traceback, and drop every field `standard`
-  denies.
+  denies. It also reads the exception class from a standard-library record, for the `uvicorn_records` and
+  `asyncio_records` filters.
 - `lifespan` owns the app startup and shutdown lines (`app_startup.completed`, `app_startup.failed`,
   `app_shutdown.completed`, `app_shutdown.failed`) on `logline.lifespan`: it runs the app's `lifespan` scope and
   writes them from the ASGI messages, under any server. `request`'s middleware dispatches to it.
@@ -92,8 +93,7 @@ Module owners in `logline`:
   step's child span; a unit continues the sender's) and renders a span as the `span_id` and `parent_span_id` of
   a closing line, the one function every writer uses, with the key names `standard` reads from `standard.json`.
 
-`outgoing_trace` uses `trace`; `record` uses `standard` and `trace`; `step` uses `standard` and `trace`; `trace` uses `standard`; `request` uses `step`, `trace`, `lifespan`, `websocket` and `asgi`; `uvicorn_records` uses `websocket`; `asyncio_records` uses `uvicorn_records` for the exception class it reads from a
-record; `configuration` uses `record`, `uvicorn_records`, `asyncio_records`,
+`outgoing_trace` uses `trace`; `record` uses `standard` and `trace`; `step` uses `standard` and `trace`; `trace` uses `standard`; `request` uses `step`, `trace`, `lifespan`, `websocket` and `asgi`; `uvicorn_records` uses `record` and `websocket`; `asyncio_records` uses `record`; `configuration` uses `record`, `uvicorn_records`, `asyncio_records`,
 `outgoing_trace` and `process_failures` and names the request logger; `testing` uses `configuration`,
 `asyncio_records` and `outgoing_trace`.
 `request` imports no web framework; an import contract keeps `logline` free of frameworks and servers, and of
