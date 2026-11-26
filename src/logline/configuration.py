@@ -110,7 +110,9 @@ def configure(service: str) -> None:
 
     `service` names the app or service. `SERVICE_VERSION` is read here and `LOG_LEVEL` sets the
     root level; a malformed `LOG_LEVEL` raises `ValueError` before anything changes. It also writes
-    an uncaught exception, a thread's uncaught exception and a Python warning as record lines.
+    an uncaught exception, a thread's uncaught exception, a Python warning, an unraisable exception
+    and every failure asyncio reports (an exception nobody retrieved, in a callback or on a
+    transport) as record lines; a host's own `loop.set_exception_handler` still wins over the last.
 
     While `OTEL_PROPAGATORS` is unset or empty it also sets OpenTelemetry's global propagator to
     W3C trace context alone, so no baggage is continued or forwarded by any library of the process;

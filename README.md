@@ -357,7 +357,7 @@ A line that closes a piece of work is also its span: it names itself and the spa
 one `trace_id` rebuild the tree of what called what and where the time went, with no tracing library in the host
 and no span store. The closing lines are the request line, the WebSocket session line and every `StepTimer` line;
 each carries `span_id` and `parent_span_id`, 16 lowercase hex digits. Every other line, the lifespan lines, the
-crash lines and uvicorn's lines among them, carries neither.
+crash lines, asyncio's lines and uvicorn's lines among them, carries neither.
 
 | Line | `span_id` | `parent_span_id` |
 |---|---|---|
@@ -425,6 +425,12 @@ logline shows what the app logs; the app keeps its logs meaningful and safe:
   defect: it raises and logs ids, never tokens or contents.
 - No `logging.config.dictConfig` after `configure`: it replaces the handlers `configure` installed.
 - uvicorn runs with `log_config=None` (see below).
+- `configure` is the first call of the process; a crash before it stays Python's text on stderr.
+- A host's own `loop.set_exception_handler` wins over logline's coding, and `logline.check` cannot see it in the
+  source. A host handler that falls back to `loop.default_exception_handler` gets the coded line.
+- Close what holds a resource before the process ends: an exception raised in a cleanup while the interpreter
+  shuts down stays Python's text on stderr ([Crashes and warnings](#crashes-and-warnings)).
+- A `multiprocessing` child catches and logs its own failure.
 
 `logline.check` judges them in a host's source (see [Checking a host's source](#checking-a-hosts-source)).
 
@@ -507,9 +513,13 @@ frames; logline neither masks nor caps them. `configure` also does the following
 raises the floor, so a stricter `LOG_LEVEL` silences the capped logger too:
 
 - renders exceptions as text, never as a dict with local variables;
-- sets `sys.excepthook`, `threading.excepthook` and `warnings.showwarning`, so that the process's death, a thread's death and a
-  Python warning are one line each on stdout (`process.crashed` and `thread.crashed` on `logline.crash`, `python_warning.raised`
-  on `py.warnings`), where Python would print plain text on stderr; `logline.testing.configured` restores all three;
+- sets `sys.excepthook`, `threading.excepthook`, `warnings.showwarning` and `sys.unraisablehook`, so that the process's
+  death, a thread's death, a Python warning and an exception raised in an object's cleanup are one line each on stdout
+  (`process.crashed` and `thread.crashed` on `logline.crash`, `python_warning.raised` on `py.warnings`,
+  `object_cleanup.failed` on `logline.crash`), where Python would print plain text on stderr;
+- wraps asyncio's default exception handler and filters the logger `asyncio`, so that a failure asyncio reports is a
+  coded line and no text of asyncio's, which carries the exception's message, an object's repr and source paths;
+  `logline.testing.configured` restores the four hooks and the asyncio handling;
 - sets the `httpx`, `httpx2`, `httpcore` and `httpcore2` loggers to WARNING, because their INFO lines carry the full URL
   with its query; the callee's request line with the same `trace_id` covers the call;
 - sets the `mcp` tree to WARNING, because `mcp.client.streamable_http` logs the session id, which works like a bearer
@@ -574,15 +584,46 @@ One event per step, whatever its outcome.
 
 ### Crashes and warnings
 
-`configure` replaces Python's plain-text stderr output of three failures with one line on stdout, so a host installs
+`configure` replaces Python's plain-text stderr output of five failures with one line on stdout, so a host installs
 no hook of its own. These events and their `error_type` values are public: renaming one is a breaking change.
-A dying process exits with status 1 as before.
+A dying process exits with status 1 as before. Every `.failed` line carries the traceback in `exception` and the
+exception class in `error_type`, and none carries a message text, an object's repr or a path outside the traceback.
 
 | Event | Logger | Level | When | `error_type` |
 | --- | --- | --- | --- | --- |
 | `process.crashed` | `logline.crash` | critical | the process ends on an uncaught exception, with the traceback in `exception` | the exception class |
 | `thread.crashed` | `logline.crash` | critical | a thread ends on an uncaught exception other than `SystemExit`, with the traceback in `exception` | the exception class |
 | `python_warning.raised` | `py.warnings` | warning | Python issues a warning; its message text is written nowhere | the warning category |
+| `object_cleanup.failed` | `logline.crash` | error | an exception is raised in `__del__`, a weakref callback or a finalizer, where nothing can catch it; no message and no repr of the object | the exception class |
+| `asyncio_task.failed` | `asyncio` | error | a task or future whose exception nobody retrieved, a task that raised during `asyncio.run()` shutdown, a shielded future's exception, a task group's task that errored out after its parent completed, or an `asyncio.start_server` `client_connected_cb` that raised | the exception class |
+| `asyncio_callback.failed` | `asyncio` | error | any other asyncio record that carries an exception, such as an exception in a callback, a fatal transport error or an exception in the default exception handler | the exception class |
+| `asyncio.unknown_record` | `asyncio` | the record's own | every asyncio record from INFO up that carries no exception, such as a task destroyed while pending; no text and no traceback | none |
+
+asyncio's records below INFO pass as asyncio writes them. Each failure is its own line; repeats are not folded.
+
+The `asyncio` lines carry the `trace_id` of the task or callback that failed, where asyncio hands logline its
+context: a task started inside a request, whose exception nobody retrieves, writes its line with that
+request's `trace_id`, also when it is collected while another request runs. A plain future, a failure that names no
+task (a `client_connected_cb`), a record asyncio writes outside its exception handler and an `object_cleanup.failed`
+line carry `trace_id` `null`, never the trace that happens to be current.
+
+Named gaps, each with its owner:
+
+- An exception raised in a cleanup after logline's exit handler ran, such as a module global's `__del__` at
+  interpreter shutdown, stays Python's text on stderr: a Python-level hook is told of none there, and it would hide
+  the failure. The host closes what holds a resource before the process ends.
+- A crash in a `multiprocessing` child is printed by Python's own bootstrap, not through `sys.excepthook`, even
+  when the child called `configure`. The host catches and logs the child's failure.
+- A crash before `configure` runs stays Python's text; the host calls `configure` first.
+- Under an event loop that is not asyncio's own, such as uvloop, asyncio's handler is bypassed: every failure is an
+  `asyncio_callback.failed` line with `trace_id` `null`, named by the filter alone.
+- An end the process cannot see (an OOM kill, SIGKILL) writes no line. The platform owns it: today the pod's last
+  termination reason shows it, and one kill raises no alert.
+
+**Breaking:** asyncio's records under `configure` become the coded events above, so a host that reads asyncio's text
+from the log sees a literal `event`, and an unraisable exception writes a line on stdout instead of Python's text on
+stderr. Migration: none required; a host whose tests read asyncio's log text or an unraisable's stderr sees the
+coded line.
 
 ### Shared fields
 
@@ -820,7 +861,7 @@ a breaking change.
 | `event_name_shape` | the event is a literal that does not match the event-name pattern |
 | `message_args` | a standard-library logging call passes positional arguments after the event |
 | `denied_field` | a field on the deny list is a keyword of a structlog call, of `.bind(...)`, of `bind_contextvars(...)`, of `StepTimer(...)` or `step.add(...)`, or a literal key of an `extra=` dict |
-| `own_setup` | the source calls one of `own_setup_calls` in `standard.json` (`logging.basicConfig`, `structlog.configure`, ...) or assigns `sys.excepthook` or `threading.excepthook` |
+| `own_setup` | the source calls one of `own_setup_calls` in `standard.json` (`logging.basicConfig`, `structlog.configure`, ...) or assigns `sys.excepthook`, `threading.excepthook` or `sys.unraisablehook` |
 | `uvicorn_log_config` | `uvicorn.run`, `uvicorn.main.run` or `uvicorn.Config` is called without `log_config=None` |
 | `uvicorn_log_level` | `uvicorn.run`, `uvicorn.main.run` or `uvicorn.Config` is called with a `log_level` |
 | `uvicorn_options_hidden` | one of them is called with a `**` argument, a `*` argument or a positional argument after the app, which hide its options |
@@ -841,6 +882,7 @@ What the check does not see, so a clean result is not a proof:
 - A logging function imported by name, such as `from logging import warning`.
 - An event passed as a keyword (`event=`, `msg=`); only the positional event is read.
 - An annotated or augmented assignment to `sys.excepthook`; only a plain assignment is own setup.
+- A host's own `loop.set_exception_handler`, which wins over logline's coding of asyncio's failures.
 - A parameter reassigned before it is logged; the check judges the literal each caller passes.
 - A `@staticmethod` whose event parameter is called through `self`, which reads as `event_not_literal`, a false
   positive.

@@ -51,10 +51,11 @@ def configured(service: str) -> Iterator[None]:
     Restored are the handlers, filters, level and propagation of the root logger, uvicorn's, the
     HTTP clients', the request and the capped library loggers, structlog's configuration and the
     stdlib logger class structlog's factory installs, the process's and the threads' exception
-    hooks, the unraisable-exception hook and the warning display, OpenTelemetry's global propagator
-    and whether outgoing requests carry the trace, as they were on entry. The carriers stay
-    installed on the HTTP clients and their methods are never reassigned, so a wrapper a host put on
-    one survives.
+    hooks, the unraisable-exception hook and the warning display, OpenTelemetry's global propagator,
+    whether outgoing requests carry the trace and whether asyncio's failures are coded, as they were
+    on entry. The carriers stay installed on the HTTP clients and their methods are never
+    reassigned, so a wrapper a host put on one survives; asyncio's default exception handler stays
+    wrapped and, once the block ends, writes asyncio's own record again.
     """
     logger_states = [LoggerState.of(logging.getLogger(name)) for name in TOUCHED_LOGGER_NAMES]
     logger_class = logging.getLoggerClass()

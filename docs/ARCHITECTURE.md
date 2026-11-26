@@ -29,16 +29,23 @@ Module owners in `logline`:
 - `configuration` owns `configure`: the root JSON handler on stdout, the root level from `LOG_LEVEL`, the
   `logline.request` level pin, the capped library loggers' levels (HTTP clients, `mcp`, `botocore` and
   `sqlalchemy.dialects.postgresql` at WARNING, `piper` at ERROR), the routing of uvicorn's loggers and the
-  installing of the `process_failures` hooks, OpenTelemetry's global propagator (see Constraints and reasons) and
-  the `outgoing_trace` carriers.
+  installing of the `process_failures` hooks, OpenTelemetry's global propagator (see Constraints and reasons), the
+  `outgoing_trace` carriers and the `asyncio_records` wrap and filter.
 - `outgoing_trace` owns how the trace reaches an outgoing HTTP request with no call-site code: a hook on
   `http.client.HTTPConnection` (urllib.request, urllib3, requests and botocore go through it) and a hook on the
   public `send` of httpx's and httpx2's `Client` and `AsyncClient`, where the host installed them. It is the one
   module that imports an HTTP client, a third-party one only after `importlib.util.find_spec` found it. It owns the
   state, on or off, that decides whether the installed hooks add anything.
-- `process_failures` owns the three hooks `configure` installs, `sys.excepthook`, `threading.excepthook` and
-  `warnings.showwarning`, and the events they write: `process.crashed`, `thread.crashed` and
-  `python_warning.raised`, with an `error_type`.
+- `asyncio_records` owns how asyncio's failures become lines: a class-level wrap of
+  `asyncio.BaseEventLoop.default_exception_handler`, installed once per process and never removed, behind the
+  state, on or off, that decides whether it writes anything; the classification of a handler's context into
+  `asyncio_task.failed`, `asyncio_callback.failed` and `asyncio.unknown_record`; the trace rule (the failed task's
+  or callback's own context); and the filter `configure` puts on the logger `asyncio`, which names every record
+  that bypasses the handler. Every `.failed` line carries an `error_type`; none carries asyncio's text.
+- `process_failures` owns the four hooks `configure` installs, `sys.excepthook`, `threading.excepthook`,
+  `warnings.showwarning` and `sys.unraisablehook`, the exit handler that puts Python's own unraisable hook back, and
+  the events they write: `process.crashed`, `thread.crashed`, `python_warning.raised` and
+  `object_cleanup.failed`, with an `error_type`.
 - `uvicorn_records` owns the filter `configure` puts on `uvicorn.error`: which uvicorn and websockets records it
   drops and which it names as `server_bind.failed`, `http_request.refused`, `asgi_app.failed`,
   `asgi_app.contract_broken`, `websocket_upgrade.refused` (a malformed upgrade that never reached the app) and the
@@ -76,8 +83,8 @@ Module owners in `logline`:
   a child span when its block is entered, keeps that context for its line and drops a caller's `span_id` and
   `parent_span_id`.
 - `testing` owns `configured`, the host tests' way to run `configure` and restore the logging state it
-  changed, the three `process_failures` hooks and OpenTelemetry's global propagator included; it is the one module that reads
-  `configuration`'s list of touched loggers.
+  changed, the four `process_failures` hooks, the `asyncio_records` state and OpenTelemetry's global propagator
+  included; it is the one module that reads `configuration`'s list of touched loggers.
 - `trace` owns the trace of a request, of a WebSocket session and of a unit within it: it starts or continues it in
   OpenTelemetry's context from header pairs (ASGI byte pairs or text pairs, one extraction through the global
   propagator), reads `trace_id` from it
@@ -85,9 +92,10 @@ Module owners in `logline`:
   step's child span; a unit continues the sender's) and renders a span as the `span_id` and `parent_span_id` of
   a closing line, the one function every writer uses, with the key names `standard` reads from `standard.json`.
 
-`outgoing_trace` uses `trace`; `record` uses `standard` and `trace`; `step` uses `standard` and `trace`; `trace` uses `standard`; `request` uses `step`, `trace`, `lifespan`, `websocket` and `asgi`; `uvicorn_records` uses `websocket`; `configuration` uses `record`, `uvicorn_records`,
-`outgoing_trace` and `process_failures` and names the request logger; `testing` uses `configuration` and
-`outgoing_trace`.
+`outgoing_trace` uses `trace`; `record` uses `standard` and `trace`; `step` uses `standard` and `trace`; `trace` uses `standard`; `request` uses `step`, `trace`, `lifespan`, `websocket` and `asgi`; `uvicorn_records` uses `websocket`; `asyncio_records` uses `uvicorn_records` for the exception class it reads from a
+record; `configuration` uses `record`, `uvicorn_records`, `asyncio_records`,
+`outgoing_trace` and `process_failures` and names the request logger; `testing` uses `configuration`,
+`asyncio_records` and `outgoing_trace`.
 `request` imports no web framework; an import contract keeps `logline` free of frameworks and servers, and of
 HTTP clients except in `outgoing_trace`.
 
@@ -180,7 +188,7 @@ lowest direct dependency floors run the same tests.
   step; the consumer's steps between two `yield`s name it as parent, and a dropped generator's step stays the
   parent of the consumer's later steps until the unit ends. A consumer step around one `anext`, while the
   generator's step ends inside it, leaves the consumer's span stale until its own block ends.
-- The lifespan lines, the crash lines and the `uvicorn_records` lines carry no span; the span keys belong to the
+- The lifespan lines, the crash lines, the `asyncio_records` lines and the `uvicorn_records` lines carry no span; the span keys belong to the
   lines that close a piece of work.
 - `sub`, `ip` and `route` live in `scope["state"]`: the same dict reaches `BaseHTTPMiddleware`, Starlette's routing
   and the threadpool, where a contextvar set below `BaseHTTPMiddleware` would not reach the middleware.
@@ -207,6 +215,18 @@ lowest direct dependency floors run the same tests.
   becomes `uvicorn.unknown_record` at its level, so a uvicorn upgrade that adds a template never leaks free text;
   only the app's exception keeps its traceback. Every read it makes of a record (`exc_info`, `args`) is total: a
   record that lacks what uvicorn normally supplies loses the field, never raises into uvicorn.
+- asyncio's records are named from the handler's context dict, never from the message, which carries the exception's
+  text and an object's repr. The wrap writes the one line on `asyncio` in place of asyncio's record, inside the
+  failed task's or callback's own context (the one `get_context()` returns; a context that is already entered is the
+  current one, since `Context.run` refuses it), so the line carries that object's trace; a plain future, a failure
+  that names no task and every record the filter names carry `trace_id` null, never the trace current when the
+  garbage collector or the loop got to it, which would be another request's. The filter names a record without an
+  exception `asyncio.unknown_record` at its own level. Neither the wrap nor the filter raises into asyncio: a
+  context logline cannot read falls back to asyncio's own record, which the filter names. A loop that is not
+  asyncio's own (uvloop) bypasses the wrap, so only the filter names its records. `sys.unraisablehook` writes
+  `object_cleanup.failed` in an empty context for the same reason; an exit handler registered once per process puts
+  Python's own hook back, so an exception raised while the interpreter tears its modules down, which a Python-level
+  hook is never told of, still prints as text.
 - The app startup and shutdown lines come from the `lifespan` scope the middleware already receives, because every
   ASGI server runs that scope through the app: no stack walk, no server-specific state. uvicorn's own four
   `app_*` templates and its "Exception in 'lifespan' protocol" record are dropped by equality, since the middleware
