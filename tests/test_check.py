@@ -299,6 +299,14 @@ _NAMED_EVENT_CASES = [
         _NOT_LITERAL,
     ),
     _case(
+        "Final constant rebound through global in another function",
+        _STDLIB
+        + 'from typing import Final\nEVENT: Final = "turn.arrived"\n'
+        + "def swap():\n    global EVENT\n    EVENT = 1\n"
+        + "def note():\n    logger.info(EVENT)\n",
+        _NOT_LITERAL,
+    ),
+    _case(
         "Final constant shadowed by an except handler in the function",
         _STDLIB
         + 'from typing import Final\nEVENT: Final = "turn.arrived"\n'

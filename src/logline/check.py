@@ -473,8 +473,12 @@ class _Judge:
 
 
 def _module_bindings(tree: ast.Module) -> Iterator[str]:
-    """Every name the module scope binds, once per binding, in nested statements too."""
-    return _scope_bindings(tree.body)
+    """Every name the module scope binds, once per binding, in nested statements too; a name a
+    function declares `global` counts as one more binding, since that function rebinds it."""
+    yield from _scope_bindings(tree.body)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Global):
+            yield from node.names
 
 
 def _scope_bindings(nodes: Sequence[ast.AST]) -> Iterator[str]:
