@@ -744,15 +744,18 @@ async def ask_model(client, request):
 - `step.end()` writes the line now, as a block that ends normally would, for a step that no `with` block
   surrounds, such as a wait that spans WebSocket events. `step.end_cancelled()` writes it now as `cancelled`,
   at INFO, without `error_type` and `reason`, as a block that a cancellation leaves would: for a step whose
-  task is cancelled before a block surrounds it, ended from the task's done callback. The line is written
-  once: after either, a later `end()`, `end_cancelled()` or block exit writes nothing more.
+  task is cancelled before a block surrounds it, ended from the task's done callback. `step.end_failed(error)`
+  writes it now as a block that the `Exception` `error` leaves would: `failed` with `error_type`, beside `reason`
+  when `fail` named one, at ERROR or at WARNING after `handled()`; for a step ended by an exception that no block
+  caught, such as a stream's run summary. It neither raises nor keeps `error`. The line is written once: after any
+  of them, a later `end()`, `end_cancelled()`, `end_failed()` or block exit writes nothing more.
 - Entering the block opens the step's span under the current one, and it stays current until the block ends: a step
   inside it, `outgoing_headers()` and `current_traceparent()` name it. The line carries its `span_id` and
   `parent_span_id` and the `trace_id` of the trace it was opened in, wherever it is written, so a block that ends in
   another task or turn still writes all three from one trace. When the block ends, the previous span is current
   again, unless the block ends in another context than it began in, whose current span stays as it is. A step no
-  block surrounds takes a fresh span when `end()` or `end_cancelled()` writes its line, under the current span; one
-  that ends inside its block writes the block's span. A step whose line `end()` or `end_cancelled()` already
+  block surrounds takes a fresh span when `end()`, `end_cancelled()` or `end_failed()` writes its line, under the current span; one
+  that ends inside its block writes the block's span. A step whose line `end()`, `end_cancelled()` or `end_failed()` already
   wrote opens no span when it is then entered as a block: a call or step inside names the span the block ran under.
   A step outside any trace has no span: `span_id` and `parent_span_id` are `null`, and it starts no trace.
 - The line is at INFO. `step.degraded()` makes it a warning, such as a `refused` call the unit retried. A
