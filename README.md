@@ -908,11 +908,20 @@ a breaking change.
 
 A logging call is `debug`, `info`, `warning`, `error`, `exception`, `critical` or `log` (the event is its
 second argument) on a logger the same file binds from `logging.getLogger`, `structlog.get_logger`,
-`structlog.stdlib.get_logger` or `.bind(...)`, on the `logging` module, or on a parameter or attribute annotated
-`logging.Logger` or structlog's `BoundLogger`; imports are resolved, aliases included. A call gets at most one
-event row. An event is a string literal, or a name bound once at module level of the same file by an annotated assignment of a string literal whose annotation is `Final` or `Final[str]` (from `typing` or `typing_extensions`), or `Class.MEMBER` of a module-level `StrEnum` class of the same file whose body assigns `MEMBER` a string literal; the check judges that literal, its shape and `.ended` suffix, as it judges one at the call. A name an enclosing function binds itself, a name bound twice or without `Final`, a member assigned `auto()`, and a constant or member imported from another file stay `event_not_literal`. An event may be a parameter of a function in the same file when every call of that function in the
-file passes a matching literal, or such a constant or member; the check follows one hop and never crosses a file. Setup on a named library
-logger, such as `logging.getLogger("httpx").addFilter(...)` or `setLevel`, is not own setup.
+`structlog.stdlib.get_logger` or `.bind(...)`, on the `logging` module, or on a parameter or attribute
+annotated `logging.Logger` or structlog's `BoundLogger`; imports are resolved, aliases included. A call gets
+at most one event row.
+
+An event is a string literal, or a name bound once at module level of the same file by an annotated assignment
+of a string literal whose annotation is `Final` or `Final[str]` (from `typing` or `typing_extensions`), or
+`Class.MEMBER` of a module-level `StrEnum` class of the same file whose body assigns `MEMBER` a string
+literal. The check judges that literal, its shape and `.ended` suffix, as it judges one at the call.
+
+A name an enclosing function binds itself, a name bound twice or without `Final`, a member assigned `auto()`,
+and a constant or member imported from another file stay `event_not_literal`. An event may be a parameter of a
+function in the same file when every call of that function in the file passes a matching literal, or such a
+constant or member; the check follows one hop and never crosses a file. Setup on a named library logger, such
+as `logging.getLogger("httpx").addFilter(...)` or `setLevel`, is not own setup.
 
 What the check does not see, so a clean result is not a proof:
 
