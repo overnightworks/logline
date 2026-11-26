@@ -20,6 +20,10 @@ forbidden_modules =
     httpcore
     httpcore2
     websockets
+    urllib3
+    requests
+    botocore
+    aiohttp
 ignore_imports =
     logline.outgoing_trace -> httpx
     logline.outgoing_trace -> httpx2
