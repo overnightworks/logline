@@ -41,7 +41,7 @@ A_CALLERS_TRACEPARENT = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
 
 @dataclass
 class Received:
-    """One request as the server saw it: its method, the headers by lower-case name, the peer's port."""
+    """One request as the server saw it: method, headers by lower-case name and the peer's port."""
 
     method: str
     headers: ReceivedHeaders
@@ -185,7 +185,7 @@ CLIENTS: dict[str, Call] = {
 
 
 def _s3_client(url: str) -> Any:
-    return boto3.session.Session().client(
+    return boto3.client(
         "s3",
         endpoint_url=url,
         region_name="us-east-1",
