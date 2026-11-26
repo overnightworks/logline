@@ -849,8 +849,9 @@ Why this log is the target:
 `configure(service)` and on exit restores the process's logging as it was before: the root logger's handlers
 and level, the handlers, filters, levels and propagation of the uvicorn, HTTP client, `logline.request` and
 capped library (`mcp`, `botocore`, `sqlalchemy.dialects.postgresql`, `piper`) loggers, structlog's configuration and the
-stdlib logger class its factory installs, OpenTelemetry's global propagator and whether outgoing requests carry the
-trace. Inside the block a covered client's request, and a work item of a thread pool, carries the current trace
+stdlib logger class its factory installs, the process's and the threads' exception hooks, the unraisable-exception
+hook and the warning display, OpenTelemetry's global propagator, whether outgoing requests and thread pool work items
+carry the trace and whether asyncio's failures are coded. Inside the block a covered client's request, and a work item of a thread pool, carries the current trace
 ([Outgoing calls](#outgoing-calls)), so a test that asserts a request's exact headers sees it. After the block requests
 and work items carry the trace only if they did before it; the carriers stay on the HTTP clients' methods and on
 `ThreadPoolExecutor.submit`, which `configured` never reassigns, so a wrapper the host or a library put on one survives.
