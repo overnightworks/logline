@@ -144,6 +144,206 @@ _BINDING_CASES = [
     _case("unannotated parameter", 'def run(log):\n    log.info("Bad")\n'),
 ]
 
+_STEP_TIMER = "from logline import StepTimer\n"
+_NOT_LITERAL = Rule.EVENT_NOT_LITERAL
+
+_NAMED_EVENT_CASES = [
+    _case(
+        "Final constant",
+        _STDLIB + 'from typing import Final\nEVENT: Final = "turn.arrived"\nlogger.info(EVENT)\n',
+    ),
+    _case(
+        "Final[str] constant",
+        _STDLIB
+        + 'from typing import Final\nEVENT: Final[str] = "turn.arrived"\nlogger.info(EVENT)\n',
+    ),
+    _case(
+        "Final constant from typing_extensions",
+        _STDLIB
+        + "from typing_extensions import Final\n"
+        + 'EVENT: Final = "turn.arrived"\nlogger.info(EVENT)\n',
+    ),
+    _case(
+        "Final constant through an aliased module",
+        _STDLIB + 'import typing as t\nEVENT: t.Final = "turn.arrived"\nlogger.info(EVENT)\n',
+    ),
+    _case(
+        "Final constant through an aliased name",
+        _STDLIB
+        + "from typing import Final as Fixed\n"
+        + 'EVENT: Fixed[str] = "turn.arrived"\nlogger.info(EVENT)\n',
+    ),
+    _case(
+        "Final constant of another type",
+        _STDLIB + 'from typing import Final\nEVENT: Final[bytes] = b"x"\nlogger.info(EVENT)\n',
+        _NOT_LITERAL,
+    ),
+    _case(
+        "Final constant at a StepTimer",
+        _STEP_TIMER
+        + 'from typing import Final\nEVENT: Final = "turn.arrived"\nStepTimer(EVENT)\n',
+    ),
+    _case(
+        "badly shaped Final constant",
+        _STDLIB + 'from typing import Final\nEVENT: Final = "Turn ended"\nlogger.info(EVENT)\n',
+        Rule.EVENT_NAME_SHAPE,
+    ),
+    _case(
+        "badly shaped Final constant at a StepTimer",
+        _STEP_TIMER
+        + 'from typing import Final\nEVENT: Final = "Turn ended"\nStepTimer(EVENT)\n',
+        Rule.EVENT_NAME_SHAPE,
+    ),
+    _case(
+        "ended Final constant at a logging call",
+        _STDLIB + 'from typing import Final\nEVENT: Final = "turn.ended"\nlogger.info(EVENT)\n',
+        Rule.HAND_WRITTEN_ENDED,
+    ),
+    _case(
+        "ended Final constant at a StepTimer",
+        _STEP_TIMER
+        + 'from typing import Final\nEVENT: Final = "turn.ended"\nStepTimer(EVENT)\n',
+    ),
+    _case(
+        "StrEnum member",
+        _STDLIB
+        + "from enum import StrEnum\n"
+        + 'class Event(StrEnum):\n    ARRIVED = "turn.arrived"\n\nlogger.info(Event.ARRIVED)\n',
+    ),
+    _case(
+        "StrEnum member through an aliased import",
+        _STDLIB
+        + "import enum as e\n"
+        + 'class Event(e.StrEnum):\n    ARRIVED = "turn.arrived"\n\nlogger.info(Event.ARRIVED)\n',
+    ),
+    _case(
+        "badly shaped StrEnum member",
+        _STDLIB
+        + "from enum import StrEnum\n"
+        + 'class Event(StrEnum):\n    ARRIVED = "Arrived"\n\nlogger.info(Event.ARRIVED)\n',
+        Rule.EVENT_NAME_SHAPE,
+    ),
+    _case(
+        "ended StrEnum member at a logging call",
+        _STDLIB
+        + "from enum import StrEnum\n"
+        + 'class Event(StrEnum):\n    ENDED = "turn.ended"\n\nlogger.info(Event.ENDED)\n',
+        Rule.HAND_WRITTEN_ENDED,
+    ),
+    _case(
+        "StrEnum member assigned auto",
+        _STDLIB
+        + "from enum import StrEnum, auto\n"
+        + "class Event(StrEnum):\n    ARRIVED = auto()\n\nlogger.info(Event.ARRIVED)\n",
+        _NOT_LITERAL,
+    ),
+    _case(
+        "member of a class that is no StrEnum",
+        _STDLIB
+        + "from enum import Enum\n"
+        + 'class Event(Enum):\n    ARRIVED = "turn.arrived"\n\nlogger.info(Event.ARRIVED)\n',
+        _NOT_LITERAL,
+    ),
+    _case(
+        "member that the enum does not define",
+        _STDLIB
+        + "from enum import StrEnum\n"
+        + 'class Event(StrEnum):\n    ARRIVED = "turn.arrived"\n\nlogger.info(Event.FAILED)\n',
+        _NOT_LITERAL,
+    ),
+    _case(
+        "StrEnum imported from another file",
+        _STDLIB + "from events import Event\nlogger.info(Event.ARRIVED)\n",
+        _NOT_LITERAL,
+    ),
+    _case(
+        "Final constant imported from another file",
+        _STDLIB + "from events import EVENT\nlogger.info(EVENT)\n",
+        _NOT_LITERAL,
+    ),
+    _case(
+        "constant bound without Final",
+        _STDLIB + 'EVENT = "turn.arrived"\nlogger.info(EVENT)\n',
+        _NOT_LITERAL,
+    ),
+    _case(
+        "Final constant bound twice",
+        _STDLIB
+        + 'from typing import Final\nEVENT: Final = "turn.arrived"\nEVENT = "turn.failed"\n'
+        + "logger.info(EVENT)\n",
+        _NOT_LITERAL,
+    ),
+    _case(
+        "Final constant bound in a branch and again",
+        _STDLIB
+        + 'from typing import Final\nEVENT: Final = "turn.arrived"\n'
+        + 'if flag:\n    EVENT = "turn.failed"\nlogger.info(EVENT)\n',
+        _NOT_LITERAL,
+    ),
+    _case(
+        "Final constant shadowed by a parameter",
+        _STDLIB
+        + 'from typing import Final\nEVENT: Final = "turn.arrived"\n'
+        + "def note(EVENT):\n    logger.info(EVENT)\n",
+        _NOT_LITERAL,
+    ),
+    _case(
+        "Final constant shadowed by an assignment in the function",
+        _STDLIB
+        + 'from typing import Final\nEVENT: Final = "turn.arrived"\n'
+        + "def note():\n    EVENT = compute()\n    logger.info(EVENT)\n",
+        _NOT_LITERAL,
+    ),
+    _case(
+        "Final constant shadowed by an assignment in an outer function",
+        _STDLIB
+        + 'from typing import Final\nEVENT: Final = "turn.arrived"\n'
+        + "def note():\n    EVENT = compute()\n    def inner():\n        logger.info(EVENT)\n",
+        _NOT_LITERAL,
+    ),
+    _case(
+        "Final constant used inside an unrelated function",
+        _STDLIB
+        + 'from typing import Final\nEVENT: Final = "turn.arrived"\n'
+        + "def note():\n    logger.info(EVENT)\n",
+    ),
+    _case(
+        "StrEnum shadowed by a parameter",
+        _STDLIB
+        + "from enum import StrEnum\n"
+        + 'class Event(StrEnum):\n    ARRIVED = "turn.arrived"\n\n'
+        + "def note(Event):\n    logger.info(Event.ARRIVED)\n",
+        _NOT_LITERAL,
+    ),
+    _case(
+        "parameter whose caller passes a Final constant",
+        _STDLIB
+        + 'from typing import Final\nEVENT: Final = "turn.arrived"\n'
+        + "def note(event):\n    logger.info(event)\n\nnote(EVENT)\n",
+    ),
+    _case(
+        "parameter whose caller passes a badly shaped Final constant",
+        _STDLIB
+        + 'from typing import Final\nEVENT: Final = "Turn ended"\n'
+        + "def note(event):\n    logger.info(event)\n\nnote(EVENT)\n",
+        _NOT_LITERAL,
+    ),
+    _case(
+        "parameter whose caller passes a StrEnum member by keyword",
+        _STDLIB
+        + "from enum import StrEnum\n"
+        + 'class Event(StrEnum):\n    ARRIVED = "turn.arrived"\n\n'
+        + "def note(*, event):\n    logger.info(event)\n\nnote(event=Event.ARRIVED)\n",
+    ),
+    _case(
+        "parameter whose caller passes an ended Final constant",
+        _STDLIB
+        + 'from typing import Final\nEVENT: Final = "turn.ended"\n'
+        + "def note(event):\n    logger.info(event)\n\nnote(EVENT)\n",
+        Rule.HAND_WRITTEN_ENDED,
+    ),
+]
+
 _HOP_CASES = [
     _case(
         "parameter logged twice with a bad caller",
@@ -491,6 +691,7 @@ _UVICORN_CASES = [
         *_EVENT_CASES,
         *_BINDING_CASES,
         *_HOP_CASES,
+        *_NAMED_EVENT_CASES,
         *_MESSAGE_ARGUMENT_CASES,
         *_DENIED_FIELD_CASES,
         *_HAND_WRITTEN_ENDED_CASES,
