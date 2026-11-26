@@ -467,6 +467,10 @@ def _add_step_end_failed_routes(app: FastAPI, steps: Steps) -> None:
         step.end_failed(_failure())
         return {"caught": None}
 
+
+def _add_step_end_failed_order_routes(app: FastAPI, steps: Steps) -> None:
+    """Routes that end a step with its exception more than once or inside its block."""
+
     @app.get("/step/end-failed-then-end")
     async def step_end_failed_then_end() -> _Answer:
         step = steps()
@@ -638,6 +642,7 @@ def add_step_routes(app: FastAPI) -> None:
     _add_step_end_routes(app, steps)
     _add_step_end_cancelled_routes(app, steps)
     _add_step_end_failed_routes(app, steps)
+    _add_step_end_failed_order_routes(app, steps)
     _add_step_end_order_routes(app, steps)
     _add_step_start_routes(app, steps)
     _add_step_thread_routes(app, steps)
