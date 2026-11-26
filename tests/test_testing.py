@@ -156,8 +156,10 @@ def test_leaving_the_block_stops_a_thread_pool_item_seeing_the_submitters_trace(
     with configured("pool"), ThreadPoolExecutor(max_workers=1) as pool, inside_a_request():
         seen_inside = pool.submit(current_trace_id).result()
 
-    with ThreadPoolExecutor(max_workers=1) as pool, inside_a_request():
-        seen_after = pool.submit(current_trace_id).result()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pool.submit(int).result()
+        with inside_a_request():
+            seen_after = pool.submit(current_trace_id).result()
 
     assert (seen_inside, seen_after) == (INCOMING_TRACE_ID, None)
 
