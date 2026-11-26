@@ -10,7 +10,7 @@ import pytest
 from logline.standard import BASE_KEYS
 from logline.testing import configured
 from tests.support.failing_process import SECRET, Leaky
-from tests.support.lines import Line, json_lines
+from tests.support.lines import Line, json_lines, outside_the_traceback
 from tests.support.outgoing_clients import inside_a_request
 
 _REPOSITORY = Path(__file__).parents[1]
@@ -70,7 +70,7 @@ def test_a_crash_keeps_its_message_inside_the_traceback() -> None:
 
     line = _the_line_of(result.stdout, "process.crashed")
     assert SECRET in str(line["exception"])
-    assert SECRET not in str({key: value for key, value in line.items() if key != "exception"})
+    assert SECRET not in str(outside_the_traceback(line))
 
 
 def test_an_unraisable_line_carries_no_message_and_no_object_text() -> None:
@@ -78,9 +78,9 @@ def test_an_unraisable_line_carries_no_message_and_no_object_text() -> None:
 
     line = _the_line_of(result.stdout, "object_cleanup.failed")
     assert SECRET in str(line["exception"])
-    outside_the_traceback = {key: value for key, value in line.items() if key != "exception"}
-    assert SECRET not in str(outside_the_traceback)
-    assert "Leaky" not in str(outside_the_traceback)
+    outside = str(outside_the_traceback(line))
+    assert SECRET not in outside
+    assert "Leaky" not in outside
     assert "err_msg" not in line
 
 

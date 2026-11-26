@@ -20,6 +20,10 @@ def request_lines(lines: list[Line]) -> list[Line]:
     return [line for line in lines if line["logger"] == REQUEST_LOGGER_NAME]
 
 
+def outside_the_traceback(line: Line) -> Line:
+    return {key: value for key, value in line.items() if key != "exception"}
+
+
 def lines_of(lines: list[Line], logger: str) -> list[Line]:
     return [line for line in lines if line["logger"] == logger]
 

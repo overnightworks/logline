@@ -18,14 +18,12 @@ from tests.support.failing_process import (
     raise_the_failure,
 )
 from tests.support.incoming_trace import INCOMING_TRACE_ID, INCOMING_TRACEPARENT
-from tests.support.lines import Line, json_lines, lines_of
-from tests.support.outgoing_clients import inside_a_request
+from tests.support.lines import Line, json_lines, lines_of, outside_the_traceback
+from tests.support.outgoing_clients import A_CALLERS_TRACEPARENT, inside_a_request
 from tests.support.serving import serve
 
 _ASYNCIO_LOGGER = "asyncio"
 _ARGUMENT_TEXT = "callback-argument-text"
-_OTHER_TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
-_OTHER_TRACEPARENT = f"00-{_OTHER_TRACE_ID}-b7ad6b7169203331-01"
 _FAILURE_KEYS = BASE_KEYS | {"error_type", "exception"}
 _TASK_FAILED = "asyncio_task.failed"
 _CALLBACK_FAILED = "asyncio_callback.failed"
@@ -145,10 +143,6 @@ def _the_asyncio_lines(output: str) -> list[Line]:
     return lines_of(json_lines(output), _ASYNCIO_LOGGER)
 
 
-def _without_traceback(line: Line) -> str:
-    return str({key: value for key, value in line.items() if key != "exception"})
-
-
 @pytest.mark.parametrize(
     ("main", "event"),
     [
@@ -188,7 +182,7 @@ def test_a_failure_asyncio_reports_writes_one_coded_error_line_without_its_text(
     assert (line["event"], line["level"], line["error_type"]) == (event, "error", "RuntimeError")
     assert line.keys() == _FAILURE_KEYS
     assert SECRET in str(line["exception"])
-    assert SECRET not in _without_traceback(line)
+    assert SECRET not in str(outside_the_traceback(line))
     assert (line["trace_id"], captured.err) == (None, "")
 
 
@@ -242,7 +236,7 @@ def test_a_record_asyncio_writes_with_an_exception_outside_its_handler_is_a_call
         "RuntimeError",
     )
     assert (line.keys(), line["trace_id"]) == (_FAILURE_KEYS, None)
-    assert "Exception in a loop" not in _without_traceback(line)
+    assert "Exception in a loop" not in str(outside_the_traceback(line))
 
 
 def test_a_record_below_info_passes_as_asyncio_wrote_it(
@@ -416,7 +410,7 @@ def test_a_failure_carries_the_trace_of_the_request_that_started_it_not_the_curr
     capsys: pytest.CaptureFixture[str], path: str, event: str, trace_id: str | None
 ) -> None:
     lines = _lines_after_requests(
-        capsys, [(path, INCOMING_TRACEPARENT), ("/collect", _OTHER_TRACEPARENT)]
+        capsys, [(path, INCOMING_TRACEPARENT), ("/collect", A_CALLERS_TRACEPARENT)]
     )
 
     (line,) = lines
