@@ -11,6 +11,7 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 from structlog.processors import JSONRenderer
 from structlog.stdlib import BoundLogger, LoggerFactory, ProcessorFormatter, filter_by_level
 
+from logline.asyncio_records import ASYNCIO_LOGGER_NAME, install_asyncio_records
 from logline.outgoing_trace import install_trace_carriers
 from logline.process_failures import install_process_failure_hooks
 from logline.record import record_shape
@@ -49,6 +50,7 @@ TOUCHED_LOGGER_NAMES = (
     _ROOT_LOGGER_NAME,
     REQUEST_LOGGER_NAME,
     *_UVICORN_LOGGERS,
+    ASYNCIO_LOGGER_NAME,
     *_CAPPED_LOGGER_LEVELS,
 )
 
@@ -139,4 +141,5 @@ def configure(service: str) -> None:
     _route_uvicorn_through_root()
     _set_global_propagator()
     install_trace_carriers()
+    install_asyncio_records()
     install_process_failure_hooks()

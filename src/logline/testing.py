@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 import structlog
 from opentelemetry.propagate import get_global_textmap, set_global_textmap
 
+from logline import asyncio_records
 from logline.configuration import TOUCHED_LOGGER_NAMES, configure
 from logline.outgoing_trace import is_enabled, set_enabled
 
@@ -65,6 +66,7 @@ def configured(service: str) -> Iterator[None]:
     unraisable_hook = sys.unraisablehook
     propagator = get_global_textmap()
     carrying_trace = is_enabled()
+    coding_asyncio = asyncio_records.is_enabled()
     try:
         configure(service)
         yield
@@ -75,6 +77,7 @@ def configured(service: str) -> Iterator[None]:
         sys.unraisablehook = unraisable_hook
         set_global_textmap(propagator)
         set_enabled(carrying_trace)
+        asyncio_records.set_enabled(coding_asyncio)
         logging.setLoggerClass(logger_class)
         for state in logger_states:
             state.restore()

@@ -37,6 +37,7 @@ def _the_line_of(output: str, event: str) -> Line:
         ("crash", "process.crashed", "critical", "logline.crash", "RuntimeError", 1),
         ("thread", "thread.crashed", "critical", "logline.crash", "RuntimeError", 0),
         ("warning", "python_warning.raised", "warning", "py.warnings", "DeprecationWarning", 0),
+        ("task", "asyncio_task.failed", "error", "asyncio", "RuntimeError", 0),
         ("unraisable", "object_cleanup.failed", "error", "logline.crash", "RuntimeError", 0),
     ],
 )

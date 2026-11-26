@@ -84,16 +84,12 @@ def _python_warning_raised(
     _WARNINGS_LOGGER.warning(PYTHON_WARNING_RAISED, extra={"error_type": category.__name__})
 
 
-def _restore_python_unraisable_hook() -> None:
-    sys.unraisablehook = sys.__unraisablehook__
-
-
 @functools.cache
 def _restore_python_unraisable_hook_at_exit() -> None:
     # Exit handlers run last in, first out, so this one runs after every handler registered after
     # `configure`. Python's own hook is what still reports an exception raised while the
     # interpreter tears its modules down, which a Python-level hook never sees.
-    atexit.register(_restore_python_unraisable_hook)
+    atexit.register(setattr, sys, "unraisablehook", sys.__unraisablehook__)
 
 
 def install_process_failure_hooks() -> None:

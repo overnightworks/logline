@@ -11,6 +11,7 @@ from opentelemetry.propagate import get_global_textmap, set_global_textmap
 from opentelemetry.propagators.composite import CompositePropagator
 from structlog.stdlib import ProcessorFormatter
 
+from logline import asyncio_records
 from logline.outgoing_trace import is_enabled, set_enabled
 from logline.testing import LoggerState
 
@@ -28,11 +29,13 @@ def isolated_logging(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.delenv("OTEL_PROPAGATORS", raising=False)
     propagator = get_global_textmap()
     carrying_trace = is_enabled()
+    coding_asyncio = asyncio_records.is_enabled()
     hooks = (sys.excepthook, threading.excepthook, warnings.showwarning, sys.unraisablehook)
     saved = {logger.name: LoggerState.of(logger) for logger in all_loggers()}
     yield
     set_global_textmap(propagator)
     set_enabled(carrying_trace)
+    asyncio_records.set_enabled(coding_asyncio)
     sys.excepthook, threading.excepthook, warnings.showwarning, sys.unraisablehook = hooks
     for logger in all_loggers():
         state = saved.get(logger.name) or LoggerState(logger, [], [], logging.NOTSET, True)

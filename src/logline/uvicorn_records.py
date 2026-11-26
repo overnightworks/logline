@@ -111,7 +111,7 @@ def _bind_failure(error: OSError) -> _CodedEvent:
     return _CodedEvent("server_bind.failed", reason)
 
 
-def _logged_exception_type_name(record: logging.LogRecord) -> str | None:
+def logged_exception_type_name(record: logging.LogRecord) -> str | None:
     # uvicorn logs `exc_info=exc`, which the logging module expands to the full triple.
     exc_info = record.exc_info
     if isinstance(exc_info, tuple) and exc_info and isinstance(exc_info[0], type):
@@ -148,7 +148,7 @@ def _name_record(record: logging.LogRecord) -> None:
         fields["error_type"] = type(record.msg).__name__
     elif record.msg == _UVICORN_ASGI_EXCEPTION_TEMPLATE:
         coded = _CodedEvent("asgi_app.failed")
-        fields["error_type"] = _logged_exception_type_name(record)
+        fields["error_type"] = logged_exception_type_name(record)
     else:
         coded = _coded_event_of_template(record.msg)
         record.exc_info = None
