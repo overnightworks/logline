@@ -28,27 +28,29 @@ def _serve_until_started() -> None:
     server.run()
 
 
-def _raise_in_a_thread() -> None:
-    def fail() -> None:
-        raise RuntimeError(SECRET)
+def raise_the_failure() -> None:
+    raise RuntimeError(SECRET)
 
-    thread = threading.Thread(target=fail)
+
+async def fail_a_task() -> None:
+    raise_the_failure()
+
+
+def _raise_in_a_thread() -> None:
+    thread = threading.Thread(target=raise_the_failure)
     thread.start()
     thread.join()
 
 
-class _Leaky:
+class Leaky:
     """An object whose cleanup raises, which Python reports as an unraisable exception."""
 
     def __del__(self) -> None:
-        raise RuntimeError(SECRET)
+        raise_the_failure()
 
 
-async def _forget_a_failing_task() -> None:
-    async def fail() -> None:
-        raise RuntimeError(SECRET)
-
-    asyncio.get_running_loop().create_task(fail())
+async def forget_a_failing_task() -> None:
+    asyncio.get_running_loop().create_task(fail_a_task())
     await asyncio.sleep(0)
     gc.collect()
 
@@ -64,9 +66,9 @@ if __name__ == "__main__":
         case "warning":
             warnings.warn(SECRET, DeprecationWarning, stacklevel=1)
         case "task":
-            asyncio.run(_forget_a_failing_task())
+            asyncio.run(forget_a_failing_task())
         case "unraisable":
-            _Leaky()
+            Leaky()
         case "unraisable_at_teardown":
             # Python cleans a module global up only while the interpreter shuts down.
-            _HELD_UNTIL_TEARDOWN = _Leaky()
+            _HELD_UNTIL_TEARDOWN = Leaky()

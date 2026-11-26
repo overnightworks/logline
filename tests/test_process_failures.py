@@ -9,7 +9,7 @@ import pytest
 
 from logline.standard import BASE_KEYS
 from logline.testing import configured
-from tests.support.failing_process import SECRET
+from tests.support.failing_process import SECRET, Leaky
 from tests.support.lines import Line, json_lines
 from tests.support.outgoing_clients import inside_a_request
 
@@ -129,23 +129,18 @@ def test_leaving_the_block_restores_the_hooks_the_host_had() -> None:
     assert before == _hooks()
 
 
-class _Leaky:
-    def __del__(self) -> None:
-        raise ValueError(SECRET)
-
-
 def test_the_unraisable_hook_writes_an_error_line_in_process(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     with configured("collecting"):
-        _Leaky()
+        Leaky()
 
     captured = capsys.readouterr()
     line = _the_line_of(captured.out, "object_cleanup.failed")
     assert (line["level"], line["logger"], line["error_type"]) == (
         "error",
         "logline.crash",
-        "ValueError",
+        "RuntimeError",
     )
     assert captured.err == ""
 
@@ -154,7 +149,7 @@ def test_an_unraisable_line_carries_no_trace_even_inside_a_request(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     with configured("collecting"), inside_a_request():
-        _Leaky()
+        Leaky()
 
     assert _the_line_of(capsys.readouterr().out, "object_cleanup.failed")["trace_id"] is None
 
