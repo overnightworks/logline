@@ -236,25 +236,26 @@ class _Judge:
         a `StrEnum` member (as `Class.MEMBER`). A name bound more than once stands for none."""
         bindings = Counter(_module_bindings(self._tree))
         for node in self._tree.body:
-            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                text = _string_literal(node.value)
-                if text is not None and self._is_final(node.annotation):
-                    self._add_constant(bindings, node.target.id, text)
-            elif isinstance(node, ast.ClassDef) and any(
-                self._resolve(base) in _STRING_ENUMS for base in node.bases
-            ):
-                for member in node.body:
-                    if (
-                        isinstance(member, ast.Assign)
-                        and len(member.targets) == 1
-                        and isinstance(member.targets[0], ast.Name)
-                        and (text := _string_literal(member.value)) is not None
-                    ):
-                        self._add_constant(bindings, f"{node.name}.{member.targets[0].id}", text)
+            for name, text in self._constants_declared_by(node):
+                if bindings[name.partition(".")[0]] == 1:
+                    self._constants[name] = text
 
-    def _add_constant(self, bindings: Counter[str], name: str, text: str) -> None:
-        if bindings[name.partition(".")[0]] == 1:
-            self._constants[name] = text
+    def _constants_declared_by(self, node: ast.stmt) -> Iterator[tuple[str, str]]:
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            text = _string_literal(node.value)
+            if text is not None and self._is_final(node.annotation):
+                yield node.target.id, text
+        elif isinstance(node, ast.ClassDef) and any(
+            self._resolve(base) in _STRING_ENUMS for base in node.bases
+        ):
+            for member in node.body:
+                if (
+                    isinstance(member, ast.Assign)
+                    and len(member.targets) == 1
+                    and isinstance(member.targets[0], ast.Name)
+                    and (text := _string_literal(member.value)) is not None
+                ):
+                    yield f"{node.name}.{member.targets[0].id}", text
 
     def _is_final(self, annotation: ast.expr) -> bool:
         if isinstance(annotation, ast.Subscript):
