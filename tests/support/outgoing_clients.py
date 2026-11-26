@@ -7,7 +7,7 @@ import logging
 import tempfile
 import urllib.request
 from collections.abc import Callable, Iterator
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -156,6 +156,16 @@ def _in_a_pool_with_submit(url: str, headers: Headers) -> None:
         pool.submit(_with_http_client, url, headers).result()
 
 
+class _HostsPool(ThreadPoolExecutor):
+    def submit(self, fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Future[Any]:
+        return super().submit(fn, *args, **kwargs)
+
+
+def _in_a_pool_subclass(url: str, headers: Headers) -> None:
+    with _HostsPool(max_workers=1) as pool:
+        pool.submit(_with_http_client, url, headers).result()
+
+
 def _in_a_pool_with_map(url: str, headers: Headers) -> None:
     with ThreadPoolExecutor(max_workers=1) as pool:
         list(pool.map(_with_http_client, [url], [headers]))
@@ -179,6 +189,7 @@ CLIENTS: dict[str, Call] = {
     "httpx2": _HTTPX2_CALL,
     "httpx2-async": _HTTPX2_ASYNC_CALL,
     "thread-pool-submit": _in_a_pool_with_submit,
+    "thread-pool-subclass": _in_a_pool_subclass,
     "thread-pool-map": _in_a_pool_with_map,
     "run-in-executor": _in_run_in_executor,
 }
