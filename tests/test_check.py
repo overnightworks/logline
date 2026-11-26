@@ -8,6 +8,7 @@ import pytest
 import logline.check as check_module
 from logline.check import Finding, Rule, check
 from tests.support.check_cases import STDLIB, case, rules
+from tests.support.named_event_cases import NAMED_EVENT_CASES
 
 _STRUCTLOG = "import structlog\nlog = structlog.get_logger()\n"
 _ARRIVED = "turn.arrived"
@@ -486,6 +487,7 @@ _UVICORN_CASES = [
         *_HAND_WRITTEN_ENDED_CASES,
         *_OWN_SETUP_CASES,
         *_UVICORN_CASES,
+        *NAMED_EVENT_CASES,
     ],
 )
 def test_a_source_breaks_exactly_the_rows_its_rule_names(source: str, expected: list[Rule]) -> None:

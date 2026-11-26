@@ -1,12 +1,10 @@
-import pytest
-
 from logline.check import Rule
-from tests.support.check_cases import STDLIB, case, rules
+from tests.support.check_cases import STDLIB, case
 
 _STEP_TIMER = "from logline import StepTimer\n"
 _NOT_LITERAL = Rule.EVENT_NOT_LITERAL
 
-_NAMED_EVENT_CASES = [
+NAMED_EVENT_CASES = [
     case(
         "Final constant",
         STDLIB + 'from typing import Final\nEVENT: Final = "turn.arrived"\nlogger.info(EVENT)\n',
@@ -281,10 +279,3 @@ _NAMED_EVENT_CASES = [
         Rule.HAND_WRITTEN_ENDED,
     ),
 ]
-
-
-@pytest.mark.parametrize(("source", "expected"), _NAMED_EVENT_CASES)
-def test_an_event_held_in_a_same_module_name_is_judged_as_its_literal(
-    source: str, expected: list[Rule]
-) -> None:
-    assert rules(source) == expected
