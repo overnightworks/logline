@@ -120,7 +120,8 @@ def _wrote_coded_line(context: Mapping[str, object]) -> bool:
         _run_in(
             _owner_context(context), lambda: _log_coded(_event_of(context, exception), exception)
         )
-    except Exception:  # noqa: BLE001 - asyncio's own record, which the filter names, takes over
+    # Nothing raises into asyncio: its own record, which the filter names, takes over.
+    except Exception:  # noqa: BLE001
         return False
     return True
 
