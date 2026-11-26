@@ -7,9 +7,10 @@ process by `install_asyncio_records`:
 - a wrap of `asyncio.BaseEventLoop.default_exception_handler`, never removed, behind an on or off
   state that decides whether it writes anything; a host's own `loop.set_exception_handler` still
   wins, and a host handler that falls back to the default handler gets the coded line. It reads
-  the failure from the handler's context dict, so the line is coded by what failed and never by
-  the message, and it writes the line inside the failed task's or callback's own context, so the
-  line carries that object's trace;
+  the failure from the handler's context dict, so the line is coded by what failed; the message
+  only tells an unretrieved or shielded future and a failed client_connected_cb apart. It writes
+  the line inside the failed task's or callback's own context, so the line carries that object's
+  trace;
 - a filter on the logger `asyncio`, which names every other record from INFO up: one a loop that
   is not asyncio's own writes, or asyncio writes outside its handler.
 

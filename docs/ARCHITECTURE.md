@@ -215,8 +215,8 @@ lowest direct dependency floors run the same tests.
   becomes `uvicorn.unknown_record` at its level, so a uvicorn upgrade that adds a template never leaks free text;
   only the app's exception keeps its traceback. Every read it makes of a record (`exc_info`, `args`) is total: a
   record that lacks what uvicorn normally supplies loses the field, never raises into uvicorn.
-- asyncio's records are named from the handler's context dict, never from the message, which carries the exception's
-  text and an object's repr. The wrap writes the one line on `asyncio` in place of asyncio's record, inside the
+- asyncio's records are named from the handler's context dict; the message, which carries the exception's text and
+  an object's repr, only tells an unretrieved or shielded future and a failed client_connected_cb apart. The wrap writes the one line on `asyncio` in place of asyncio's record, inside the
   failed task's or callback's own context (the one `get_context()` returns; a context that is already entered is the
   current one, since `Context.run` refuses it), so the line carries that object's trace; a plain future, a failure
   that names no task and every record the filter names carry `trace_id` null, never the trace current when the
