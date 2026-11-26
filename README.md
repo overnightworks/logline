@@ -616,7 +616,8 @@ Named gaps, each with its owner:
   when the child called `configure`. The host catches and logs the child's failure.
 - A crash before `configure` runs stays Python's text; the host calls `configure` first.
 - Under an event loop that is not asyncio's own, such as uvloop, asyncio's handler is bypassed: every failure is an
-  `asyncio_callback.failed` line with `trace_id` `null`, named by the filter alone.
+  `asyncio_callback.failed` line with `trace_id` `null`, named by the filter alone. A host that adopts uvloop
+  pulls the work to name its failures and carry their trace.
 - An end the process cannot see (an OOM kill, SIGKILL) writes no line. The platform owns it: today the pod's last
   termination reason shows it, and one kill raises no alert.
 
