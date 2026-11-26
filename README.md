@@ -71,7 +71,8 @@ if __name__ == "__main__":
 ```
 
 - `configure(service)` runs once at the entry point, before the first line is written. It also makes every
-  outgoing HTTP request carry the current trace, with no call-site code ([Trace context](#trace-context)).
+  outgoing HTTP request, and every work item a `ThreadPoolExecutor` runs, carry the current trace, with no
+  call-site code ([Outgoing calls](#outgoing-calls)).
 - `app.add_middleware(RequestLineMiddleware)` goes after the app's other middleware, so they run inside the
   request's trace.
 - `set_sub(scope, sub)` and `set_client_ip(scope, ip)` take the ASGI scope. Call them from an async or a sync
@@ -297,14 +298,16 @@ class Server(ThreadingHTTPServer):
   any thread that ends with it.
 - Known gap: an exception that leaves the block leaves the trace attached to the thread. A host that catches it
   outside the block and keeps the connection stacks the next request's trace on the stale one. The standard
-  library closes the connection after `handle_error`, so a host built as above is not affected.
+  library closes the connection after `handle_error`, so a host built as above is not affected. A pool worker is not
+  affected either: it detaches the context its work item ran in ([Outgoing calls](#outgoing-calls)).
 
 ## Trace context
 
 An incoming `traceparent` continues that trace; `tracestate` and the flags pass through. Without a valid one
 the request starts a new trace with flags `00`. Each request gets a fresh span id, and its line names it
 ([Spans](#spans)). The trace lives in
-OpenTelemetry's context, so `trace_id` reaches lines written from sync endpoints on worker threads too.
+OpenTelemetry's context, so `trace_id` reaches lines written from sync endpoints on worker threads too, and from work
+a thread pool runs ([Outgoing calls](#outgoing-calls)).
 There is no SDK and no exporter.
 
 The headers logline reads and writes are the ones of OpenTelemetry's global propagator. While `OTEL_PROPAGATORS`
@@ -331,6 +334,16 @@ headers of the global propagator, `traceparent` and `tracestate` under the defau
 the step's span, inside a turn that carries a valid `traceparent` the sender's, and else the request's or the
 session's. Outside a trace nothing is added under the default, and `OTEL_PROPAGATORS=none` adds nothing.
 
+Work a process submits to a `concurrent.futures.ThreadPoolExecutor` carries the trace too: each work item runs with
+the OpenTelemetry context its submitter had, taken at `submit` and detached when the item ends.
+`Executor.map`, asyncio's `loop.run_in_executor` with its default executor and boto3's managed transfers
+(`upload_file`, `download_file`, `upload_fileobj`, `download_fileobj`) go through `submit`. An item submitted inside a
+trace carries that trace, whichever worker runs it and whatever an earlier item or the worker's start left attached;
+one submitted outside a trace carries none, also under `-X thread_inherit_context=1`. Its lines carry the submitter's
+`trace_id`, its steps name the submitter's span as `parent_span_id`, and its outgoing requests carry the headers above.
+Only OpenTelemetry's context is carried: every other context variable stays as the worker thread has it, and a value
+an item sets persists to the next item on that worker, as without logline.
+
 - Covered are every client that goes through the standard library's `http.client` (`urllib.request`, urllib3,
   requests, botocore) and httpx and httpx2, `Client` and `AsyncClient`, where the host installed them. For httpx and
   httpx2 that includes custom and in-process transports (`ASGITransport`, `MockTransport`).
@@ -341,9 +354,32 @@ session's. Outside a trace nothing is added under the default, and `OTEL_PROPAGA
   `traceparent` and its passed-through `tracestate` travel on. A redirect to another host keeps the headers.
 - Not covered are `websockets`, aiohttp, a CONNECT tunnel and urllib3's optional HTTP/2. A call through one of them
   carries the trace only where the host passes `outgoing_headers()` to it.
+- boto3's managed transfers through the CRT transfer client (`awscrt` installed, with `preferred_transfer_client` set to
+  `"crt"`, or left at `"auto"` on an instance `awscrt` counts as optimized) send through a native client that no hook
+  reaches. Choose `preferred_transfer_client="classic"` or set `BOTO_DISABLE_CRT=true`; the classic client is the one
+  that carries the trace.
+- Not carried into the work, each with the host's remedy:
+  - An executor whose class overrides `prepare_context` (`InterpreterPoolExecutor`) and `ProcessPoolExecutor` run
+    items in another interpreter or process: pass `current_traceparent()` as an argument and run the item inside
+    `unit_trace(traceparent)`.
+  - An executor that overrides `submit` without calling it: submit `contextvars.copy_context().run, fn` instead of `fn`.
+  - `multiprocessing.pool.ThreadPool` and `multiprocessing.dummy.Pool` run their own threads without
+    `concurrent.futures`, and take no `context=`: run each task under `contextvars.copy_context().run`, or use a
+    `ThreadPoolExecutor`.
+  - A `threading.Thread` or `threading.Timer` a host or library starts: a thread doing one piece of the caller's work is
+    started with `context=contextvars.copy_context()`.
+  - Under `-X thread_inherit_context=1` a long-lived thread started inside a trace keeps that trace, so its later
+    lines and requests carry it. That includes a done callback (`Future.add_done_callback`), which runs on the worker
+    after its item ends, and work submitted from inside that callback. Start such a thread outside a trace.
 
 `outgoing_headers()` returns the current context as the headers of an outgoing call, an empty dict outside a request,
 a WebSocket session or a turn.
+
+**Breaking:** work submitted to a `ThreadPoolExecutor` carries its submitter's trace: its outgoing requests carry
+`traceparent` and `tracestate`, third parties included, its lines carry the submitter's `trace_id` and its steps name
+the submitter's span as `parent_span_id`. Migration: none required; a host whose tests assert the headers or trace ids
+of work sent from a thread pool sees the submitter's trace. A hand-written `contextvars.copy_context().run` around such
+work, there only for the trace, may go.
 
 **Breaking:** an outgoing request through a covered client carries `traceparent` and `tracestate` where the host did
 not pass them, in-process test transports included. A host's tests through `ASGITransport` continue the caller's
@@ -367,7 +403,7 @@ crash lines and uvicorn's lines among them, carries neither.
 The current span lives in OpenTelemetry's context, as the trace does; logline keeps no copy of it. A call a host
 makes inside a step carries the step's span, so the callee's request line has the step's `span_id` as its
 `parent_span_id`. That holds for the covered clients ([Outgoing calls](#outgoing-calls)) and for a call that passes
-`outgoing_headers()` or `opentelemetry.propagate.inject`.
+`outgoing_headers()` or `opentelemetry.propagate.inject`, and for a call a thread pool's work item makes.
 
 ### A turn on a WebSocket
 
@@ -634,7 +670,7 @@ async def ask_model(client, request):
 - The line goes through the standard-library logger the caller names, a library's own, so a host without
   `configure` gets an ordinary record under its own logging setup, and one with `configure` gets the JSON
   line with the running request's `trace_id`. A sync `with` on a worker thread (`asyncio.to_thread`, a sync
-  endpoint) carries the request's `trace_id` too.
+  endpoint, `run_in_executor`) carries the request's `trace_id` too.
 - The timer starts when it is constructed, not when the block is entered. A step that began earlier, such as
   a wait whose start a host keeps as a `time.perf_counter()` value, passes it as the keyword `started_at`,
   and `duration_ms` and `first_output_ms` count from it; a value later than `time.perf_counter()` raises
@@ -772,9 +808,10 @@ Why this log is the target:
 and level, the handlers, filters, levels and propagation of the uvicorn, HTTP client, `logline.request` and
 capped library (`mcp`, `botocore`, `sqlalchemy.dialects.postgresql`, `piper`) loggers, structlog's configuration and the
 stdlib logger class its factory installs, OpenTelemetry's global propagator and whether outgoing requests carry the
-trace. Inside the block a covered client's request carries the current trace ([Outgoing calls](#outgoing-calls)),
-so a test that asserts a request's exact headers sees it. After the block requests carry the trace only if they did before it; the carriers stay on the
-HTTP clients' methods, which `configured` never reassigns, so a wrapper the host or a library put on one survives.
+trace. Inside the block a covered client's request, and a work item of a thread pool, carries the current trace
+([Outgoing calls](#outgoing-calls)), so a test that asserts a request's exact headers sees it. After the block requests
+and work items carry the trace only if they did before it; the carriers stay on the HTTP clients' methods and on
+`ThreadPoolExecutor.submit`, which `configured` never reassigns, so a wrapper the host or a library put on one survives.
 The module imports no test framework.
 
 ```python
@@ -850,8 +887,8 @@ What the check does not see, so a clean result is not a proof:
 
 The version follows [semantic versioning](https://semver.org/). From 1.0 the public names are stable within a major:
 only renaming or removing one, or changing its signature, is a major, and a patch release never breaks one. The one
-semver exception: a change to the record, to an event name, to the headers `configure` puts on outgoing requests or
-to `configure`'s policy touches hosts only, so it is a
+semver exception: a change to the record, to an event name, to the headers `configure` puts on outgoing requests,
+to the trace it gives a thread pool's work or to `configure`'s policy touches hosts only, so it is a
 minor release with a **Breaking** note in the [release pages](https://github.com/overnightworks/logline/releases),
 because hosts pin a tag and take it deliberately. The public modules are `logline`, `logline.check`, `logline.testing` and `logline.trace`; a public name is one that a
 public module's `__all__` lists, and everything else may change in any release.

@@ -50,9 +50,10 @@ def configured(service: str) -> Iterator[None]:
     Restored are the handlers, filters, level and propagation of the root logger, uvicorn's, the
     HTTP clients', the request and the capped library loggers, structlog's configuration and the
     stdlib logger class structlog's factory installs, the process's and the threads' exception hooks
-    and the warning display, OpenTelemetry's global propagator and whether outgoing requests carry
-    the trace, as they were on entry. The carriers stay installed on the HTTP clients and their
-    methods are never reassigned, so a wrapper a host put on one survives.
+    and the warning display, OpenTelemetry's global propagator and whether outgoing requests and
+    thread pool work items carry the trace, as they were on entry. The carriers stay installed on
+    the HTTP clients and on `ThreadPoolExecutor.submit` and their methods are never reassigned, so
+    a wrapper a host put on one survives.
     """
     logger_states = [LoggerState.of(logging.getLogger(name)) for name in TOUCHED_LOGGER_NAMES]
     logger_class = logging.getLoggerClass()
