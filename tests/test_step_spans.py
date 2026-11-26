@@ -15,6 +15,7 @@ from tests.support.incoming_trace import (
     TRACEPARENT_PATTERN,
 )
 from tests.support.lines import Line, json_lines, lines_of, request_lines, session_lines
+from tests.support.outgoing_clients import A_CALLERS_TRACE_ID
 from tests.support.serving import WEBSOCKET_IMPLEMENTATIONS, get, serve, serve_requests_answered
 from tests.support.span_routes import CALLEE_PATH, TURNS_PATH
 from tests.support.step_routes import (
@@ -60,6 +61,9 @@ def _span_of_traceparent(traceparent: object) -> str:
         "/step/end-cancelled",
         "/step/sync-end-cancelled",
         "/step/end-cancelled-in-block",
+        "/step/end-failed",
+        "/step/sync-end-failed",
+        "/step/end-failed-in-block",
     ],
 )
 def test_a_step_line_names_its_own_span_and_the_requests_span_as_its_parent(
@@ -137,7 +141,7 @@ def test_a_callee_requested_from_inside_a_step_names_the_step_as_its_parent(
     assert step["parent_span_id"] == _request_of(lines, "/span/call")["span_id"]
 
 
-@pytest.mark.parametrize("how", ["exit", "end", "end-cancelled"])
+@pytest.mark.parametrize("how", ["exit", "end", "end-cancelled", "end-failed"])
 def test_a_step_that_ended_leaves_the_requests_span_current_for_the_next_step(
     capsys: pytest.CaptureFixture[str], how: str
 ) -> None:
@@ -151,7 +155,7 @@ def test_a_step_that_ended_leaves_the_requests_span_current_for_the_next_step(
     assert {first["parent_span_id"], second["parent_span_id"]} == {request["span_id"]}
 
 
-@pytest.mark.parametrize("how", ["end", "end-cancelled"])
+@pytest.mark.parametrize("how", ["end", "end-cancelled", "end-failed"])
 def test_a_step_entered_after_its_line_was_written_leaves_a_step_inside_under_the_requests_span(
     capsys: pytest.CaptureFixture[str], how: str
 ) -> None:
@@ -239,7 +243,7 @@ def test_a_step_in_a_turn_without_a_valid_traceparent_names_the_turns_fresh_span
 def test_a_step_closed_in_another_turn_keeps_its_own_trace(
     capsys: pytest.CaptureFixture[str], implementation: str
 ) -> None:
-    other_trace = "0af7651916cd43dd8448eb211c80319c"
+    other_trace = A_CALLERS_TRACE_ID
     other_span = "b7ad6b7169203331"
     later_span = "a3ce929d0e0e4736"
 
@@ -263,7 +267,7 @@ def test_a_step_closed_in_another_turn_keeps_its_own_trace(
 def test_a_step_run_after_one_closed_in_another_turn_belongs_to_the_current_turn(
     capsys: pytest.CaptureFixture[str], implementation: str
 ) -> None:
-    other_trace = "0af7651916cd43dd8448eb211c80319c"
+    other_trace = A_CALLERS_TRACE_ID
     other_span = "b7ad6b7169203331"
 
     _, lines = _play(

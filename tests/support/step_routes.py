@@ -81,6 +81,10 @@ def _caught(caught: Exception, raised: Exception) -> _Answer:
     return {"caught": str(caught), "same": caught is raised}
 
 
+def _failure() -> ValueError:
+    return ValueError(STEP_FAILURE_MESSAGE)
+
+
 def _sync_step(steps: Steps, *, failure: Exception | None) -> None:
     with steps():
         if failure is not None:
@@ -427,6 +431,88 @@ def _add_step_end_cancelled_routes(app: FastAPI, steps: Steps) -> None:
             return _caught(caught, failure)
 
 
+def _add_step_end_failed_routes(app: FastAPI, steps: Steps) -> None:
+    """Routes that end a step with the exception that ended it, no block surrounding the step."""
+
+    @app.get("/step/end-failed")
+    async def step_end_failed() -> _Answer:
+        step = steps()
+        step.add(output_tokens=STEP.count)
+        step.end_failed(_failure())
+        return {"caught": None}
+
+    @app.get("/step/sync-end-failed")
+    def step_sync_end_failed() -> _Answer:
+        steps().end_failed(_failure())
+        return {"caught": None}
+
+    @app.get("/step/fail-then-end-failed")
+    async def step_fail_then_end_failed() -> _Answer:
+        step = steps()
+        step.fail(STEP.failure_reason)
+        step.end_failed(_failure())
+        return {"caught": None}
+
+    @app.get("/step/handled-then-end-failed")
+    async def step_handled_then_end_failed() -> _Answer:
+        step = steps()
+        step.handled()
+        step.end_failed(_failure())
+        return {"caught": None}
+
+    @app.get("/step/degraded-then-end-failed")
+    async def step_degraded_then_end_failed() -> _Answer:
+        step = steps()
+        step.degraded()
+        step.end_failed(_failure())
+        return {"caught": None}
+
+
+def _add_step_end_failed_order_routes(app: FastAPI, steps: Steps) -> None:
+    """Routes that end a step with its exception more than once or inside its block."""
+
+    @app.get("/step/end-failed-then-end")
+    async def step_end_failed_then_end() -> _Answer:
+        step = steps()
+        step.end_failed(_failure())
+        step.end()
+        return {"caught": None}
+
+    @app.get("/step/end-then-end-failed")
+    async def step_end_then_end_failed() -> _Answer:
+        step = steps()
+        step.end()
+        step.end_failed(_failure())
+        return {"caught": None}
+
+    @app.get("/step/end-failed-then-end-cancelled")
+    async def step_end_failed_then_end_cancelled() -> _Answer:
+        step = steps()
+        step.end_failed(_failure())
+        step.end_cancelled()
+        return {"caught": None}
+
+    @app.get("/step/end-cancelled-then-end-failed")
+    async def step_end_cancelled_then_end_failed() -> _Answer:
+        step = steps()
+        step.end_cancelled()
+        step.end_failed(_failure())
+        return {"caught": None}
+
+    @app.get("/step/end-failed-twice")
+    async def step_end_failed_twice() -> _Answer:
+        step = steps()
+        step.end_failed(_failure())
+        step.end_failed(_failure())
+        return {"caught": None}
+
+    @app.get("/step/end-failed-in-block")
+    async def step_end_failed_in_block() -> _Answer:
+        async with steps() as step:
+            step.end_failed(_failure())
+        return {"caught": None}
+
+
 def _add_step_end_order_routes(app: FastAPI, steps: Steps) -> None:
     """Routes that end a step more than once or inside its block."""
 
@@ -555,6 +641,8 @@ def add_step_routes(app: FastAPI) -> None:
     _add_step_conflict_routes(app, steps)
     _add_step_end_routes(app, steps)
     _add_step_end_cancelled_routes(app, steps)
+    _add_step_end_failed_routes(app, steps)
+    _add_step_end_failed_order_routes(app, steps)
     _add_step_end_order_routes(app, steps)
     _add_step_start_routes(app, steps)
     _add_step_thread_routes(app, steps)

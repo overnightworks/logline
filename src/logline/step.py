@@ -81,20 +81,20 @@ class StepTimer:
 
     Works as `with` and as `async with`; the line is written once, in the thread or task the block
     runs in. The timer starts when it is constructed, not when the block is entered, or at
-    `started_at` when the caller names it. A step that no block surrounds is ended by `end` or
-    `end_cancelled`.
+    `started_at` when the caller names it. A step that no block surrounds is ended by `end`,
+    `end_cancelled` or `end_failed`.
 
     - Entering the block opens the step's span under the current one, and it stays current until
       the block ends: a nested step, `outgoing_headers()` and `current_traceparent()` name it. The
       line carries `span_id`, the step's, and `parent_span_id`, the span it ran under, as 16 hex
       digits, and the `trace_id` of the trace it was opened in, wherever it is written: a dropped
       generator's finaliser or a later turn that closes the step writes the same three. A step no
-      block surrounds takes a fresh span when `end` or `end_cancelled` writes its line, under the
-      then current span. Outside a trace a step has no span: both ids are `null`, and the step
-      starts no trace. A step whose line is already written, by `end` or `end_cancelled`, opens no
-      span when it is entered as a block: what runs inside names the span it ran under. When the
-      block ends the previous span is current again, unless the block ends in another context than
-      it began in, which is left as it is.
+      block surrounds takes a fresh span when `end`, `end_cancelled` or `end_failed` writes its
+      line, under the then current span. Outside a trace a step has no span: both ids are `null`,
+      and the step starts no trace. A step whose line is already written, by `end`, `end_cancelled`
+      or `end_failed`, opens no span when it is entered as a block: what runs inside names the span
+      it ran under. When the block ends the previous span is current again, unless the block ends
+      in another context than it began in, which is left as it is.
     - `event` is the literal `<noun>.ended` name and `fields` are the step's id fields. The timer
       owns `duration_ms`, `outcome`, `reason`, `first_output_ms`, `error_type`, `span_id` and
       `parent_span_id`: a field of one of these names is dropped, and the line carries them only as
@@ -115,7 +115,8 @@ class StepTimer:
       `error_type` and `reason`; the exception propagates too.
     - `end` writes the line now, as a block that ends normally would; `end_cancelled` writes it
       now, as a block that a cancellation leaves would: `cancelled`, without `error_type` and
-      `reason`. The line is written once: after either or the block's exit, a later one writes
+      `reason`; `end_failed` writes it now, as a block that the `Exception` it is given leaves
+      would. The line is written once: after any of them or the block's exit, a later one writes
       nothing.
     - The line is at INFO. `degraded` makes it WARNING. A failed step is at ERROR, or WARNING when
       `handled` says its unit goes on; one that is degraded and failed unhandled stays at ERROR.
@@ -180,6 +181,14 @@ class StepTimer:
     def end_cancelled(self) -> None:
         """Write the line now as `cancelled`, for a step without a block; later ones write none."""
         self._write_line(None, cancelled=True)
+
+    def end_failed(self, error: Exception) -> None:
+        """Write the line now as a block that `error` leaves would, for a step without a block.
+
+        `failed` with `error_type`, the class name; `error` is neither raised nor kept, and later
+        endings write none.
+        """
+        self._write_line(error)
 
     def first_output(self) -> None:
         """Mark the first output of a streaming step; only the first call counts."""
