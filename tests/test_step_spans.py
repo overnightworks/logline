@@ -15,6 +15,7 @@ from tests.support.incoming_trace import (
     TRACEPARENT_PATTERN,
 )
 from tests.support.lines import Line, json_lines, lines_of, request_lines, session_lines
+from tests.support.outgoing_clients import A_CALLERS_TRACE_ID
 from tests.support.serving import WEBSOCKET_IMPLEMENTATIONS, get, serve, serve_requests_answered
 from tests.support.span_routes import CALLEE_PATH, TURNS_PATH
 from tests.support.step_routes import (
@@ -242,7 +243,7 @@ def test_a_step_in_a_turn_without_a_valid_traceparent_names_the_turns_fresh_span
 def test_a_step_closed_in_another_turn_keeps_its_own_trace(
     capsys: pytest.CaptureFixture[str], implementation: str
 ) -> None:
-    other_trace = "0af7651916cd43dd8448eb211c80319c"
+    other_trace = A_CALLERS_TRACE_ID
     other_span = "b7ad6b7169203331"
     later_span = "a3ce929d0e0e4736"
 
@@ -266,7 +267,7 @@ def test_a_step_closed_in_another_turn_keeps_its_own_trace(
 def test_a_step_run_after_one_closed_in_another_turn_belongs_to_the_current_turn(
     capsys: pytest.CaptureFixture[str], implementation: str
 ) -> None:
-    other_trace = "0af7651916cd43dd8448eb211c80319c"
+    other_trace = A_CALLERS_TRACE_ID
     other_span = "b7ad6b7169203331"
 
     _, lines = _play(
