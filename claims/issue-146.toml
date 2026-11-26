@@ -1,8 +1,0 @@
-claim_id = "35f8228269c84750978dfeca4d0ff121"
-agent = "Claude 23ef093f-79b8-4fbc-860e-cb1d30fb1417"
-role = "builder"
-base = "e8274f1129256fb3b7a8789590e159d2a7e00d07"
-branch = "claude/issue-146-work-sent-from-a-thread-pool-carries-no"
-scope = ["README.md", "docs/ARCHITECTURE.md", "pyproject.toml", "src/logline/configuration.py", "src/logline/outgoing_trace.py", "src/logline/testing.py", "tests", "uv.lock"]
-opened_commit = "75f9893c2268ee1f43f304d4f3d90422d0740e58"
-whole_reason = "One carrier hook beside the two HTTP carriers, with its restore in testing, its docstring reach in configure, the documents that name its reach and stops, and boto3 as a dev dependency for the end-to-end proof."
