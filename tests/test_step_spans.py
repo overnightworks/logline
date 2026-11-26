@@ -60,6 +60,9 @@ def _span_of_traceparent(traceparent: object) -> str:
         "/step/end-cancelled",
         "/step/sync-end-cancelled",
         "/step/end-cancelled-in-block",
+        "/step/end-failed",
+        "/step/sync-end-failed",
+        "/step/end-failed-in-block",
     ],
 )
 def test_a_step_line_names_its_own_span_and_the_requests_span_as_its_parent(
@@ -137,7 +140,7 @@ def test_a_callee_requested_from_inside_a_step_names_the_step_as_its_parent(
     assert step["parent_span_id"] == _request_of(lines, "/span/call")["span_id"]
 
 
-@pytest.mark.parametrize("how", ["exit", "end", "end-cancelled"])
+@pytest.mark.parametrize("how", ["exit", "end", "end-cancelled", "end-failed"])
 def test_a_step_that_ended_leaves_the_requests_span_current_for_the_next_step(
     capsys: pytest.CaptureFixture[str], how: str
 ) -> None:
@@ -151,7 +154,7 @@ def test_a_step_that_ended_leaves_the_requests_span_current_for_the_next_step(
     assert {first["parent_span_id"], second["parent_span_id"]} == {request["span_id"]}
 
 
-@pytest.mark.parametrize("how", ["end", "end-cancelled"])
+@pytest.mark.parametrize("how", ["end", "end-cancelled", "end-failed"])
 def test_a_step_entered_after_its_line_was_written_leaves_a_step_inside_under_the_requests_span(
     capsys: pytest.CaptureFixture[str], how: str
 ) -> None:

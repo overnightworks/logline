@@ -67,6 +67,8 @@ def _add_nesting_routes(app: FastAPI) -> None:
                 first.end()
             if how == "end-cancelled":
                 first.end_cancelled()
+            if how == "end-failed":
+                first.end_failed(ValueError())
         async with _step("second"):
             pass
         return {}
@@ -77,6 +79,8 @@ def _add_nesting_routes(app: FastAPI) -> None:
         step = _step("written")
         if how == "end":
             step.end()
+        elif how == "end-failed":
+            step.end_failed(ValueError())
         else:
             step.end_cancelled()
         async with step:
