@@ -26,5 +26,5 @@
     "structlog.configure",
     "structlog.configure_once"
   ],
-  "own_setup_assignments": ["sys.excepthook", "threading.excepthook"]
+  "own_setup_assignments": ["sys.excepthook", "threading.excepthook", "sys.unraisablehook"]
 }
