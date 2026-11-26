@@ -116,8 +116,8 @@ def _log_coded(event: str, exception: BaseException | None) -> None:
 
 
 def _wrote_coded_line(context: Mapping[str, object]) -> bool:
-    exception = _exception_of(context)
     try:
+        exception = _exception_of(context)
         _run_in(
             _owner_context(context), lambda: _log_coded(_event_of(context, exception), exception)
         )
@@ -131,9 +131,9 @@ def _wrap_default_exception_handler() -> None:
     default_exception_handler = asyncio.BaseEventLoop.default_exception_handler
 
     @functools.wraps(default_exception_handler)
-    def code_the_failure(self: asyncio.BaseEventLoop, context: Mapping[str, object]) -> None:
+    def code_the_failure(self: asyncio.BaseEventLoop, context: dict[str, object]) -> None:
         if not (_coding.enabled and _wrote_coded_line(context)):
-            default_exception_handler(self, context)  # pyright: ignore[reportArgumentType]
+            default_exception_handler(self, context)
 
     asyncio.BaseEventLoop.default_exception_handler = code_the_failure
 
