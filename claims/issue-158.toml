@@ -1,0 +1,8 @@
+claim_id = "85e9818f19394f3aba06ccb729662af2"
+agent = "Claude dbb01aa3-2b09-4ab5-a272-e1f1edff1ad8"
+role = "builder"
+base = "e2790c110a77dc85560ef5555b59800e319aa1b0"
+branch = "claude/issue-158-a-websockets-client-s-opening-handshake"
+scope = [".importlinter", "README.md", "docs/ARCHITECTURE.md", "pyproject.toml", "quality/config.toml", "src/logline/configuration.py", "src/logline/outgoing_trace.py", "tests/support/apps.py", "tests/support/outgoing_clients.py", "tests/test_outgoing_trace.py", "uv.lock"]
+opened_commit = "a933c76d20b52a949b149f166b4668292e46fc73"
+whole_reason = "One carrier entry in outgoing_trace with its import exemption, deptry and loosening lines, its client rows in the outgoing-trace tests, and the documents that name the covered transports."
