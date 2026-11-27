@@ -1,7 +1,0 @@
-claim_id = "63540bc2bea4449fa90bdf7bfbedb693"
-agent = "Claude dbb01aa3-2b09-4ab5-a272-e1f1edff1ad8"
-role = "builder"
-base = "980b7e5bdc038d80227e73f790beaa01e85d0938"
-branch = "dependabot/uv/ruff-0.17.6"
-scope = ["uv.lock"]
-opened_commit = "8321eac11c201de2a5932efe523ea9ed3b474681"
