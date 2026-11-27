@@ -384,8 +384,8 @@ the submitter's span as `parent_span_id`. Migration: none required; a host whose
 of work sent from a thread pool sees the submitter's trace. A hand-written `contextvars.copy_context().run` around such
 work, there only for the trace, may go.
 
-**Breaking:** an outgoing request through a covered client, a `websockets` client's opening handshake included,
-carries `traceparent` and `tracestate` where the host did not pass them, in-process test transports included. A host's tests through `ASGITransport` continue the caller's
+**Breaking:** an outgoing request through a covered client carries `traceparent` and `tracestate` where the host did
+not pass them, in-process test transports included. A host's tests through `ASGITransport` continue the caller's
 trace, and a test that asserts a request's exact headers (respx, `MockTransport`) sees the new ones. A hand-written
 carrier of the host, such as a wrapper that adds `outgoing_headers()` to each call, is no longer needed and
 may go; no host has to change. If a carrier breaks a client, pin the previous logline tag.
