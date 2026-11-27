@@ -23,14 +23,10 @@ import websockets.client
 from opentelemetry.propagate import set_global_textmap
 
 from logline import RequestLineMiddleware, configure, outgoing_headers, unit_trace
-from logline.trace import current_trace_id, current_traceparent, request_trace
+from logline.trace import current_trace_id, request_trace
 from tests.support.apps import WEBSOCKET_TRACE_PATH, build_app
-from tests.support.incoming_trace import (
-    INCOMING_TRACE_ID,
-    INCOMING_TRACEPARENT,
-    TRACEPARENT_PATTERN,
-)
-from tests.support.lines import json_lines, session_lines
+from tests.support.incoming_trace import INCOMING_TRACE_ID, INCOMING_TRACEPARENT
+from tests.support.lines import json_lines, lines_of, session_lines
 from tests.support.outgoing_clients import (
     A_CALLERS_TRACE_ID,
     A_CALLERS_TRACEPARENT,
@@ -46,6 +42,7 @@ from tests.support.outgoing_clients import (
 )
 from tests.support.propagators import PropagatorFailure, RaisingPropagator
 from tests.support.serving import serve
+from tests.support.step_routes import STEP_LOGGER
 
 _HIDDEN_CLIENTS_HOST = Path(__file__).parent / "support" / "hidden_clients_host.py"
 _INHERITED_CONTEXT_HOST = Path(__file__).parent / "support" / "inherited_context_host.py"
@@ -300,21 +297,19 @@ def test_a_websockets_client_opened_inside_a_step_reaches_a_real_app_in_the_step
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     configure("outgoing-service")
-    step_spans: list[str] = []
 
     async def exercise(base_url: str) -> None:
         with inside_a_step():
-            match = TRACEPARENT_PATTERN.match(str(current_traceparent()))
-            assert match
-            step_spans.append(match["span_id"])
             url = base_url.replace("http", "ws") + WEBSOCKET_TRACE_PATH
             async with websockets.asyncio.client.connect(url) as websocket:
                 await websocket.wait_closed()
 
     serve(uvicorn.Config(build_app(), log_config=None), exercise)
 
-    (session,) = session_lines(json_lines(capsys.readouterr().out))
-    assert (session["trace_id"], session["parent_span_id"]) == (INCOMING_TRACE_ID, *step_spans)
+    lines = json_lines(capsys.readouterr().out)
+    (step,) = lines_of(lines, STEP_LOGGER)
+    (session,) = session_lines(lines)
+    assert (session["trace_id"], session["parent_span_id"]) == (INCOMING_TRACE_ID, step["span_id"])
 
 
 def test_a_process_without_httpx_and_httpx2_configures_quietly_and_still_carries_the_trace(
