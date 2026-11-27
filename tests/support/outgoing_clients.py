@@ -8,7 +8,7 @@ import tempfile
 import urllib.request
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -21,6 +21,9 @@ import botocore.session
 import httpx
 import httpx2
 import urllib3
+import websockets.asyncio.client
+import websockets.sync.client
+from websockets.exceptions import InvalidStatus
 
 from logline import StepTimer, unit_trace
 from logline.trace import request_trace
@@ -152,6 +155,25 @@ _HTTPX_CALL, _HTTPX_ASYNC_CALL = _with_httpx_family(httpx)
 _HTTPX2_CALL, _HTTPX2_ASYNC_CALL = _with_httpx_family(httpx2)
 
 
+def _websocket_url(url: str) -> str:
+    return url.replace("http://", "ws://", 1)
+
+
+# The echo server answers the opening handshake 200, which a websockets client refuses as
+# `InvalidStatus`; any other failure is the test's.
+def _with_websockets_sync(url: str, headers: Headers) -> None:
+    with suppress(InvalidStatus):
+        websockets.sync.client.connect(_websocket_url(url), additional_headers=headers)
+
+
+def _with_websockets_asyncio(url: str, headers: Headers) -> None:
+    async def call() -> None:
+        with suppress(InvalidStatus):
+            await websockets.asyncio.client.connect(_websocket_url(url), additional_headers=headers)
+
+    asyncio.run(call())
+
+
 def _in_a_pool_with_submit(url: str, headers: Headers) -> None:
     with ThreadPoolExecutor(max_workers=1) as pool:
         pool.submit(_with_http_client, url, headers).result()
@@ -189,6 +211,8 @@ CLIENTS: dict[str, Call] = {
     "httpx-async": _HTTPX_ASYNC_CALL,
     "httpx2": _HTTPX2_CALL,
     "httpx2-async": _HTTPX2_ASYNC_CALL,
+    "websockets": _with_websockets_sync,
+    "websockets-async": _with_websockets_asyncio,
     "thread-pool-submit": _in_a_pool_with_submit,
     "thread-pool-subclass": _in_a_pool_subclass,
     "thread-pool-map": _in_a_pool_with_map,

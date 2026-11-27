@@ -18,12 +18,19 @@ import httpx2
 import pytest
 import urllib3
 import uvicorn
+import websockets.asyncio.client
+import websockets.client
 from opentelemetry.propagate import set_global_textmap
 
 from logline import RequestLineMiddleware, configure, outgoing_headers, unit_trace
-from logline.trace import current_trace_id, request_trace
-from tests.support.incoming_trace import INCOMING_TRACE_ID, INCOMING_TRACEPARENT
-from tests.support.lines import json_lines
+from logline.trace import current_trace_id, current_traceparent, request_trace
+from tests.support.apps import WEBSOCKET_TRACE_PATH, build_app
+from tests.support.incoming_trace import (
+    INCOMING_TRACE_ID,
+    INCOMING_TRACEPARENT,
+    TRACEPARENT_PATTERN,
+)
+from tests.support.lines import json_lines, session_lines
 from tests.support.outgoing_clients import (
     A_CALLERS_TRACE_ID,
     A_CALLERS_TRACEPARENT,
@@ -34,6 +41,7 @@ from tests.support.outgoing_clients import (
     TRANSFERS,
     EchoServer,
     inside_a_request,
+    inside_a_step,
     inside_a_turn,
 )
 from tests.support.propagators import PropagatorFailure, RaisingPropagator
@@ -171,6 +179,12 @@ def test_with_otel_propagators_none_a_work_item_still_sees_the_submitters_trace(
         pytest.param(httpx2.Client, ("send",), CLIENTS["httpx2"], id="httpx2"),
         pytest.param(httpx2.AsyncClient, ("send",), CLIENTS["httpx2-async"], id="httpx2-async"),
         pytest.param(
+            websockets.client.ClientProtocol,
+            ("send_request",),
+            CLIENTS["websockets"],
+            id="websockets",
+        ),
+        pytest.param(
             ThreadPoolExecutor, ("submit",), CLIENTS["thread-pool-submit"], id="thread-pool-submit"
         ),
     ],
@@ -280,6 +294,27 @@ def test_a_call_made_by_a_handler_of_a_real_app_continues_the_requests_trace(
     (relayed,) = answers
     assert echo.last[TRACEPARENT] == [relayed[TRACEPARENT]]
     assert echo.last[TRACEPARENT][0].split("-")[1] == INCOMING_TRACE_ID
+
+
+def test_a_websockets_client_opened_inside_a_step_reaches_a_real_app_in_the_steps_span(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure("outgoing-service")
+    step_spans: list[str] = []
+
+    async def exercise(base_url: str) -> None:
+        with inside_a_step():
+            match = TRACEPARENT_PATTERN.match(str(current_traceparent()))
+            assert match
+            step_spans.append(match["span_id"])
+            url = base_url.replace("http", "ws") + WEBSOCKET_TRACE_PATH
+            async with websockets.asyncio.client.connect(url) as websocket:
+                await websocket.wait_closed()
+
+    serve(uvicorn.Config(build_app(), log_config=None), exercise)
+
+    (session,) = session_lines(json_lines(capsys.readouterr().out))
+    assert (session["trace_id"], session["parent_span_id"]) == (INCOMING_TRACE_ID, *step_spans)
 
 
 def test_a_process_without_httpx_and_httpx2_configures_quietly_and_still_carries_the_trace(
