@@ -1,13 +1,17 @@
 """Carries the current trace out of the caller's hand, whatever call site: on every outgoing HTTP
-request of the process and into every work item a thread pool runs.
+request of the process, a WebSocket opening handshake included, and into every work item a thread
+pool runs.
 
-Three carriers do it, each installed once and never removed; the state this module owns, on or off,
+Four carriers do it, each installed once and never removed; the state this module owns, on or off,
 decides whether they add anything:
 
 - a hook on `http.client.HTTPConnection`, which `urllib.request`, urllib3, requests and botocore go
   through; a CONNECT tunnel and urllib3's optional HTTP/2 do not pass it;
 - a hook on the public `send` of httpx's and httpx2's `Client` and `AsyncClient`, where the host
   installed them, which runs before every transport, custom and in-process ones included;
+- a hook on the public `send_request` of websockets' `ClientProtocol`, where the host installed
+  it, which the asyncio and the sync client send their opening handshake through after the
+  caller's headers are merged; `websockets.legacy` does not pass it;
 - a hook on `concurrent.futures.ThreadPoolExecutor.submit`, which `Executor.map`, asyncio's
   `run_in_executor` and boto3's managed transfers go through: each work item runs with the
   OpenTelemetry context its submitter had, attached and detached around the item, so the item sees
@@ -19,7 +23,7 @@ A request that already carries `traceparent` gets no propagator header at all, s
 `traceparent` is never paired with the current context's `tracestate`. A propagator that raises
 fails the request.
 
-This is the one module that imports an HTTP client; `.importlinter` allows no other.
+This is the one module that imports an HTTP or WebSocket client; `.importlinter` allows no other.
 """
 
 import functools
@@ -124,6 +128,20 @@ def _install_httpx2() -> None:
     _install_httpx_family(httpx2.Client, httpx2.AsyncClient)
 
 
+def _install_websockets() -> None:
+    import websockets.client
+
+    client_protocol: Any = websockets.client.ClientProtocol
+    send_request = client_protocol.send_request
+
+    @functools.wraps(send_request)
+    def add_trace(self: object, request: _Request) -> None:
+        _add_to(request)
+        send_request(self, request)
+
+    client_protocol.send_request = add_trace
+
+
 def _carries_trace_into_items(executor: ThreadPoolExecutor) -> bool:
     # `prepare_context` is a classmethod: comparing the bound methods, which are new objects each
     # time, would be false for every pool; the functions under them are the same one when not
@@ -162,6 +180,7 @@ _CARRIERS: dict[str, Callable[[], None]] = {
     "http.client": _install_http_client,
     "httpx": _install_httpx,
     "httpx2": _install_httpx2,
+    "websockets": _install_websockets,
     "concurrent.futures": _install_thread_pool,
 }
 

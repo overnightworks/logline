@@ -27,7 +27,7 @@ dev = [
     "pytest-randomly>=4,<6",
     "fastapi>=0.123.7,<1",
     "uvicorn>=0.41,<1",
-    "websockets>=15,<17",
+    "websockets>=15,<18",
     "wsproto>=1.2,<2",
     "httpx>=0.27,<1",
     "httpx2>=2,<3",
@@ -78,8 +78,8 @@ branch = true
 fail_under = 100
 
 [tool.deptry.per_rule_ignores]
-# `logline.outgoing_trace` patches httpx and httpx2 only where the host installed them.
-DEP004 = ["httpx", "httpx2"]
+# `logline.outgoing_trace` patches httpx, httpx2 and websockets only where the host installed them.
+DEP004 = ["httpx", "httpx2", "websockets"]
 
 [tool.pyright]
 include = [

@@ -27,6 +27,7 @@ forbidden_modules =
 ignore_imports =
     logline.outgoing_trace -> httpx
     logline.outgoing_trace -> httpx2
+    logline.outgoing_trace -> websockets
 
 [importlinter:contract:logline-check-imports-only-the-standard-library-and-standard]
 name = logline.check imports only the standard library and logline.standard

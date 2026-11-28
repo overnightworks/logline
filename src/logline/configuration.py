@@ -120,10 +120,11 @@ def configure(service: str) -> None:
 
     It also hands the global propagator's headers, `traceparent` and `tracestate` under that
     default, to every outgoing HTTP request of the process that goes through `http.client`
-    (`urllib.request`, urllib3, requests, botocore) or through httpx or httpx2 where installed, with
-    no call-site code. A request that already carries `traceparent` keeps it and gets no
-    propagator header, and `OTEL_PROPAGATORS=none` adds none. `outgoing_headers()` stays for
-    transports these do not cover, such as `websockets` and aiohttp.
+    (`urllib.request`, urllib3, requests, botocore) or through httpx or httpx2 where installed, and
+    to every opening handshake of a `websockets` client where installed, with no call-site code. A
+    request that already carries `traceparent` keeps it and gets no propagator header, and
+    `OTEL_PROPAGATORS=none` adds none. `outgoing_headers()` stays for
+    transports these do not cover, such as aiohttp and `websockets.legacy`.
 
     Every work item submitted to a `concurrent.futures.ThreadPoolExecutor` also runs with the
     OpenTelemetry context its submitter had, so `Executor.map`, asyncio's `run_in_executor` and

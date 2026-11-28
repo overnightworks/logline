@@ -329,7 +329,8 @@ A WebSocket session runs in a trace the same way, from the upgrade's `traceparen
 
 ### Outgoing calls
 
-`configure` hands the current trace to every outgoing HTTP request of the process, with no call-site code: the
+`configure` hands the current trace to every outgoing HTTP request of the process, a WebSocket opening handshake
+through a `websockets` client included, with no call-site code: the
 headers of the global propagator, `traceparent` and `tracestate` under the default. Inside a `StepTimer` block that is
 the step's span, inside a turn that carries a valid `traceparent` the sender's, and else the request's or the
 session's. Outside a trace nothing is added under the default, and `OTEL_PROPAGATORS=none` adds nothing.
@@ -345,15 +346,17 @@ Only OpenTelemetry's context is carried: every other context variable stays as t
 an item sets persists to the next item on that worker, as without logline.
 
 - Covered are every client that goes through the standard library's `http.client` (`urllib.request`, urllib3,
-  requests, botocore) and httpx and httpx2, `Client` and `AsyncClient`, where the host installed them. For httpx and
-  httpx2 that includes custom and in-process transports (`ASGITransport`, `MockTransport`).
+  requests, botocore), httpx and httpx2, `Client` and `AsyncClient`, and the opening handshake of a `websockets`
+  client, its asyncio and its sync one, where the host installed them. For httpx and httpx2 that includes custom and
+  in-process transports (`ASGITransport`, `MockTransport`). The `websockets` carrier is proven on websockets 15 to 17,
+  the range logline's tests run; a host on another range is outside it.
 - A request that already carries `traceparent` keeps it, and logline adds nothing to it: a caller's `traceparent` is
   never paired with the current `tracestate`.
 - A propagator that raises fails the request, as `outgoing_headers()` does.
 - No URL is excluded: third parties receive `traceparent` and `tracestate` too. They carry no user data, but a caller's
   `traceparent` and its passed-through `tracestate` travel on. A redirect to another host keeps the headers.
-- Not covered are `websockets`, aiohttp, a CONNECT tunnel and urllib3's optional HTTP/2. A call through one of them
-  carries the trace only where the host passes `outgoing_headers()` to it.
+- Not covered are aiohttp, a CONNECT tunnel, urllib3's optional HTTP/2 and `websockets.legacy`. A call through one of
+  them carries the trace only where the host passes `outgoing_headers()` to it.
 - boto3's managed transfers through the CRT transfer client (`awscrt` installed, with `preferred_transfer_client` set to
   `"crt"`, or left at `"auto"` on an instance `awscrt` counts as optimized) send through a native client that no hook
   reaches. Choose `preferred_transfer_client="classic"` or set `BOTO_DISABLE_CRT=true`; the classic client is the one
@@ -403,7 +406,9 @@ crash lines, asyncio's lines and uvicorn's lines among them, carries neither.
 The current span lives in OpenTelemetry's context, as the trace does; logline keeps no copy of it. A call a host
 makes inside a step carries the step's span, so the callee's request line has the step's `span_id` as its
 `parent_span_id`. That holds for the covered clients ([Outgoing calls](#outgoing-calls)) and for a call that passes
-`outgoing_headers()` or `opentelemetry.propagate.inject`, and for a call a thread pool's work item makes.
+`outgoing_headers()` or `opentelemetry.propagate.inject`, and for a call a thread pool's work item makes. A
+`websockets` client opened inside a step carries the step's span in its handshake, so the callee's session line has the
+step's `span_id` as its `parent_span_id`.
 
 ### A turn on a WebSocket
 
